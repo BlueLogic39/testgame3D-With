@@ -114,9 +114,9 @@ let audio = {
   sounds: {},
   loaded: false,
   enabled: true,
-  masterVolume: 0.8,
-  bgmVolume: 0.6,
-  seVolume: 0.8,
+  masterVolume: 0.3,
+  bgmVolume: 0.1,
+  seVolume: 0.15,
 };
 
 const AUDIO_FILES = {
@@ -1147,6 +1147,7 @@ function addMagicCircle(player) {
     life: duration,
     duration,
     tick: 0.15,
+    zap: 0.02,
     owner: player.id,
     damage: player.damage * (0.75 + level * 0.16),
     mesh: makeMagicCircleMesh({ radius }),
@@ -1161,20 +1162,35 @@ function updateMagicCircles(dt) {
   for (const circle of state.magicCircles) {
     circle.life -= dt;
     circle.tick -= dt;
+    circle.zap -= dt;
     const pulse = 0.92 + Math.sin(state.elapsed * 9) * 0.06;
     circle.mesh.scale.setScalar(pulse);
+    if (circle.zap <= 0) {
+      circle.zap = 0.09;
+      addThunderStorm(circle, 4);
+    }
     if (circle.tick <= 0) {
       circle.tick = 0.62;
+      addThunderStorm(circle, 7);
       for (const enemy of state.enemies) {
         if (distance(circle, enemy) <= circle.radius + enemy.radius) {
           enemy.hp -= circle.damage;
           enemy.lastHitBy = circle.owner;
-          addRing(enemy.x, enemy.z, 0.85, 0x7dd3fc);
+          addThunderBolt(enemy.x, enemy.z);
+          addRing(enemy.x, enemy.z, 0.85, 0xffe45c);
         }
       }
     }
   }
   removeDead(state.magicCircles, (circle) => circle.life <= 0);
+}
+
+function addThunderStorm(circle, count) {
+  for (let i = 0; i < count; i += 1) {
+    const angle = Math.random() * Math.PI * 2;
+    const radius = Math.sqrt(Math.random()) * circle.radius;
+    addThunderBolt(circle.x + Math.cos(angle) * radius, circle.z + Math.sin(angle) * radius);
+  }
 }
 
 function explode(x, z, radius, damage) {
@@ -1329,6 +1345,26 @@ function makeRingMesh(effect) {
   const mesh = new THREE.Mesh(new THREE.TorusGeometry(effect.radius || 1, 0.035, 8, 48), material);
   mesh.rotation.x = Math.PI / 2;
   return mesh;
+}
+
+function addThunderBolt(x, z) {
+  const mesh = makeThunderBoltMesh();
+  mesh.position.set(x, 0.12, z);
+  scene.add(mesh);
+  state.effects.push({ id: crypto.randomUUID(), kind: "thunder", x, z, mesh, life: 0.18, start: 0.18 });
+}
+
+function makeThunderBoltMesh() {
+  const points = [];
+  const segments = 6;
+  for (let i = 0; i <= segments; i += 1) {
+    const y = 5.4 - (5.1 * i) / segments;
+    const jitter = i === 0 || i === segments ? 0 : 0.32;
+    points.push(new THREE.Vector3((Math.random() - 0.5) * jitter, y, (Math.random() - 0.5) * jitter));
+  }
+  const geometry = new THREE.BufferGeometry().setFromPoints(points);
+  const material = new THREE.LineBasicMaterial({ color: 0xfff15a, transparent: true, opacity: 1 });
+  return new THREE.Line(geometry, material);
 }
 
 function addSlashEffect(x, z, radius, arc, angle, color, owner = "", skill = false) {
@@ -2028,7 +2064,7 @@ function syncEffects(effects) {
   for (const effect of effects) {
     let mesh = cache.get(effect.id);
     if (!mesh) {
-      mesh = effect.kind === "slash" ? makeSlashMesh(effect) : makeRingMesh(effect);
+      mesh = effect.kind === "slash" ? makeSlashMesh(effect) : effect.kind === "thunder" ? makeThunderBoltMesh(effect) : makeRingMesh(effect);
       scene.add(mesh);
       cache.set(effect.id, mesh);
       if (effect.kind === "slash" && effect.owner === localPlayerId && !effect.skill) sfx("saberAttack");
