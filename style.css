@@ -245,6 +245,61 @@ canvas {
   font-size: 13px;
 }
 
+.settings-corner {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  z-index: 9;
+}
+
+.icon-button {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  font-size: 22px;
+}
+
+.settings-panel {
+  position: absolute;
+  right: 10px;
+  top: 58px;
+  z-index: 9;
+  width: min(280px, calc(100% - 20px));
+  display: grid;
+  gap: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  padding: 12px;
+  text-align: left;
+  color: #f3f0e8;
+  background: rgba(16, 18, 22, 0.94);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.38);
+}
+
+.settings-panel strong {
+  color: #ffd86b;
+}
+
+.settings-panel label {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px 10px;
+  align-items: center;
+  color: #d7dfdc;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.settings-panel input[type="range"] {
+  grid-column: 1 / -1;
+  width: 100%;
+  min-height: 26px;
+  padding: 0;
+  accent-color: #f2c14e;
+}
+
 .radial {
   position: absolute;
   left: 50%;

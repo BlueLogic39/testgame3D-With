@@ -41,6 +41,14 @@ const ui = {
   updateButton: document.getElementById("updateButton"),
   updateInfo: document.getElementById("updateInfo"),
   closeUpdateButton: document.getElementById("closeUpdateButton"),
+  settingsButton: document.getElementById("settingsButton"),
+  settingsPanel: document.getElementById("settingsPanel"),
+  masterVolume: document.getElementById("masterVolume"),
+  bgmVolume: document.getElementById("bgmVolume"),
+  seVolume: document.getElementById("seVolume"),
+  masterVolumeText: document.getElementById("masterVolumeText"),
+  bgmVolumeText: document.getElementById("bgmVolumeText"),
+  seVolumeText: document.getElementById("seVolumeText"),
   codexButton: document.getElementById("codexButton"),
   characterCodex: document.getElementById("characterCodex"),
   closeCodexButton: document.getElementById("closeCodexButton"),
@@ -106,6 +114,9 @@ let audio = {
   sounds: {},
   loaded: false,
   enabled: true,
+  masterVolume: 0.8,
+  bgmVolume: 0.6,
+  seVolume: 0.8,
 };
 
 const AUDIO_FILES = {
@@ -203,6 +214,7 @@ render();
 updateUi();
 updateOnlineBadge();
 renderRoomList();
+loadAudioSettings();
 
 function initThree() {
   scene = new THREE.Scene();
@@ -1389,7 +1401,7 @@ function initAudio() {
   if (audio.loaded) return;
   audio.bgm = new Audio("./Sounds/gamebgm.mp3");
   audio.bgm.loop = true;
-  audio.bgm.volume = 0.42;
+  audio.bgm.volume = effectiveBgmVolume();
   for (const [key, file] of Object.entries(AUDIO_FILES)) {
     audio.sounds[key] = new Audio(`./Sounds/${file}`);
     audio.sounds[key].preload = "auto";
@@ -1416,8 +1428,61 @@ function sfx(kind) {
   const base = audio.sounds[kind];
   if (!base) return;
   const sound = base.cloneNode();
-  sound.volume = 0.78;
+  sound.volume = effectiveSeVolume();
   sound.play().catch(() => {});
+}
+
+function effectiveBgmVolume() {
+  return clamp(audio.masterVolume * audio.bgmVolume, 0, 1);
+}
+
+function effectiveSeVolume() {
+  return clamp(audio.masterVolume * audio.seVolume, 0, 1);
+}
+
+function loadAudioSettings() {
+  try {
+    const saved = JSON.parse(localStorage.getItem("vansabaAudio") || "{}");
+    audio.masterVolume = Number.isFinite(saved.master) ? saved.master : audio.masterVolume;
+    audio.bgmVolume = Number.isFinite(saved.bgm) ? saved.bgm : audio.bgmVolume;
+    audio.seVolume = Number.isFinite(saved.se) ? saved.se : audio.seVolume;
+  } catch {}
+  syncVolumeControls();
+  applyAudioVolumes();
+}
+
+function saveAudioSettings() {
+  localStorage.setItem("vansabaAudio", JSON.stringify({
+    master: audio.masterVolume,
+    bgm: audio.bgmVolume,
+    se: audio.seVolume,
+  }));
+}
+
+function syncVolumeControls() {
+  const values = [
+    [ui.masterVolume, ui.masterVolumeText, audio.masterVolume],
+    [ui.bgmVolume, ui.bgmVolumeText, audio.bgmVolume],
+    [ui.seVolume, ui.seVolumeText, audio.seVolume],
+  ];
+  for (const [input, label, value] of values) {
+    if (input) input.value = Math.round(value * 100);
+    if (label) label.textContent = `${Math.round(value * 100)}%`;
+  }
+}
+
+function applyAudioVolumes() {
+  if (audio.bgm) audio.bgm.volume = effectiveBgmVolume();
+}
+
+function setVolume(kind, value) {
+  const normalized = clamp(Number(value) / 100, 0, 1);
+  if (kind === "master") audio.masterVolume = normalized;
+  if (kind === "bgm") audio.bgmVolume = normalized;
+  if (kind === "se") audio.seVolume = normalized;
+  syncVolumeControls();
+  applyAudioVolumes();
+  saveAudioSettings();
 }
 
 function openCharacterCodex() {
@@ -2483,6 +2548,10 @@ ui.disbandButton.addEventListener("click", leaveRoom);
 ui.pauseTitleButton.addEventListener("click", leaveRoom);
 ui.updateButton.addEventListener("click", () => ui.updateInfo.classList.remove("hidden"));
 ui.closeUpdateButton.addEventListener("click", () => ui.updateInfo.classList.add("hidden"));
+ui.settingsButton.addEventListener("click", () => ui.settingsPanel.classList.toggle("hidden"));
+ui.masterVolume.addEventListener("input", (event) => setVolume("master", event.target.value));
+ui.bgmVolume.addEventListener("input", (event) => setVolume("bgm", event.target.value));
+ui.seVolume.addEventListener("input", (event) => setVolume("se", event.target.value));
 ui.codexButton.addEventListener("click", openCharacterCodex);
 ui.closeCodexButton.addEventListener("click", closeCharacterCodex);
 if (ui.characterSelect) {

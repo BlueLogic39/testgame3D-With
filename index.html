@@ -21,8 +21,17 @@
         <div id="toast" class="toast hidden"></div>
         <div class="skill-hud hidden"><span class="label">SKILL</span><strong id="skillText">0%</strong><div class="skill-meter"><div id="skillFill"></div></div><span id="skillReadyHint" class="skill-ready-hint hidden">SPACEキーでスキル発動！</span></div>
         <div class="update-corner">
-          <span>2026-06-02</span>
+          <span>2026-06-03</span>
           <button id="updateButton" class="secondary" type="button">アップデート情報</button>
+        </div>
+        <div class="settings-corner">
+          <button id="settingsButton" class="icon-button secondary" type="button" aria-label="設定">⚙</button>
+        </div>
+        <div id="settingsPanel" class="settings-panel hidden">
+          <strong>音量設定</strong>
+          <label>マスター <span id="masterVolumeText">80%</span><input id="masterVolume" type="range" min="0" max="100" value="80" /></label>
+          <label>BGM <span id="bgmVolumeText">60%</span><input id="bgmVolume" type="range" min="0" max="100" value="60" /></label>
+          <label>SE <span id="seVolumeText">80%</span><input id="seVolume" type="range" min="0" max="100" value="80" /></label>
         </div>
         <div class="codex-corner">
           <button id="codexButton" class="secondary" type="button">キャラクター図鑑</button>
@@ -114,6 +123,7 @@
 
         <div id="updateInfo" class="overlay hidden">
           <h2>アップデート情報</h2>
+          <p>2026-06-03: タイトル画面の更新日付を最新にしました。全画面共通で右上に設定ボタンを追加し、マスター音量、BGM音量、SE音量を0%から100%までスライダーで調整できるようにしました。</p>
           <p>2026-06-03: ウィッチの強化内容を見直しました。魔力爆発はレベルではなく「ファイア巨大化」を取るたびに範囲と威力が伸びるように変更しました。「爆発拡大」は削除し、新しく「魔法陣＜雷＞」を追加しました。魔法陣＜雷＞は自分の周辺に一定時間の雷魔法陣を設置し、範囲内に入った敵へサンダーを落とします。取得するたびに魔法陣の範囲と設置時間が伸びます。</p>
           <p>2026-06-03: スキルゲージが満タンになった時に「SPACEキーでスキル発動！」と表示されるようにしました。BGMとSEのmp3ファイルは outputs/Sounds フォルダに整理し、ゲーム内の音源パスも新しい場所へ更新しました。</p>
           <p>2026-06-03: 経験値取得音を追加しました。経験値を拾った時に、keikenti.mp3 と keikenti1.mp3 のどちらかがランダムで鳴ります。キャラクター図鑑の見出しが見切れないように、図鑑画面の表示位置と見出し色も調整しました。</p>
