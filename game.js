@@ -154,7 +154,7 @@ const CHARACTER_CODEX = [
     id: "witch",
     role: "範囲攻撃が得意な魔法アタッカー",
     weapon: "火炎弾のファイアを放ちます。弾速は控えめですが、命中時に周囲を巻き込みます。",
-    passive: "魔力爆発: ファイアが命中すると範囲ダメージが発生します。ファイア巨大化を取るほど範囲と威力が伸びます。",
+    passive: "魔力爆発: ファイアが命中すると範囲ダメージが発生します。ファイア巨大化を取るほど範囲、威力、連鎖回数が伸びます。",
     skill: "魔女の大爆発: スペースキーで周囲を大きく爆発させます。",
     upgrades: ["ファイア +1", "魔法陣＜雷＞", "ファイア巨大化"],
   },
@@ -204,7 +204,7 @@ upgrades[7].classes = ["archer"];
 upgrades.push(
   { name: "ファイア +1", desc: "ウィッチのファイアが同時に1つ増える。散らして撃てるので群れに強い。", classes: ["witch"], apply: (p) => (p.magicBolts += 1) },
   { name: "魔法陣＜雷＞", desc: "自分の周辺に雷の魔法陣を設置する。取得するたび範囲と設置時間が伸びる。", classes: ["witch"], apply: (p) => (p.thunderCircle += 1) },
-  { name: "ファイア巨大化", desc: "ファイアが大きくなり、魔力爆発の範囲と威力も伸びる。", classes: ["witch"], apply: (p) => { p.magicRadius += 0.12; p.damage *= 1.08; p.magicSplash += 1; } },
+  { name: "ファイア巨大化", desc: "ファイアが大きくなり、魔力爆発の範囲と威力が伸びる。さらに連鎖爆発が+1される。", classes: ["witch"], apply: (p) => { p.magicRadius += 0.12; p.damage *= 1.08; p.magicSplash += 1; p.chainExplosion += 1; } },
   { name: "剣閃範囲 +20度", desc: "セイバーの薙ぎ払い角度が広くなる。", classes: ["saber"], apply: (p) => (p.slashArc += THREE.MathUtils.degToRad(20)) },
   { name: "剣の間合い +15%", desc: "セイバーの薙ぎ払いが遠くまで届く。", classes: ["saber"], apply: (p) => (p.slashRange *= 1.15) },
   { name: "二連斬り", desc: "薙ぎ払いの直後に、少しずらした追加の斬撃を放つ。", classes: ["saber"], apply: (p) => (p.doubleSlash += 1) }
@@ -336,6 +336,7 @@ function makePlayer(id, name, x, z, local, character = "archer") {
     magicBolts: 1,
     magicSplash: 0,
     magicRadius: 0.34,
+    chainExplosion: 0,
     thunderCircle: 0,
     thunderTimer: 2.8,
     slashArc: THREE.MathUtils.degToRad(100),
@@ -727,6 +728,7 @@ function shootMagic(player) {
       owner: player.id,
       kind: "magic",
       splash: player.magicSplash || 0,
+      chain: player.chainExplosion || 0,
       angle,
       hit: new Set(),
       mesh: makeProjectileMesh({ kind: "magic" }),
@@ -1050,7 +1052,7 @@ function updateArrows(dt) {
         if (arrow.kind === "magic" && arrow.splash > 0) {
           const splashRadius = 1.4 + arrow.splash * 0.42;
           const splashDamage = arrow.damage * (0.35 + arrow.splash * 0.14);
-          explode(enemy.x, enemy.z, splashRadius, splashDamage);
+          magicExplosion(enemy.x, enemy.z, splashRadius, splashDamage, arrow.chain || 0, arrow.owner, new Set([enemy.id || enemy]));
         }
         if (arrow.pierce <= 0) {
           arrow.life = 0;
@@ -1201,6 +1203,27 @@ function explode(x, z, radius, damage) {
   addRing(x, z, radius, 0xe8784f);
   for (const enemy of state.enemies) {
     if (distance({ x, z }, enemy) < radius + enemy.radius) enemy.hp -= damage;
+  }
+}
+
+function magicExplosion(x, z, radius, damage, chainLeft = 0, owner = "", chained = new Set()) {
+  sfx("explode");
+  addRing(x, z, radius, 0xff6b2c);
+  addRing(x, z, radius * 0.55, 0xffd166);
+  const nextBursts = [];
+  for (const enemy of state.enemies) {
+    if (distance({ x, z }, enemy) >= radius + enemy.radius) continue;
+    enemy.hp -= damage;
+    if (owner) enemy.lastHitBy = owner;
+    const key = enemy.id || enemy;
+    if (chainLeft > 0 && !chained.has(key)) {
+      chained.add(key);
+      nextBursts.push(enemy);
+    }
+  }
+  if (chainLeft <= 0) return;
+  for (const enemy of nextBursts) {
+    magicExplosion(enemy.x, enemy.z, radius * 0.92, damage * 0.82, chainLeft - 1, owner, chained);
   }
 }
 
@@ -1994,7 +2017,7 @@ function sendHostSnapshot(force = false) {
       angle: Math.atan2((p.input?.aimX ?? p.x) - p.x, (p.input?.aimZ ?? p.z - 1) - p.z),
       skillCharge: p.skillCharge, skillCooldown: p.skillCooldown,
       arrows: p.arrows, backShots: p.backShots, damage: p.damage, pierce: p.pierce,
-      magicSplash: p.magicSplash, magicRadius: p.magicRadius, thunderCircle: p.thunderCircle,
+      magicSplash: p.magicSplash, magicRadius: p.magicRadius, chainExplosion: p.chainExplosion, thunderCircle: p.thunderCircle,
       rerolls: p.rerolls, upgrades: p.upgrades,
     })),
     enemies: state.enemies.map((e) => ({ id: e.id, x: e.x, z: e.z, radius: e.radius, boss: e.boss, shooter: e.shooter })),
