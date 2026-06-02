@@ -141,9 +141,9 @@ const CHARACTER_CODEX = [
     id: "witch",
     role: "範囲攻撃が得意な魔法アタッカー",
     weapon: "火炎弾のファイアを放ちます。弾速は控えめですが、命中時に周囲を巻き込みます。",
-    passive: "魔力爆発: ファイアが命中すると範囲ダメージが発生します。ウィッチのレベルが上がるほど範囲と威力が伸びます。",
+    passive: "魔力爆発: ファイアが命中すると範囲ダメージが発生します。ファイア巨大化を取るほど範囲と威力が伸びます。",
     skill: "魔女の大爆発: スペースキーで周囲を大きく爆発させます。",
-    upgrades: ["ファイア +1", "爆発拡大", "ファイア巨大化"],
+    upgrades: ["ファイア +1", "魔法陣＜雷＞", "ファイア巨大化"],
   },
   {
     id: "saber",
@@ -190,8 +190,8 @@ upgrades[3].classes = ["archer"];
 upgrades[7].classes = ["archer"];
 upgrades.push(
   { name: "ファイア +1", desc: "ウィッチのファイアが同時に1つ増える。散らして撃てるので群れに強い。", classes: ["witch"], apply: (p) => (p.magicBolts += 1) },
-  { name: "爆発拡大", desc: "パッシブの魔力爆発が少し広く、強くなる。", classes: ["witch"], apply: (p) => (p.magicSplash += 1) },
-  { name: "ファイア巨大化", desc: "ファイアが大きくなり、少しだけ威力も上がる。", classes: ["witch"], apply: (p) => { p.magicRadius += 0.12; p.damage *= 1.1; } },
+  { name: "魔法陣＜雷＞", desc: "自分の周辺に雷の魔法陣を設置する。取得するたび範囲と設置時間が伸びる。", classes: ["witch"], apply: (p) => (p.thunderCircle += 1) },
+  { name: "ファイア巨大化", desc: "ファイアが大きくなり、魔力爆発の範囲と威力も伸びる。", classes: ["witch"], apply: (p) => { p.magicRadius += 0.12; p.damage *= 1.08; p.magicSplash += 1; } },
   { name: "剣閃範囲 +20度", desc: "セイバーの薙ぎ払い角度が広くなる。", classes: ["saber"], apply: (p) => (p.slashArc += THREE.MathUtils.degToRad(20)) },
   { name: "剣の間合い +15%", desc: "セイバーの薙ぎ払いが遠くまで届く。", classes: ["saber"], apply: (p) => (p.slashRange *= 1.15) },
   { name: "二連斬り", desc: "薙ぎ払いの直後に、少しずらした追加の斬撃を放つ。", classes: ["saber"], apply: (p) => (p.doubleSlash += 1) }
@@ -276,9 +276,10 @@ function newState(playerInfos) {
     enemyBullets: [],
     gems: [],
     hearts: [],
+    magicCircles: [],
     effects: [],
     kills: 0,
-    renderCache: { players: new Map(), enemies: new Map(), arrows: new Map(), bullets: new Map(), gems: new Map(), hearts: new Map(), effects: new Map() },
+    renderCache: { players: new Map(), enemies: new Map(), arrows: new Map(), bullets: new Map(), gems: new Map(), hearts: new Map(), circles: new Map(), effects: new Map() },
   };
 }
 
@@ -320,6 +321,8 @@ function makePlayer(id, name, x, z, local, character = "archer") {
     magicBolts: 1,
     magicSplash: 0,
     magicRadius: 0.34,
+    thunderCircle: 0,
+    thunderTimer: 2.8,
     slashArc: THREE.MathUtils.degToRad(100),
     slashRange: 5.2,
     doubleSlash: 0,
@@ -470,7 +473,7 @@ function startGame(mode = "solo") {
 
 function resetSceneEntities() {
   for (const player of state.players) scene.remove(player.mesh);
-  for (const group of [state.enemies, state.arrows, state.enemyBullets, state.gems, state.hearts, state.effects]) {
+  for (const group of [state.enemies, state.arrows, state.enemyBullets, state.gems, state.hearts, state.magicCircles, state.effects]) {
     for (const item of group) scene.remove(item.mesh);
   }
   for (const cache of Object.values(state.renderCache || {})) {
@@ -504,6 +507,7 @@ function update(dt) {
   updateArrows(dt);
   updateEnemies(dt);
   updateEnemyBullets(dt);
+  updateMagicCircles(dt);
   updateGems(dt);
   updateHearts(dt);
   updateRevives();
@@ -532,7 +536,16 @@ function updatePlayers(dt) {
       shoot(player);
       player.fireTimer = player.fireRate;
     }
+    updatePlayerThunderCircle(player, dt);
   }
+}
+
+function updatePlayerThunderCircle(player, dt) {
+  if ((player.thunderCircle || 0) <= 0) return;
+  player.thunderTimer = (player.thunderTimer || 0) - dt;
+  if (player.thunderTimer > 0) return;
+  addMagicCircle(player);
+  player.thunderTimer = Math.max(4.2, 9.5 - player.thunderCircle * 0.45);
 }
 
 function updatePlayerFlash(player, dt) {
@@ -699,7 +712,6 @@ function shootMagic(player) {
       owner: player.id,
       kind: "magic",
       splash: player.magicSplash || 0,
-      ownerLevel: player.level || 1,
       angle,
       hit: new Set(),
       mesh: makeProjectileMesh({ kind: "magic" }),
@@ -1021,9 +1033,8 @@ function updateArrows(dt) {
         if (arrow.kind === "magic") sfx("fire");
         addRing(enemy.x, enemy.z, arrow.kind === "magic" ? 1.0 : 0.8, arrow.kind === "magic" ? 0xff6b2c : 0xf2c14e);
         if (arrow.kind === "magic" && arrow.splash > 0) {
-          const levelBonus = Math.max(0, (arrow.ownerLevel || 1) - 1);
-          const splashRadius = 1.4 + arrow.splash * 0.35 + levelBonus * 0.045;
-          const splashDamage = arrow.damage * (0.35 + arrow.splash * 0.12 + levelBonus * 0.018);
+          const splashRadius = 1.4 + arrow.splash * 0.42;
+          const splashDamage = arrow.damage * (0.35 + arrow.splash * 0.14);
           explode(enemy.x, enemy.z, splashRadius, splashDamage);
         }
         if (arrow.pierce <= 0) {
@@ -1110,6 +1121,48 @@ function updateHearts(dt) {
     }
   }
   removeDead(state.hearts, (heart) => heart.collected);
+}
+
+function addMagicCircle(player) {
+  const level = player.thunderCircle || 0;
+  const radius = 3.0 + level * 0.55;
+  const duration = 3.4 + level * 0.9;
+  const circle = {
+    id: crypto.randomUUID(),
+    x: player.x,
+    z: player.z,
+    radius,
+    life: duration,
+    duration,
+    tick: 0.15,
+    owner: player.id,
+    damage: player.damage * (0.75 + level * 0.16),
+    mesh: makeMagicCircleMesh({ radius }),
+  };
+  circle.mesh.position.set(circle.x, 0.1, circle.z);
+  scene.add(circle.mesh);
+  state.magicCircles.push(circle);
+  addRing(circle.x, circle.z, radius, 0x7dd3fc);
+}
+
+function updateMagicCircles(dt) {
+  for (const circle of state.magicCircles) {
+    circle.life -= dt;
+    circle.tick -= dt;
+    const pulse = 0.92 + Math.sin(state.elapsed * 9) * 0.06;
+    circle.mesh.scale.setScalar(pulse);
+    if (circle.tick <= 0) {
+      circle.tick = 0.62;
+      for (const enemy of state.enemies) {
+        if (distance(circle, enemy) <= circle.radius + enemy.radius) {
+          enemy.hp -= circle.damage;
+          enemy.lastHitBy = circle.owner;
+          addRing(enemy.x, enemy.z, 0.85, 0x7dd3fc);
+        }
+      }
+    }
+  }
+  removeDead(state.magicCircles, (circle) => circle.life <= 0);
 }
 
 function explode(x, z, radius, damage) {
@@ -1232,6 +1285,21 @@ function makeHeartMesh() {
   tip.rotation.z = Math.PI;
   group.add(left, right, tip);
   group.scale.setScalar(0.95);
+  return group;
+}
+
+function makeMagicCircleMesh(circle = {}) {
+  const group = new THREE.Group();
+  const radius = circle.radius || 3.2;
+  const ringMat = new THREE.MeshBasicMaterial({ color: 0x7dd3fc, transparent: true, opacity: 0.72 });
+  const diskMat = new THREE.MeshBasicMaterial({ color: 0x2563eb, transparent: true, opacity: 0.16, side: THREE.DoubleSide, depthWrite: false });
+  const disk = new THREE.Mesh(new THREE.CircleGeometry(radius, 56), diskMat);
+  disk.rotation.x = -Math.PI / 2;
+  const outer = new THREE.Mesh(new THREE.TorusGeometry(radius, 0.045, 8, 72), ringMat);
+  outer.rotation.x = Math.PI / 2;
+  const inner = new THREE.Mesh(new THREE.TorusGeometry(radius * 0.58, 0.026, 8, 56), ringMat.clone());
+  inner.rotation.x = Math.PI / 2;
+  group.add(disk, outer, inner);
   return group;
 }
 
@@ -1778,6 +1846,7 @@ function applySnapshot(data) {
   syncSimpleMeshes(state.renderCache.bullets, data.bullets || [], makeBulletMesh, 1.05);
   syncSimpleMeshes(state.renderCache.gems, data.gems || [], makeGemMesh, 0.55);
   syncSimpleMeshes(state.renderCache.hearts, data.hearts || [], makeHeartMesh, 0.7);
+  syncSimpleMeshes(state.renderCache.circles, data.circles || [], makeMagicCircleMesh, 0.1);
   syncEffects(data.effects || []);
   if (net.pausedBy) applyPause(net.pausedBy);
   else if (net.waitingFor && net.waitingFor !== localPlayerId) showStatus("他のプレイヤーの選択を待っています", `${playerNameById(net.waitingFor)} が強化を選んでいます。`);
@@ -1810,13 +1879,16 @@ function sendHostSnapshot(force = false) {
       invincibleUntil: p.invincibleUntil, hitFlash: p.hitFlash, input: p.input,
       angle: Math.atan2((p.input?.aimX ?? p.x) - p.x, (p.input?.aimZ ?? p.z - 1) - p.z),
       skillCharge: p.skillCharge, skillCooldown: p.skillCooldown,
-      arrows: p.arrows, backShots: p.backShots, damage: p.damage, pierce: p.pierce, rerolls: p.rerolls, upgrades: p.upgrades,
+      arrows: p.arrows, backShots: p.backShots, damage: p.damage, pierce: p.pierce,
+      magicSplash: p.magicSplash, magicRadius: p.magicRadius, thunderCircle: p.thunderCircle,
+      rerolls: p.rerolls, upgrades: p.upgrades,
     })),
     enemies: state.enemies.map((e) => ({ id: e.id, x: e.x, z: e.z, radius: e.radius, boss: e.boss, shooter: e.shooter })),
     arrows: state.arrows.map((a) => ({ id: a.id, x: a.x, z: a.z, angle: a.angle, kind: a.kind, radius: a.radius, owner: a.owner, skill: a.skill })),
     bullets: state.enemyBullets.map((b) => ({ id: b.id, x: b.x, z: b.z })),
     gems: state.gems.map((g) => ({ id: g.id, x: g.x, z: g.z, kind: g.kind })),
     hearts: state.hearts.map((h) => ({ id: h.id, x: h.x, z: h.z })),
+    circles: state.magicCircles.map((c) => ({ id: c.id, x: c.x, z: c.z, radius: c.radius, life: c.life, duration: c.duration })),
     effects: state.effects.map((fx) => ({ id: fx.id, kind: fx.kind, owner: fx.owner, skill: fx.skill, x: fx.x, z: fx.z, radius: fx.radius, arc: fx.arc, angle: fx.angle, color: fx.color, life: fx.life, start: fx.start })),
   });
 }
