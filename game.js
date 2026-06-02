@@ -131,6 +131,8 @@ const AUDIO_FILES = {
   start: "gamestartsound.mp3",
   gemA: "keikenti.mp3",
   gemB: "keikenti1.mp3",
+  thunderA: "kaminari1.mp3",
+  thunderB: "kaminari2.mp3",
 };
 
 const CHARACTER_TYPES = {
@@ -291,6 +293,7 @@ function newState(playerInfos) {
     magicCircles: [],
     effects: [],
     kills: 0,
+    thunderSoundAt: 0,
     renderCache: { players: new Map(), enemies: new Map(), arrows: new Map(), bullets: new Map(), gems: new Map(), hearts: new Map(), circles: new Map(), effects: new Map() },
   };
 }
@@ -1352,6 +1355,7 @@ function addThunderBolt(x, z) {
   mesh.position.set(x, 0.12, z);
   scene.add(mesh);
   state.effects.push({ id: crypto.randomUUID(), kind: "thunder", x, z, mesh, life: 0.18, start: 0.18 });
+  thunderSfx();
 }
 
 function makeThunderBoltMesh() {
@@ -1461,11 +1465,20 @@ function stopBgm() {
 function sfx(kind) {
   initAudio();
   if (kind === "gem") kind = Math.random() < 0.5 ? "gemA" : "gemB";
+  if (kind === "thunder") kind = Math.random() < 0.5 ? "thunderA" : "thunderB";
   const base = audio.sounds[kind];
   if (!base) return;
   const sound = base.cloneNode();
   sound.volume = effectiveSeVolume();
   sound.play().catch(() => {});
+}
+
+function thunderSfx() {
+  if (!state) return;
+  const now = performance.now() / 1000;
+  if (now < state.thunderSoundAt) return;
+  state.thunderSoundAt = now + 0.28 + Math.random() * 0.18;
+  sfx("thunder");
 }
 
 function effectiveBgmVolume() {
@@ -2068,6 +2081,7 @@ function syncEffects(effects) {
       scene.add(mesh);
       cache.set(effect.id, mesh);
       if (effect.kind === "slash" && effect.owner === localPlayerId && !effect.skill) sfx("saberAttack");
+      if (effect.kind === "thunder") thunderSfx();
     }
     const t = 1 - effect.life / effect.start;
     mesh.position.set(effect.x, 0.12, effect.z);
