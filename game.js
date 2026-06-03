@@ -1,4 +1,4 @@
-import * as THREE from "./three.module.js";
+﻿import * as THREE from "./three.module.js";
 import { GLTFLoader } from "./GLTFLoader.js";
 import { FBXLoader } from "./FBXLoader.js";
 
@@ -139,9 +139,9 @@ const AUDIO_FILES = {
 };
 
 const CHARACTER_TYPES = {
-  archer: { label: "アーチャー", color: 0x57c4a7, remoteColor: 0x5aa7ff },
-  witch: { label: "ウィッチ", color: 0x8b5cf6, remoteColor: 0xb07cff },
-  saber: { label: "セイバー", color: 0xd9dfe8, remoteColor: 0x91c7ff },
+  archer: { label: "繧｢繝ｼ繝√Ε繝ｼ", color: 0x57c4a7, remoteColor: 0x5aa7ff },
+  witch: { label: "繧ｦ繧｣繝・メ", color: 0x8b5cf6, remoteColor: 0xb07cff },
+  saber: { label: "繧ｻ繧､繝舌・", color: 0xd9dfe8, remoteColor: 0x91c7ff },
 };
 
 const CHARACTER_MODELS = {
@@ -166,7 +166,7 @@ const CHARACTER_CODEX = [
   {
     id: "archer",
     role: "扱いやすい遠距離アタッカー",
-    weapon: "マウス方向へ矢を連射します。矢の本数と貫通で前方火力が伸び、バックショットで背後も攻撃できます。",
+    weapon: "マウス方向へ矢を連射します。矢の本数、貫通、バックショットで攻撃方向を広げられます。",
     passive: "専用パッシブはまだありません。素直な射撃性能が持ち味です。",
     skill: "アローレイン: スペースキーで前方へ大量の矢を一気に放ちます。",
     upgrades: ["矢の本数 +1", "貫通 +1", "バックショット"],
@@ -183,8 +183,8 @@ const CHARACTER_CODEX = [
     id: "saber",
     role: "近距離の前方制圧キャラクター",
     weapon: "2秒ごとにマウス方向へ100度の剣閃で薙ぎ払います。",
-    passive: "近い敵をまとめて切れる代わりに、通常攻撃の間隔は長めです。",
-    skill: "閃光三連斬り: 短い無敵時間を得て、前方へ強力な三連続剣閃を放ちます。",
+    passive: "近い敵をまとめて斬れる代わりに、通常攻撃の間隔は長めです。",
+    skill: "回転突進斬り: スペースキーで2秒間回転斬りしながらマウス方向へ突進します。",
     upgrades: ["剣閃範囲 +20度", "剣の間合い +15%", "二連斬り"],
   },
 ];
@@ -209,13 +209,13 @@ const materials = {
 
 const upgrades = [
   { name: "矢の本数 +1", desc: "一度に放つ矢が増える。近距離の制圧力が上がる。", apply: (p) => (p.arrows += 1) },
-  { name: "攻撃速度 +18%", desc: "矢を撃つ間隔が短くなる。迷ったらこれ。", apply: (p) => addAttackSpeed(p, 0.18) },
-  { name: "ダメージ +25%", desc: "全ての矢の威力が増える。硬い敵に効く。", apply: (p) => (p.damage *= 1.25) },
+  { name: "攻撃速度 +18%", desc: "攻撃間隔が短くなる。迷ったらこれ。", apply: (p) => addAttackSpeed(p, 0.18) },
+  { name: "ダメージ +25%", desc: "通常攻撃の威力が増える。硬い敵に効きやすい。", apply: (p) => (p.damage *= 1.25) },
   { name: "貫通 +1", desc: "矢が追加で敵を貫く。群れに強い。", apply: (p) => (p.pierce += 1) },
-  { name: "移動速度 +15%", desc: "包囲されにくくなり、経験値回収も楽になる。", apply: (p) => (p.speed *= 1.15) },
+  { name: "移動速度 +15%", desc: "囲まれにくくなり、経験値回収もしやすくなる。", apply: (p) => (p.speed *= 1.15) },
   { name: "最大HP +25", desc: "最大HPが増え、少し回復する。", apply: (p) => { p.maxHp += 25; p.hp = Math.min(p.maxHp, p.hp + 25); } },
   { name: "吸血", desc: "敵を倒すたびにHPを少し回復する。", apply: (p) => (p.lifeSteal += 1.2) },
-  { name: "バックショット", desc: "通常攻撃と同時に、マウス方向の逆へ矢を撃つ。複数取ると後ろ矢が増える。", apply: (p) => (p.backShots += 1) },
+  { name: "バックショット", desc: "通常攻撃と同時にマウス方向の逆へ矢を撃つ。複数取ると後方矢が増える。", apply: (p) => (p.backShots += 1) },
   { name: "磁力 +40%", desc: "経験値を吸い寄せる範囲が広がる。", apply: (p) => (p.magnet *= 1.4) },
 ];
 
@@ -366,6 +366,10 @@ function makePlayer(id, name, x, z, local, character = "archer") {
     slashArc: THREE.MathUtils.degToRad(100),
     slashRange: 5.2,
     doubleSlash: 0,
+    spinSlashUntil: 0,
+    spinSlashAngle: 0,
+    spinSlashTick: 0,
+    spinSlashVisual: 0,
     mesh: makePlayerMesh(name, local, type),
   };
   if (type === "witch") {
@@ -460,7 +464,7 @@ function makePlayerMesh(name, local, character = "archer") {
 
 function addCharacterProps(group, character, bodyMat) {
   if (character === "witch") {
-    const staff = makeFbxMesh("staff");
+    const staff = makeFbxMesh("staff", makeOldStaffMesh);
     group.add(staff);
     return [staff];
   }
@@ -936,17 +940,22 @@ function updatePlayers(dt) {
     if (player.dead || player.hp <= 0) continue;
     player.skillCharge = Math.min(player.skillCooldown || 30, (player.skillCharge || 0) + dt);
     if (player.local) player.input = getLocalInput();
-    const moving = Math.hypot(player.input.dx, player.input.dz) > 0.01;
-    player.x = clamp(player.x + player.input.dx * player.speed * dt, -WORLD.half + 1.2, WORLD.half - 1.2);
-    player.z = clamp(player.z + player.input.dz * player.speed * dt, -WORLD.half + 1.2, WORLD.half - 1.2);
+    const spinning = isSaberSpinning(player);
+    const moveDx = spinning ? Math.sin(player.spinSlashAngle || 0) : player.input.dx;
+    const moveDz = spinning ? Math.cos(player.spinSlashAngle || 0) : player.input.dz;
+    const moveSpeed = spinning ? (player.speed || 9.8) * 1.3 : player.speed;
+    const moving = spinning || Math.hypot(player.input.dx, player.input.dz) > 0.01;
+    player.x = clamp(player.x + moveDx * moveSpeed * dt, -WORLD.half + 1.2, WORLD.half - 1.2);
+    player.z = clamp(player.z + moveDz * moveSpeed * dt, -WORLD.half + 1.2, WORLD.half - 1.2);
     player.mesh.position.set(player.x, 0, player.z);
 
     const angle = Math.atan2(player.input.aimX - player.x, player.input.aimZ - player.z);
-    player.mesh.rotation.y = angle;
+    player.mesh.rotation.y = spinning ? (player.spinSlashAngle || angle) + state.elapsed * 18 : angle;
     animateHuman(player, moving, dt);
+    updateSaberSpinSlash(player, dt);
 
     player.fireTimer -= dt;
-    if (player.fireTimer <= 0) {
+    if (!spinning && player.fireTimer <= 0) {
       shoot(player);
       player.fireTimer = player.fireRate;
     }
@@ -1188,6 +1197,38 @@ function applySaberSlash(player, angle) {
   addSlashEffect(player.x, player.z, range, arc, angle, 0xdfe8f3, player.id);
 }
 
+function isSaberSpinning(player) {
+  return player?.character === "saber" && state.elapsed < (player.spinSlashUntil || 0);
+}
+
+function updateSaberSpinSlash(player, dt) {
+  if (player.character !== "saber") return;
+  if (!isSaberSpinning(player)) {
+    player.spinSlashTick = 0;
+    player.spinSlashVisual = 0;
+    return;
+  }
+  player.invincibleUntil = Math.max(player.invincibleUntil || 0, state.elapsed + 0.08);
+  player.spinSlashTick -= dt;
+  player.spinSlashVisual -= dt;
+  const range = (player.slashRange || 5.2) * 1.08;
+  const damage = player.damage * 0.58;
+  if (player.spinSlashTick <= 0) {
+    player.spinSlashTick = 0.16;
+    for (const enemy of state.enemies) {
+      if (distance(player, enemy) > range + enemy.radius) continue;
+      enemy.hp -= damage;
+      enemy.lastHitBy = player.id;
+    }
+  }
+  if (player.spinSlashVisual <= 0) {
+    player.spinSlashVisual = 0.08;
+    const spin = state.elapsed * 18;
+    addSlashEffect(player.x, player.z, range, Math.PI * 1.55, spin, 0x91c7ff, player.id, true);
+    addSlashEffect(player.x, player.z, range * 0.72, Math.PI * 1.35, spin + Math.PI, 0xdfe8f3, player.id, true);
+  }
+}
+
 function requestSkillUse() {
   const player = localPlayer();
   if (!canUseSkill(player)) return;
@@ -1238,9 +1279,9 @@ function activateSkill(player) {
 }
 
 function skillName(character) {
-  if (character === "witch") return "魔女の大爆発";
-  if (character === "saber") return "閃光三連斬り";
-  return "アローレイン";
+  if (character === "witch") return "鬲泌･ｳ縺ｮ螟ｧ辷・匱";
+  if (character === "saber") return "回転突進斬り";
+  return "繧｢繝ｭ繝ｼ繝ｬ繧､繝ｳ";
 }
 
 function castArcherSkill(player, baseAngle) {
@@ -1287,21 +1328,12 @@ function castWitchSkill(player) {
 }
 
 function castSaberSkill(player, baseAngle) {
-  const arc = THREE.MathUtils.degToRad(128);
-  const range = (player.slashRange || 5.2) * 1.65;
-  const damage = player.damage * 1.45;
-  player.invincibleUntil = Math.max(player.invincibleUntil || 0, state.elapsed + 1.2);
-  for (const offset of [-0.42, 0, 0.42]) {
-    for (const enemy of state.enemies) {
-      const d = distance(player, enemy);
-      if (d > range + enemy.radius) continue;
-      const toEnemy = Math.atan2(enemy.x - player.x, enemy.z - player.z);
-      if (Math.abs(angleDiff(toEnemy, baseAngle + offset)) > arc / 2) continue;
-      enemy.hp -= damage;
-      enemy.lastHitBy = player.id;
-    }
-    addSlashEffect(player.x, player.z, range, arc, baseAngle + offset, 0x91c7ff, player.id, true);
-  }
+  player.spinSlashUntil = state.elapsed + 2;
+  player.spinSlashAngle = baseAngle;
+  player.spinSlashTick = 0;
+  player.spinSlashVisual = 0;
+  player.invincibleUntil = Math.max(player.invincibleUntil || 0, state.elapsed + 2);
+  addRing(player.x, player.z, (player.slashRange || 5.2) * 1.1, 0x91c7ff);
 }
 
 function spawnEnemies(dt) {
@@ -1895,8 +1927,8 @@ function oldEndGame(won) {
   state.won = won;
   net.phase = "gameover";
   ui.endTitle.textContent = won ? "Clear!" : "Game Over";
-  ui.endText.textContent = `${formatTime(state.elapsed)} 生存 / ${state.kills}体撃破 / レベル${localPlayer()?.level || 1}`;
-  ui.restartButton.textContent = net.mode === "solo" ? "もう一度" : "同じメンバーでもう一度";
+  ui.endText.textContent = `${formatTime(state.elapsed)} 逕溷ｭ・/ ${state.kills}菴捺茶遐ｴ / 繝ｬ繝吶Ν${localPlayer()?.level || 1}`;
+  ui.restartButton.textContent = net.mode === "solo" ? "繧ゅ≧荳蠎ｦ" : "蜷後§繝｡繝ｳ繝舌・縺ｧ繧ゅ≧荳蠎ｦ";
   ui.disbandButton.textContent = net.mode === "solo" ? "タイトルに戻る" : "解散する";
   ui.disbandButton.classList.remove("hidden");
   ui.gameOver.classList.remove("hidden");
@@ -2135,15 +2167,15 @@ function updateUi() {
   ui.skillText.closest(".skill-hud")?.classList.toggle("ready", skillPct >= 1);
   ui.skillReadyHint?.classList.toggle("hidden", skillPct < 1 || net.phase !== "playing" || !state.running);
   const recent = player.upgrades.length ? player.upgrades.slice(-5).join(" / ") : "強化なし";
-  const room = net.roomCode ? ` / 部屋:${net.roomCode}` : "";
+  const room = net.roomCode ? ` / 驛ｨ螻・${net.roomCode}` : "";
   const revive = player.dead ? ` / 復活まで${Math.max(0, Math.ceil(player.reviveAt - state.elapsed))}秒` : "";
-  const characterName = CHARACTER_TYPES[player.character || "archer"]?.label || "アーチャー";
+  const characterName = CHARACTER_TYPES[player.character || "archer"]?.label || "繧｢繝ｼ繝√Ε繝ｼ";
   const weapon = player.character === "saber"
-    ? `薙ぎ払い${Math.round(THREE.MathUtils.radToDeg(player.slashArc || 0))}度`
+    ? `阮吶℃謇輔＞${Math.round(THREE.MathUtils.radToDeg(player.slashArc || 0))}蠎ｦ`
     : player.character === "witch"
-      ? `ファイア${player.magicBolts || 1}発`
-      : `${player.arrows}本 / 後方${player.backShots || 0}本 / 貫通${player.pierce}`;
-  ui.build.textContent = `${characterName} / ${weapon} / 威力${Math.round(player.damage)} / ${recent}${room}${revive}`;
+      ? `繝輔ぃ繧､繧｢${player.magicBolts || 1}逋ｺ`
+      : `${player.arrows}譛ｬ / 蠕梧婿${player.backShots || 0}譛ｬ / 雋ｫ騾・{player.pierce}`;
+  ui.build.textContent = `${characterName} / ${weapon} / 螽∝鴨${Math.round(player.damage)} / ${recent}${room}${revive}`;
 }
 
 function resize() {
@@ -2222,7 +2254,7 @@ async function createRoom() {
   selectedRoomKey = code;
   rememberRoom({ code, name: roomName, host: playerName(), hasPassword: Boolean(password), password });
   renderRoomList();
-  ui.roomStatus.textContent = `準備中: ${code}`;
+  ui.roomStatus.textContent = `貅門ｙ荳ｭ: ${code}`;
   net.peer = new Peer(`vansaba-${code}`);
   net.peer.on("open", () => showLobby("ホストです。参加者が揃ったら開始してください。"));
   net.peer.on("connection", (conn) => {
@@ -2237,7 +2269,7 @@ async function createRoom() {
     });
   });
   net.peer.on("error", (error) => {
-    ui.roomStatus.textContent = `部屋作成エラー: ${error.type || error.message}`;
+    ui.roomStatus.textContent = `驛ｨ螻倶ｽ懈・繧ｨ繝ｩ繝ｼ: ${error.type || error.message}`;
   });
 }
 
@@ -2272,7 +2304,7 @@ function oldJoinRoom() {
     });
   });
   net.peer.on("error", (error) => {
-    ui.roomStatus.textContent = `参加エラー: ${error.type || error.message}`;
+    ui.roomStatus.textContent = `蜿ょ刈繧ｨ繝ｩ繝ｼ: ${error.type || error.message}`;
   });
 }
 
@@ -2288,7 +2320,7 @@ function showLobby(message) {
   ui.levelUp.classList.add("hidden");
   hideStatus();
   ui.lobby.classList.remove("hidden");
-  ui.lobbyCode.textContent = `パスワード: ${net.roomCode}`;
+  ui.lobbyCode.textContent = `繝代せ繝ｯ繝ｼ繝・ ${net.roomCode}`;
   ui.lobbyStatus.textContent = message;
   ui.lobbyStartButton.classList.toggle("hidden", net.mode !== "host");
   renderLobbyPlayers();
@@ -2300,7 +2332,7 @@ function renderLobbyPlayers() {
     const row = document.createElement("div");
     row.className = "lobby-player";
     row.innerHTML = `<span>${player.name}</span><span>${player.host ? "ホスト" : "参加"}</span>`;
-    const className = CHARACTER_TYPES[player.character || "archer"]?.label || "アーチャー";
+    const className = CHARACTER_TYPES[player.character || "archer"]?.label || "繧｢繝ｼ繝√Ε繝ｼ";
     row.innerHTML = `<span>${player.name} / ${className}</span><span>${player.host ? "Host" : "Guest"}</span>`;
     ui.lobbyPlayers.appendChild(row);
   }
@@ -2318,8 +2350,8 @@ function handleClientData(conn, data) {
     conn.playerId = data.id;
     net.clients.set(data.id, conn);
     upsertLobbyPlayer({ id: data.id, name: data.name || "Guest", character: data.character || "archer", host: false });
-    showToast(`${data.name || "Guest"}が入室しました`);
-    broadcast({ type: "toast", text: `${data.name || "Guest"}が入室しました` });
+    showToast(`${data.name || "Guest"}縺悟・螳､縺励∪縺励◆`);
+    broadcast({ type: "toast", text: `${data.name || "Guest"}縺悟・螳､縺励∪縺励◆` });
     if (net.phase === "playing" && state?.running) {
       addPlayerToMatch(data.id, data.name || "Guest", data.character || "archer");
       conn.send({ type: "start", players: state.players.map((p) => ({ id: p.id, name: p.name, character: p.character })) });
@@ -2411,16 +2443,16 @@ function handleHostData(data) {
     sfx(data.won ? "victory" : "gameover");
     ui.skillText.closest(".skill-hud")?.classList.add("hidden");
     ui.endTitle.textContent = data.won ? "Clear!" : "Game Over";
-    ui.endText.textContent = `${formatTime(data.elapsed)} 生存 / ${data.kills}体撃破`;
-    ui.restartButton.textContent = "同じメンバーでもう一度";
+    ui.endText.textContent = `${formatTime(data.elapsed)} 逕溷ｭ・/ ${data.kills}菴捺茶遐ｴ`;
+    ui.restartButton.textContent = "蜷後§繝｡繝ｳ繝舌・縺ｧ繧ゅ≧荳蠎ｦ";
     ui.disbandButton.classList.remove("hidden");
     ui.gameOver.classList.remove("hidden");
   }
   if (data.type === "gameOver") {
-    ui.restartButton.textContent = "もう一度に投票";
-    ui.voteText.textContent = `再戦投票: 0/${data.total || "?"}`;
+    ui.restartButton.textContent = "繧ゅ≧荳蠎ｦ縺ｫ謚慕･ｨ";
+    ui.voteText.textContent = `蜀肴姶謚慕･ｨ: 0/${data.total || "?"}`;
   }
-  if (data.type === "voteStatus") ui.voteText.textContent = `再戦投票: ${data.count}/${data.total}`;
+  if (data.type === "voteStatus") ui.voteText.textContent = `蜀肴姶謚慕･ｨ: ${data.count}/${data.total}`;
   if (data.type === "disband") leaveRoom();
 }
 
@@ -2466,8 +2498,9 @@ function sendHostSnapshot(force = false) {
       character: p.character,
       level: p.level, xp: p.xp, xpNext: p.xpNext, dead: p.dead, reviveAt: p.reviveAt,
       invincibleUntil: p.invincibleUntil, hitFlash: p.hitFlash, input: p.input,
-      angle: Math.atan2((p.input?.aimX ?? p.x) - p.x, (p.input?.aimZ ?? p.z - 1) - p.z),
+      angle: isSaberSpinning(p) ? (p.spinSlashAngle || 0) + state.elapsed * 18 : Math.atan2((p.input?.aimX ?? p.x) - p.x, (p.input?.aimZ ?? p.z - 1) - p.z),
       skillCharge: p.skillCharge, skillCooldown: p.skillCooldown,
+      spinSlashUntil: p.spinSlashUntil, spinSlashAngle: p.spinSlashAngle,
       arrows: p.arrows, backShots: p.backShots, damage: p.damage, pierce: p.pierce,
       baseFireRate: p.baseFireRate, attackSpeedBonus: p.attackSpeedBonus, fireRate: p.fireRate,
       magicSplash: p.magicSplash, magicRadius: p.magicRadius, chainExplosion: p.chainExplosion, thunderCircle: p.thunderCircle,
@@ -2499,7 +2532,7 @@ function syncPlayers(players) {
       setPlayerDeadVisual(existingPlayer, Boolean(p.dead));
       existingPlayer.mesh.position.set(p.x, 0, p.z);
       if (typeof p.angle === "number") existingPlayer.mesh.rotation.y = p.angle;
-      animateHuman(existingPlayer, Math.hypot(p.input?.dx || 0, p.input?.dz || 0) > 0.01, 0.033);
+      animateHuman(existingPlayer, isSaberSpinning(existingPlayer) || Math.hypot(p.input?.dx || 0, p.input?.dz || 0) > 0.01, 0.033);
       setPlayerFlash(existingPlayer.mesh, ((p.hitFlash || 0) > 0 || state.elapsed < (p.invincibleUntil || 0)) && Math.sin(state.elapsed * 38) > 0);
       continue;
     }
@@ -2514,7 +2547,7 @@ function syncPlayers(players) {
     setPlayerDeadVisual(pseudo, Boolean(p.dead));
     mesh.position.set(p.x, 0, p.z);
     if (typeof p.angle === "number") mesh.rotation.y = p.angle;
-    animateHumanMesh(mesh, Math.hypot(p.input?.dx || 0, p.input?.dz || 0) > 0.01, 0.033);
+    animateHumanMesh(mesh, isSaberSpinning(p) || Math.hypot(p.input?.dx || 0, p.input?.dz || 0) > 0.01, 0.033);
     setPlayerFlash(mesh, ((p.hitFlash || 0) > 0 || state.elapsed < (p.invincibleUntil || 0)) && Math.sin(state.elapsed * 38) > 0);
   }
 }
@@ -2649,7 +2682,7 @@ function nearestGemPlayer(gem) {
 }
 
 function playerNameById(id) {
-  return state.players.find((p) => p.id === id)?.name || net.lobbyPlayers.find((p) => p.id === id)?.name || "他のプレイヤー";
+  return state.players.find((p) => p.id === id)?.name || net.lobbyPlayers.find((p) => p.id === id)?.name || "莉悶・繝励Ξ繧､繝､繝ｼ";
 }
 
 function playerName() {
@@ -2709,10 +2742,10 @@ function endGame(won) {
   ui.skillText.closest(".skill-hud")?.classList.add("hidden");
   net.restartVotes = new Set();
   ui.endTitle.textContent = won ? "Clear!" : "Game Over";
-  ui.endText.textContent = `${formatTime(state.elapsed)} 生存 / ${state.kills}体撃破 / レベル${localPlayer()?.level || 1}`;
-  ui.restartButton.textContent = net.mode === "solo" ? "もう一度" : "もう一度に投票";
+  ui.endText.textContent = `${formatTime(state.elapsed)} 逕溷ｭ・/ ${state.kills}菴捺茶遐ｴ / 繝ｬ繝吶Ν${localPlayer()?.level || 1}`;
+  ui.restartButton.textContent = net.mode === "solo" ? "繧ゅ≧荳蠎ｦ" : "繧ゅ≧荳蠎ｦ縺ｫ謚慕･ｨ";
   ui.disbandButton.textContent = net.mode === "solo" ? "タイトルに戻る" : "解散する";
-  ui.voteText.textContent = net.mode === "solo" ? "" : `再戦投票: 0/${state.players.length}`;
+  ui.voteText.textContent = net.mode === "solo" ? "" : `蜀肴姶謚慕･ｨ: 0/${state.players.length}`;
   ui.disbandButton.classList.remove("hidden");
   ui.gameOver.classList.remove("hidden");
   if (net.mode === "host") broadcast({ type: "gameOver", won, elapsed: state.elapsed, kills: state.kills, total: state.players.length });
@@ -2731,7 +2764,7 @@ function voteRestart(playerId = localPlayerId) {
   net.restartVotes.add(playerId);
   const count = net.restartVotes.size;
   const total = state.players.length;
-  ui.voteText.textContent = `再戦投票: ${count}/${total}`;
+  ui.voteText.textContent = `蜀肴姶謚慕･ｨ: ${count}/${total}`;
   broadcast({ type: "voteStatus", count, total });
   if (count >= total) {
     ui.restartButton.disabled = false;
@@ -2749,7 +2782,7 @@ function showToast(text) {
 function updateOnlineBadge() {
   if (!ui.onlineBadge) return;
   const count = net.mode === "solo" ? 1 : Math.max(1, net.lobbyPlayers.length || state.players?.length || 1);
-  ui.onlineBadge.textContent = `オンライン人数: ${count}`;
+  ui.onlineBadge.textContent = `繧ｪ繝ｳ繝ｩ繧､繝ｳ莠ｺ謨ｰ: ${count}`;
 }
 
 function addPlayerToMatch(id, name, character = "archer") {
@@ -2774,8 +2807,8 @@ function removePlayerEverywhere(id) {
     hideStatus();
     broadcast({ type: "levelDone", playerId: id });
   }
-  showToast(`${leaving}が退室しました`);
-  broadcast({ type: "toast", text: `${leaving}が退室しました` });
+  showToast(`${leaving}縺碁螳､縺励∪縺励◆`);
+  broadcast({ type: "toast", text: `${leaving}縺碁螳､縺励∪縺励◆` });
   updateOnlineBadge();
   sendHostSnapshot();
 }
@@ -2828,7 +2861,7 @@ function joinRoom() {
     net.conn.on("close", () => showLobby("ホストとの接続が切れました。"));
   });
   net.peer.on("error", (error) => {
-    ui.roomStatus.textContent = `参加エラー: ${error.type || error.message}`;
+    ui.roomStatus.textContent = `蜿ょ刈繧ｨ繝ｩ繝ｼ: ${error.type || error.message}`;
     if (room?.code) removeRememberedRoom(room.code);
   });
 }
@@ -2872,7 +2905,7 @@ function renderRoomList() {
   const rooms = loadRooms();
   ui.roomList.innerHTML = "";
   if (!rooms.length) {
-    ui.roomList.innerHTML = `<p class="small">表示できる部屋がありません。</p>`;
+    ui.roomList.innerHTML = `<p class="small">陦ｨ遉ｺ縺ｧ縺阪ｋ驛ｨ螻九′縺ゅｊ縺ｾ縺帙ｓ縲・/p>`;
     return;
   }
   for (const room of rooms) {
@@ -2960,12 +2993,12 @@ function upgradeDescForPlayer(up, player) {
   if (up.name === "ダメージ +25%") {
     if (character === "witch") return "ファイアと魔力爆発の威力が増える。硬い敵にも通しやすくなる。";
     if (character === "saber") return "薙ぎ払いの威力が増える。近づいた敵をまとめて倒しやすくなる。";
-    return "全ての矢の威力が増える。硬い敵に効く。";
+    return "矢の威力が増える。硬い敵に効きやすい。";
   }
   if (up.name === "攻撃速度 +18%") {
     if (character === "witch") return "ファイアを放つ間隔が短くなる。通常攻撃の回転率が上がる。";
     if (character === "saber") return "薙ぎ払いを出せる間隔が短くなる。隙を減らしやすい。";
-    return "矢を撃つ間隔が短くなる。迷ったらこれ。";
+    return "矢を撃つ間隔が短くなる。";
   }
   return up.desc;
 }
