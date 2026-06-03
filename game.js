@@ -182,10 +182,10 @@ const CHARACTER_CODEX = [
   {
     id: "saber",
     role: "近距離の前方制圧キャラクター",
-    weapon: "2秒ごとにマウス方向へ100度の剣閃で薙ぎ払います。",
+    weapon: "2秒ごとにマウス方向へ90度の剣閃で薙ぎ払います。",
     passive: "近い敵をまとめて斬れる代わりに、通常攻撃の間隔は長めです。",
     skill: "回転突進斬り: スペースキーで2秒間回転斬りしながらマウス方向へ突進します。",
-    upgrades: ["剣閃範囲 +20度", "剣の間合い +15%", "二連斬り"],
+    upgrades: ["剣閃範囲 +15度", "踏み込み斬り", "二連斬り"],
   },
 ];
 
@@ -226,8 +226,8 @@ upgrades.push(
   { name: "ファイア +1", desc: "ウィッチのファイアが同時に1つ増える。散らして撃てるので群れに強い。", classes: ["witch"], apply: (p) => (p.magicBolts += 1) },
   { name: "魔法陣＜雷＞", desc: "自分の周辺に雷の魔法陣を設置する。取得するたび範囲と設置時間が伸びる。", classes: ["witch"], apply: (p) => (p.thunderCircle += 1) },
   { name: "ファイア巨大化", desc: "ファイアが大きくなり、魔力爆発の範囲と威力が伸びる。さらに連鎖爆発が+1される。", classes: ["witch"], apply: (p) => { p.magicRadius += 0.12; p.damage *= 1.08; p.magicSplash += 1; p.chainExplosion += 1; } },
-  { name: "剣閃範囲 +20度", desc: "セイバーの薙ぎ払い角度が広くなる。", classes: ["saber"], apply: (p) => (p.slashArc += THREE.MathUtils.degToRad(20)) },
-  { name: "剣の間合い +15%", desc: "セイバーの薙ぎ払いが遠くまで届く。", classes: ["saber"], apply: (p) => (p.slashRange *= 1.15) },
+  { name: "剣閃範囲 +15度", desc: "薙ぎ払いの横範囲が15度広がり、奥への届く距離も15%伸びる。", classes: ["saber"], apply: (p) => { p.slashArc += THREE.MathUtils.degToRad(15); p.slashRange *= 1.15; } },
+  { name: "踏み込み斬り", desc: "通常の薙ぎ払い時にマウス方向へ短く踏み込む。重ねるほど踏み込み距離が伸びる。", classes: ["saber"], apply: (p) => (p.saberLunge += 1) },
   { name: "二連斬り", desc: "薙ぎ払いの直後に、少しずらした追加の斬撃を放つ。", classes: ["saber"], apply: (p) => (p.doubleSlash += 1) }
 );
 
@@ -363,8 +363,9 @@ function makePlayer(id, name, x, z, local, character = "archer") {
     chainExplosion: 0,
     thunderCircle: 0,
     thunderTimer: 2.8,
-    slashArc: THREE.MathUtils.degToRad(100),
+    slashArc: THREE.MathUtils.degToRad(90),
     slashRange: 5.2,
+    saberLunge: 0,
     doubleSlash: 0,
     spinSlashUntil: 0,
     spinSlashAngle: 0,
@@ -1176,6 +1177,7 @@ function shootMagic(player) {
 
 function swingSaber(player) {
   const base = Math.atan2(player.input.aimX - player.x, player.input.aimZ - player.z);
+  applySaberLunge(player, base);
   const swings = Math.max(1, 1 + (player.doubleSlash || 0));
   for (let i = 0; i < swings; i += 1) {
     const angle = base + (i === 0 ? 0 : (i % 2 === 0 ? -0.28 : 0.28));
@@ -1183,9 +1185,18 @@ function swingSaber(player) {
   }
 }
 
+function applySaberLunge(player, angle) {
+  if ((player.saberLunge || 0) <= 0) return;
+  const step = Math.min(1.7, 0.55 + player.saberLunge * 0.25);
+  player.x = clamp(player.x + Math.sin(angle) * step, -WORLD.half + 1.2, WORLD.half - 1.2);
+  player.z = clamp(player.z + Math.cos(angle) * step, -WORLD.half + 1.2, WORLD.half - 1.2);
+  player.mesh.position.set(player.x, 0, player.z);
+  addRing(player.x, player.z, 1.1 + player.saberLunge * 0.08, 0x91c7ff);
+}
+
 function applySaberSlash(player, angle) {
   const range = player.slashRange || 5.2;
-  const arc = player.slashArc || THREE.MathUtils.degToRad(100);
+  const arc = player.slashArc || THREE.MathUtils.degToRad(90);
   let hit = false;
   for (const enemy of state.enemies) {
     const d = distance(player, enemy);
@@ -2571,6 +2582,7 @@ function sendHostSnapshot(force = false) {
       skillCharge: p.skillCharge, skillCooldown: p.skillCooldown,
       spinSlashUntil: p.spinSlashUntil, spinSlashAngle: p.spinSlashAngle,
       arrows: p.arrows, backShots: p.backShots, damage: p.damage, pierce: p.pierce,
+      saberLunge: p.saberLunge,
       baseFireRate: p.baseFireRate, attackSpeedBonus: p.attackSpeedBonus, fireRate: p.fireRate,
       magicSplash: p.magicSplash, magicRadius: p.magicRadius, chainExplosion: p.chainExplosion, thunderCircle: p.thunderCircle,
       rerolls: p.rerolls, upgrades: p.upgrades,
