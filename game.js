@@ -371,6 +371,7 @@ function makePlayer(id, name, x, z, local, character = "archer") {
 function makePlayerMesh(name, local, character = "archer") {
   const group = new THREE.Group();
   const type = CHARACTER_TYPES[character] ? character : "archer";
+  const useExternalModel = Boolean(CHARACTER_MODELS[type]);
   const bodyMat = new THREE.MeshStandardMaterial({
     color: local ? CHARACTER_TYPES[type].color : CHARACTER_TYPES[type].remoteColor,
     roughness: type === "saber" ? 0.38 : 0.55,
@@ -424,6 +425,8 @@ function makePlayerMesh(name, local, character = "archer") {
   };
   group.userData.fallbackCore = fallbackCore;
   group.userData.characterProps = propMeshes;
+  group.userData.externalModelPending = useExternalModel;
+  if (useExternalModel) setFallbackModelVisible(group, false);
   attachCharacterModel(group, type);
   return group;
 }
@@ -472,10 +475,8 @@ function attachCharacterModel(group, character) {
     group.add(model);
     group.userData.modelRoot = model;
     group.userData.keepModelProps = config.keepProps;
-    for (const mesh of group.userData.fallbackCore || []) mesh.visible = false;
-    if (!config.keepProps) {
-      for (const mesh of group.userData.characterProps || []) mesh.visible = false;
-    }
+    group.userData.externalModelPending = false;
+    setFallbackModelVisible(group, false);
     setPlayerDeadVisual({ mesh: group }, Boolean(group.userData.parts?.coffin?.visible));
     const clips = removeRootMotionFromClips(gltf.animations || [], gltf.parser?.json);
     const mixer = new THREE.AnimationMixer(model);
@@ -485,7 +486,16 @@ function attachCharacterModel(group, character) {
     playModelAction(model, "Idle");
   }).catch((error) => {
     console.warn(`Failed to load character model: ${config.path}`, error);
+    group.userData.externalModelPending = false;
+    setFallbackModelVisible(group, true);
+    setPlayerDeadVisual({ mesh: group }, Boolean(group.userData.parts?.coffin?.visible));
   });
+}
+
+function setFallbackModelVisible(group, visible) {
+  for (const mesh of group.userData.fallbackCore || []) mesh.visible = visible;
+  const keepProps = !group.userData.modelRoot || group.userData.keepModelProps;
+  for (const mesh of group.userData.characterProps || []) mesh.visible = visible && keepProps;
 }
 
 function loadCharacterGltf(path) {
@@ -838,15 +848,16 @@ function setPlayerDeadVisual(player, dead) {
   const parts = player.mesh.userData.parts;
   if (!parts) return;
   const modelRoot = player.mesh.userData.modelRoot;
+  const modelPending = player.mesh.userData.externalModelPending;
   const fallbackCore = player.mesh.userData.fallbackCore || [];
   const characterProps = player.mesh.userData.characterProps || [];
   for (const child of player.mesh.children) {
     if (child === parts.coffin || child.type === "Sprite") continue;
-    if (modelRoot && fallbackCore.includes(child)) {
+    if ((modelRoot || modelPending) && fallbackCore.includes(child)) {
       child.visible = false;
       continue;
     }
-    if (modelRoot && !player.mesh.userData.keepModelProps && characterProps.includes(child)) {
+    if ((modelRoot || modelPending) && !player.mesh.userData.keepModelProps && characterProps.includes(child)) {
       child.visible = false;
       continue;
     }
