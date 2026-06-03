@@ -460,7 +460,7 @@ function makePlayerMesh(name, local, character = "archer") {
 
 function addCharacterProps(group, character, bodyMat) {
   if (character === "witch") {
-    const staff = makeFbxMesh("staff", makeOldStaffMesh);
+    const staff = makeFbxMesh("staff");
     group.add(staff);
     return [staff];
   }
