@@ -525,6 +525,7 @@ function buildSimpleGltfScene(asset) {
   const root = new THREE.Group();
   const sceneDef = gltf.scenes?.[gltf.scene || 0] || gltf.scenes?.[0];
   for (const nodeIndex of sceneDef?.nodes || []) root.add(nodes[nodeIndex]);
+  root.updateMatrixWorld(true);
 
   for (const item of skinnedMeshes) {
     const skin = gltf.skins?.[item.skinIndex];
@@ -537,6 +538,7 @@ function buildSimpleGltfScene(asset) {
       if (inverseData) matrix.fromArray(inverseData.array, i * 16);
       inverses.push(matrix);
     }
+    item.mesh.bindMode = THREE.DetachedBindMode;
     item.mesh.bind(new THREE.Skeleton(bones, inverses));
   }
 
