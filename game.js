@@ -197,7 +197,7 @@ const materials = {
 
 const upgrades = [
   { name: "矢の本数 +1", desc: "一度に放つ矢が増える。近距離の制圧力が上がる。", apply: (p) => (p.arrows += 1) },
-  { name: "攻撃速度 +18%", desc: "矢を撃つ間隔が短くなる。迷ったらこれ。", apply: (p) => (p.fireRate *= 0.82) },
+  { name: "攻撃速度 +18%", desc: "矢を撃つ間隔が短くなる。迷ったらこれ。", apply: (p) => addAttackSpeed(p, 0.18) },
   { name: "ダメージ +25%", desc: "全ての矢の威力が増える。硬い敵に効く。", apply: (p) => (p.damage *= 1.25) },
   { name: "貫通 +1", desc: "矢が追加で敵を貫く。群れに強い。", apply: (p) => (p.pierce += 1) },
   { name: "移動速度 +15%", desc: "包囲されにくくなり、経験値回収も楽になる。", apply: (p) => (p.speed *= 1.15) },
@@ -324,7 +324,9 @@ function makePlayer(id, name, x, z, local, character = "archer") {
     speed: 9.4,
     damage: 16,
     arrows: 1,
-    fireRate: 0.45,
+    baseFireRate: 0.6,
+    attackSpeedBonus: 0,
+    fireRate: 0.6,
     fireTimer: 0,
     skillCharge: 0,
     skillCooldown: 30,
@@ -355,17 +357,29 @@ function makePlayer(id, name, x, z, local, character = "archer") {
   };
   if (type === "witch") {
     player.damage = 14;
-    player.fireRate = 0.8;
+    player.baseFireRate = 0.8;
     player.speed = 9.0;
     player.magicSplash = 1;
   } else if (type === "saber") {
     player.damage = 34;
-    player.fireRate = 2;
+    player.baseFireRate = 2;
     player.speed = 9.8;
     player.arrows = 0;
     player.pierce = 0;
   }
+  updateFireRate(player);
   return player;
+}
+
+function addAttackSpeed(player, amount) {
+  player.attackSpeedBonus = (player.attackSpeedBonus || 0) + amount;
+  updateFireRate(player);
+}
+
+function updateFireRate(player) {
+  const base = player.baseFireRate || player.fireRate || 0.6;
+  player.baseFireRate = base;
+  player.fireRate = base / (1 + (player.attackSpeedBonus || 0));
 }
 
 function makePlayerMesh(name, local, character = "archer") {
@@ -2313,6 +2327,7 @@ function sendHostSnapshot(force = false) {
       angle: Math.atan2((p.input?.aimX ?? p.x) - p.x, (p.input?.aimZ ?? p.z - 1) - p.z),
       skillCharge: p.skillCharge, skillCooldown: p.skillCooldown,
       arrows: p.arrows, backShots: p.backShots, damage: p.damage, pierce: p.pierce,
+      baseFireRate: p.baseFireRate, attackSpeedBonus: p.attackSpeedBonus, fireRate: p.fireRate,
       magicSplash: p.magicSplash, magicRadius: p.magicRadius, chainExplosion: p.chainExplosion, thunderCircle: p.thunderCircle,
       rerolls: p.rerolls, upgrades: p.upgrades,
     })),
