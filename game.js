@@ -458,8 +458,8 @@ function addCharacterProps(group, character, bodyMat) {
 function attachCharacterModel(group, character) {
   const config = CHARACTER_MODELS[character];
   if (!config) return;
-  loadSimpleGltf(config.path).then((template) => {
-    const model = cloneModelInstance(template);
+  loadSimpleGltf(config.path).then((asset) => {
+    const model = buildSimpleGltfScene(asset);
     model.name = "modelRoot";
     model.scale.setScalar(config.scale || 1);
     model.position.y = 0;
@@ -476,6 +476,7 @@ function attachCharacterModel(group, character) {
       for (const mesh of group.userData.characterProps || []) mesh.visible = false;
     }
     setPlayerDeadVisual({ mesh: group }, Boolean(group.userData.parts?.coffin?.visible));
+    playModelAction(model, "Idle");
   }).catch((error) => {
     console.warn(`Failed to load character model: ${config.path}`, error);
   });
@@ -486,34 +487,119 @@ async function loadSimpleGltf(path) {
     gltfModelCache.set(path, fetch(path).then((response) => {
       if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
       return response.json();
-    }).then((gltf) => buildSimpleGltfScene(gltf)));
+    }).then((gltf) => ({
+      gltf,
+      buffers: (gltf.buffers || []).map((buffer) => decodeGltfBuffer(buffer.uri)),
+    })));
   }
   return gltfModelCache.get(path);
 }
 
-function buildSimpleGltfScene(gltf) {
-  const buffers = (gltf.buffers || []).map((buffer) => decodeGltfBuffer(buffer.uri));
+function buildSimpleGltfScene(asset) {
+  const { gltf, buffers } = asset;
   const materialsList = (gltf.materials || []).map(makeGltfMaterial);
-  const root = new THREE.Group();
-  for (const meshDef of gltf.meshes || []) {
+  const jointSet = new Set((gltf.skins || []).flatMap((skin) => skin.joints || []));
+  const nodes = (gltf.nodes || []).map((nodeDef, index) => {
+    const node = jointSet.has(index) ? new THREE.Bone() : new THREE.Object3D();
+    node.name = gltfNodeName(gltf, index);
+    applyGltfNodeTransform(node, nodeDef);
+    return node;
+  });
+
+  (gltf.nodes || []).forEach((nodeDef, index) => {
+    for (const childIndex of nodeDef.children || []) nodes[index].add(nodes[childIndex]);
+  });
+
+  const skinnedMeshes = [];
+  (gltf.nodes || []).forEach((nodeDef, nodeIndex) => {
+    if (nodeDef.mesh === undefined) return;
+    const meshDef = gltf.meshes[nodeDef.mesh];
     for (const primitive of meshDef.primitives || []) {
-      if ((primitive.mode ?? 4) !== 4) continue;
-      const geometry = new THREE.BufferGeometry();
-      const position = readGltfAccessor(gltf, buffers, primitive.attributes?.POSITION);
-      if (!position) continue;
-      geometry.setAttribute("position", new THREE.BufferAttribute(position.array, position.itemSize));
-      const normal = readGltfAccessor(gltf, buffers, primitive.attributes?.NORMAL);
-      if (normal) geometry.setAttribute("normal", new THREE.BufferAttribute(normal.array, normal.itemSize));
-      const index = readGltfAccessor(gltf, buffers, primitive.indices);
-      if (index) geometry.setIndex(new THREE.BufferAttribute(index.array, 1));
-      geometry.computeBoundingSphere();
-      if (!normal) geometry.computeVertexNormals();
-      const material = materialsList[primitive.material] || new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.55 });
-      root.add(new THREE.Mesh(geometry, material));
+      const mesh = buildGltfPrimitive(gltf, buffers, primitive, materialsList, nodeDef.skin !== undefined);
+      if (!mesh) continue;
+      nodes[nodeIndex].add(mesh);
+      if (mesh.isSkinnedMesh) skinnedMeshes.push({ mesh, skinIndex: nodeDef.skin });
     }
+  });
+
+  const root = new THREE.Group();
+  const sceneDef = gltf.scenes?.[gltf.scene || 0] || gltf.scenes?.[0];
+  for (const nodeIndex of sceneDef?.nodes || []) root.add(nodes[nodeIndex]);
+
+  for (const item of skinnedMeshes) {
+    const skin = gltf.skins?.[item.skinIndex];
+    if (!skin) continue;
+    const bones = (skin.joints || []).map((jointIndex) => nodes[jointIndex]);
+    const inverseData = readGltfAccessor(gltf, buffers, skin.inverseBindMatrices);
+    const inverses = [];
+    for (let i = 0; i < bones.length; i += 1) {
+      const matrix = new THREE.Matrix4();
+      if (inverseData) matrix.fromArray(inverseData.array, i * 16);
+      inverses.push(matrix);
+    }
+    item.mesh.bind(new THREE.Skeleton(bones, inverses));
   }
-  root.rotation.y = Math.PI;
+
+  const mixer = new THREE.AnimationMixer(root);
+  const clips = buildGltfAnimationClips(gltf, buffers);
+  const actions = new Map(clips.map((clip) => [clip.name, mixer.clipAction(clip)]));
+  root.userData.mixer = mixer;
+  root.userData.actions = actions;
+  root.userData.activeAction = null;
   return root;
+}
+
+function buildGltfPrimitive(gltf, buffers, primitive, materialsList, skinned) {
+  if ((primitive.mode ?? 4) !== 4) return null;
+  const geometry = new THREE.BufferGeometry();
+  const position = readGltfAccessor(gltf, buffers, primitive.attributes?.POSITION);
+  if (!position) return null;
+  geometry.setAttribute("position", new THREE.BufferAttribute(position.array, position.itemSize));
+  const normal = readGltfAccessor(gltf, buffers, primitive.attributes?.NORMAL);
+  if (normal) geometry.setAttribute("normal", new THREE.BufferAttribute(normal.array, normal.itemSize));
+  const joints = readGltfAccessor(gltf, buffers, primitive.attributes?.JOINTS_0);
+  const weights = readGltfAccessor(gltf, buffers, primitive.attributes?.WEIGHTS_0);
+  if (skinned && joints && weights) {
+    geometry.setAttribute("skinIndex", new THREE.BufferAttribute(joints.array, joints.itemSize));
+    geometry.setAttribute("skinWeight", new THREE.BufferAttribute(weights.array, weights.itemSize));
+  }
+  const index = readGltfAccessor(gltf, buffers, primitive.indices);
+  if (index) geometry.setIndex(new THREE.BufferAttribute(index.array, 1));
+  geometry.computeBoundingSphere();
+  if (!normal) geometry.computeVertexNormals();
+  const material = materialsList[primitive.material] || new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.55 });
+  return skinned && joints && weights ? new THREE.SkinnedMesh(geometry, material) : new THREE.Mesh(geometry, material);
+}
+
+function buildGltfAnimationClips(gltf, buffers) {
+  return (gltf.animations || []).map((animation) => {
+    const tracks = [];
+    for (const channel of animation.channels || []) {
+      const sampler = animation.samplers[channel.sampler];
+      const input = readGltfAccessor(gltf, buffers, sampler.input);
+      const output = readGltfAccessor(gltf, buffers, sampler.output);
+      if (!input || !output) continue;
+      const nodeName = gltfNodeName(gltf, channel.target.node);
+      if (channel.target.path === "translation") tracks.push(new THREE.VectorKeyframeTrack(`${nodeName}.position`, input.array, output.array));
+      if (channel.target.path === "rotation") tracks.push(new THREE.QuaternionKeyframeTrack(`${nodeName}.quaternion`, input.array, output.array));
+      if (channel.target.path === "scale") tracks.push(new THREE.VectorKeyframeTrack(`${nodeName}.scale`, input.array, output.array));
+    }
+    return new THREE.AnimationClip(animation.name || "Action", -1, tracks);
+  });
+}
+
+function gltfNodeName(gltf, index) {
+  return `${(gltf.nodes[index]?.name || `Node${index}`).replace(/[^A-Za-z0-9_]/g, "_")}_${index}`;
+}
+
+function applyGltfNodeTransform(node, nodeDef) {
+  if (nodeDef.translation) node.position.fromArray(nodeDef.translation);
+  if (nodeDef.rotation) node.quaternion.fromArray(nodeDef.rotation);
+  if (nodeDef.scale) node.scale.fromArray(nodeDef.scale);
+  if (nodeDef.matrix) {
+    const matrix = new THREE.Matrix4().fromArray(nodeDef.matrix);
+    matrix.decompose(node.position, node.quaternion, node.scale);
+  }
 }
 
 function decodeGltfBuffer(uri) {
@@ -577,16 +663,6 @@ function makeGltfMaterial(materialDef = {}) {
     side: THREE.DoubleSide,
   });
   return material;
-}
-
-function cloneModelInstance(template) {
-  const model = template.clone(true);
-  model.traverse((child) => {
-    if (!child.isMesh) return;
-    if (Array.isArray(child.material)) child.material = child.material.map((material) => material.clone());
-    else child.material = child.material.clone();
-  });
-  return model;
 }
 
 function makeNameLabel(name) {
@@ -775,12 +851,27 @@ function animateHumanMesh(mesh, moving, dt) {
   const parts = mesh.userData.parts;
   if (!parts) return;
   mesh.userData.walkTime = (mesh.userData.walkTime || 0) + (moving ? dt * 10 : dt * 3);
+  if (mesh.userData.modelRoot?.userData.mixer) {
+    playModelAction(mesh.userData.modelRoot, moving ? "Walk" : "Idle");
+    mesh.userData.modelRoot.userData.mixer.update(dt);
+  }
   const swing = moving ? Math.sin(mesh.userData.walkTime) * 0.55 : Math.sin(mesh.userData.walkTime) * 0.06;
   parts.leftArm.rotation.x = swing;
   parts.rightArm.rotation.x = -swing;
   parts.leftLeg.rotation.x = -swing;
   parts.rightLeg.rotation.x = swing;
   mesh.position.y = moving ? Math.abs(Math.sin(mesh.userData.walkTime * 2)) * 0.05 : 0;
+}
+
+function playModelAction(model, name) {
+  const actions = model.userData.actions;
+  if (!actions) return;
+  const action = actions.get(name) || actions.get("Idle");
+  if (!action || model.userData.activeAction === action) return;
+  action.enabled = true;
+  action.reset().play();
+  if (model.userData.activeAction) model.userData.activeAction.crossFadeTo(action, 0.16, false);
+  model.userData.activeAction = action;
 }
 
 function oldAnimateHumanUnused(player, moving, dt) {
@@ -1823,6 +1914,10 @@ function animateCodex() {
   if (codexViewer.model) {
     codexViewer.model.rotation.y = codexViewer.rotation;
     codexViewer.model.position.y = -0.08 + Math.sin(performance.now() * 0.002) * 0.025;
+    if (codexViewer.model.userData.modelRoot?.userData.mixer) {
+      playModelAction(codexViewer.model.userData.modelRoot, "Idle");
+      codexViewer.model.userData.modelRoot.userData.mixer.update(0.016);
+    }
   }
   codexViewer.renderer.render(codexViewer.scene, codexViewer.camera);
   codexViewer.raf = requestAnimationFrame(animateCodex);
