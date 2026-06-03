@@ -1,5 +1,6 @@
 import * as THREE from "./three.module.js";
 import { GLTFLoader } from "./GLTFLoader.js";
+import { FBXLoader } from "./FBXLoader.js";
 
 const canvas = document.getElementById("game");
 const ui = {
@@ -132,6 +133,7 @@ const AUDIO_FILES = {
   start: "gamestartsound.mp3",
   gemA: "keikenti.mp3",
   gemB: "keikenti1.mp3",
+  heal: "kaihuku.mp3",
   thunderA: "kaminari1.mp3",
   thunderB: "kaminari2.mp3",
 };
@@ -144,11 +146,21 @@ const CHARACTER_TYPES = {
 
 const CHARACTER_MODELS = {
   archer: { path: "./model_glTF/Elf.gltf", scale: 0.72, keepProps: true },
-  witch: { path: "./model_glTF/Witch.gltf", scale: 0.68, keepProps: false },
+  witch: { path: "./model_glTF/Witch.gltf", scale: 0.68, keepProps: true },
   saber: { path: "./model_glTF/Knight_Male.gltf", scale: 0.78, keepProps: true },
 };
 
 const gltfLoader = new GLTFLoader();
+const fbxLoader = new FBXLoader();
+const fbxModelCache = new Map();
+
+const FBX_ASSETS = {
+  bow: { path: "./model_FBX/Bow_Wooden.fbx", size: 1.05, position: [-0.66, 1.36, 0.04], rotation: [0, 0, -0.65], scale: [1, 1, 1] },
+  arrow: { path: "./model_FBX/Arrow.fbx", size: 1.25, position: [0, 0, 0], rotation: [0, Math.PI, 0], scale: [1, 1, 1] },
+  staff: { path: "./model_FBX/WoodenStaff.fbx", size: 1.45, position: [0.62, 1.35, -0.08], rotation: [0, 0, -0.22], scale: [1, 1, 1] },
+  sword: { path: "./model_FBX/Sword.fbx", size: 1.25, position: [0.74, 1.23, -0.18], rotation: [0, 0, -0.45], scale: [1, 1, 1] },
+  heart: { path: "./model_FBX/Heart.fbx", size: 0.92, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+};
 
 const CHARACTER_CODEX = [
   {
@@ -220,6 +232,7 @@ upgrades.push(
 );
 
 initThree();
+preloadFbxAssets();
 state = newState([{ id: localPlayerId, name: playerName(), character: selectedCharacter() }]);
 render();
 updateUi();
@@ -447,30 +460,49 @@ function makePlayerMesh(name, local, character = "archer") {
 
 function addCharacterProps(group, character, bodyMat) {
   if (character === "witch") {
-    const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.48, 0.58, 0.08, 24), materials.witchHat);
-    brim.position.y = 2.48;
-    const cone = new THREE.Mesh(new THREE.ConeGeometry(0.36, 0.82, 24), materials.witchHat);
-    cone.position.y = 2.9;
-    cone.rotation.z = -0.18;
-    group.add(brim, cone);
-    return [brim, cone];
+    const staff = makeFbxMesh("staff", makeOldStaffMesh);
+    group.add(staff);
+    return [staff];
   }
   if (character === "saber") {
-    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.15, 0.08), materials.saberBlade);
-    blade.name = "saberBlade";
-    blade.position.set(0.7, 1.25, -0.18);
-    blade.rotation.z = -0.45;
-    const guard = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.08, 0.12), bodyMat);
-    guard.position.set(0.52, 0.83, -0.08);
-    guard.rotation.z = -0.45;
-    group.add(blade, guard);
-    return [blade, guard];
+    const sword = makeFbxMesh("sword", () => makeOldSwordMesh(bodyMat));
+    group.add(sword);
+    return [sword];
   }
+  const bow = makeFbxMesh("bow", makeOldBowMesh);
+  group.add(bow);
+  return [bow];
+}
+
+function makeOldBowMesh() {
   const bow = new THREE.Mesh(new THREE.TorusGeometry(0.44, 0.035, 8, 24, Math.PI * 1.35), materials.arrow);
   bow.position.set(-0.62, 1.35, 0.05);
   bow.rotation.set(Math.PI / 2, 0, -0.65);
-  group.add(bow);
-  return [bow];
+  return bow;
+}
+
+function makeOldStaffMesh() {
+  const group = new THREE.Group();
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 1.35, 10), materials.witchHat);
+  shaft.position.set(0.62, 1.34, -0.08);
+  shaft.rotation.z = -0.22;
+  const gem = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 8), materials.magic);
+  gem.position.set(0.78, 1.98, -0.08);
+  group.add(shaft, gem);
+  return group;
+}
+
+function makeOldSwordMesh(bodyMat) {
+  const group = new THREE.Group();
+  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.15, 0.08), materials.saberBlade);
+  blade.name = "saberBlade";
+  blade.position.set(0.7, 1.25, -0.18);
+  blade.rotation.z = -0.45;
+  const guard = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.08, 0.12), bodyMat);
+  guard.position.set(0.52, 0.83, -0.08);
+  guard.rotation.z = -0.45;
+  group.add(blade, guard);
+  return group;
 }
 
 function attachCharacterModel(group, character) {
@@ -524,7 +556,79 @@ function applyCharacterModelStyle(model, character) {
 function setFallbackModelVisible(group, visible) {
   for (const mesh of group.userData.fallbackCore || []) mesh.visible = visible;
   const keepProps = !group.userData.modelRoot || group.userData.keepModelProps;
-  for (const mesh of group.userData.characterProps || []) mesh.visible = visible && keepProps;
+  for (const mesh of group.userData.characterProps || []) mesh.visible = keepProps ? true : visible;
+}
+
+function preloadFbxAssets() {
+  for (const key of Object.keys(FBX_ASSETS)) loadFbxAsset(key).catch(() => {});
+}
+
+function makeFbxMesh(key, fallbackFactory) {
+  const wrapper = new THREE.Group();
+  const fallback = fallbackFactory ? fallbackFactory() : new THREE.Group();
+  const cached = fbxModelCache.get(key);
+  if (cached?.model) {
+    wrapper.add(cloneFbxModel(cached.model, key));
+    return wrapper;
+  }
+  wrapper.add(fallback);
+  loadFbxAsset(key).then((model) => {
+    wrapper.clear();
+    wrapper.add(cloneFbxModel(model, key));
+  }).catch((error) => console.warn(`Failed to load FBX asset: ${key}`, error));
+  return wrapper;
+}
+
+function loadFbxAsset(key) {
+  const asset = FBX_ASSETS[key];
+  if (!asset) return Promise.reject(new Error(`Unknown FBX asset: ${key}`));
+  const cached = fbxModelCache.get(key);
+  if (cached?.promise) return cached.promise;
+  const promise = new Promise((resolve, reject) => {
+    fbxLoader.load(asset.path, (model) => {
+      prepareFbxModel(model, key);
+      fbxModelCache.set(key, { promise, model });
+      resolve(model);
+    }, undefined, reject);
+  });
+  fbxModelCache.set(key, { promise, model: null });
+  return promise;
+}
+
+function prepareFbxModel(model, key) {
+  const asset = FBX_ASSETS[key];
+  const box = new THREE.Box3().setFromObject(model);
+  const size = new THREE.Vector3();
+  const center = new THREE.Vector3();
+  box.getSize(size);
+  box.getCenter(center);
+  model.position.sub(center);
+  const largest = Math.max(size.x, size.y, size.z) || 1;
+  model.scale.multiplyScalar((asset.size || 1) / largest);
+  model.traverse((child) => {
+    if (!child.isMesh) return;
+    child.castShadow = true;
+    child.receiveShadow = true;
+    if (!child.material) return;
+    const mats = Array.isArray(child.material) ? child.material : [child.material];
+    for (const material of mats) {
+      if (material.map) material.map.colorSpace = THREE.SRGBColorSpace;
+      material.needsUpdate = true;
+    }
+  });
+}
+
+function cloneFbxModel(model, key) {
+  const asset = FBX_ASSETS[key] || {};
+  const clone = model.clone(true);
+  clone.traverse((child) => {
+    if (!child.isMesh || !child.material) return;
+    child.material = Array.isArray(child.material) ? child.material.map((mat) => mat.clone()) : child.material.clone();
+  });
+  clone.position.set(...(asset.position || [0, 0, 0]));
+  clone.rotation.set(...(asset.rotation || [0, 0, 0]));
+  clone.scale.multiply(new THREE.Vector3(...(asset.scale || [1, 1, 1])));
+  return clone;
 }
 
 function loadCharacterGltf(path) {
@@ -1611,6 +1715,10 @@ function makeEnemyMesh(enemy) {
 }
 
 function makeArrowMesh() {
+  return makeFbxMesh("arrow", makeOldArrowMesh);
+}
+
+function makeOldArrowMesh() {
   const group = new THREE.Group();
   const body = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 1.25, 8), materials.arrow);
   body.rotation.x = Math.PI / 2;
@@ -1650,6 +1758,10 @@ function makeGemMesh(gem = {}) {
 }
 
 function makeHeartMesh() {
+  return makeFbxMesh("heart", makeOldHeartMesh);
+}
+
+function makeOldHeartMesh() {
   const group = new THREE.Group();
   const left = new THREE.Mesh(new THREE.SphereGeometry(0.28, 16, 10), materials.heart);
   const right = new THREE.Mesh(new THREE.SphereGeometry(0.28, 16, 10), materials.heart);
