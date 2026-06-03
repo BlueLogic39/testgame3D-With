@@ -2349,7 +2349,7 @@ async function createRoom() {
     });
   });
   net.peer.on("error", (error) => {
-    ui.roomStatus.textContent = `驛ｨ螻倶ｽ懈・繧ｨ繝ｩ繝ｼ: ${error.type || error.message}`;
+    ui.roomStatus.textContent = `部屋作成エラー: ${error.type || error.message}`;
   });
 }
 
@@ -2384,7 +2384,7 @@ function oldJoinRoom() {
     });
   });
   net.peer.on("error", (error) => {
-    ui.roomStatus.textContent = `蜿ょ刈繧ｨ繝ｩ繝ｼ: ${error.type || error.message}`;
+    ui.roomStatus.textContent = `参加エラー: ${error.type || error.message}`;
   });
 }
 
@@ -2870,7 +2870,7 @@ function showToast(text) {
 function updateOnlineBadge() {
   if (!ui.onlineBadge) return;
   const count = net.mode === "solo" ? 1 : Math.max(1, net.lobbyPlayers.length || state.players?.length || 1);
-  ui.onlineBadge.textContent = `繧ｪ繝ｳ繝ｩ繧､繝ｳ莠ｺ謨ｰ: ${count}`;
+  ui.onlineBadge.textContent = `現在の人数: ${count}`;
 }
 
 function addPlayerToMatch(id, name, character = "archer") {
@@ -2949,7 +2949,7 @@ function joinRoom() {
     net.conn.on("close", () => showLobby("ホストとの接続が切れました。"));
   });
   net.peer.on("error", (error) => {
-    ui.roomStatus.textContent = `蜿ょ刈繧ｨ繝ｩ繝ｼ: ${error.type || error.message}`;
+    ui.roomStatus.textContent = `参加エラー: ${error.type || error.message}`;
     if (room?.code) removeRememberedRoom(room.code);
   });
 }
@@ -2993,7 +2993,7 @@ function renderRoomList() {
   const rooms = loadRooms();
   ui.roomList.innerHTML = "";
   if (!rooms.length) {
-    ui.roomList.innerHTML = `<p class="small">陦ｨ遉ｺ縺ｧ縺阪ｋ驛ｨ螻九′縺ゅｊ縺ｾ縺帙ｓ縲・/p>`;
+    ui.roomList.innerHTML = `<p class="small">表示できる部屋がありません。</p>`;
     return;
   }
   for (const room of rooms) {
