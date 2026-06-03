@@ -1,4 +1,5 @@
 import * as THREE from "./three.module.js";
+import { GLTFLoader } from "./GLTFLoader.js";
 
 const canvas = document.getElementById("game");
 const ui = {
@@ -147,7 +148,7 @@ const CHARACTER_MODELS = {
   saber: { path: "./model_glTF/Knight_Male.gltf", scale: 0.78, keepProps: true },
 };
 
-const gltfModelCache = new Map();
+const gltfLoader = new GLTFLoader();
 
 const CHARACTER_CODEX = [
   {
@@ -458,8 +459,8 @@ function addCharacterProps(group, character, bodyMat) {
 function attachCharacterModel(group, character) {
   const config = CHARACTER_MODELS[character];
   if (!config) return;
-  loadSimpleGltf(config.path).then((asset) => {
-    const model = buildSimpleGltfScene(asset);
+  loadCharacterGltf(config.path).then((gltf) => {
+    const model = gltf.scene;
     model.name = "modelRoot";
     model.scale.setScalar(config.scale || 1);
     model.position.y = 0;
@@ -476,9 +477,30 @@ function attachCharacterModel(group, character) {
       for (const mesh of group.userData.characterProps || []) mesh.visible = false;
     }
     setPlayerDeadVisual({ mesh: group }, Boolean(group.userData.parts?.coffin?.visible));
+    const clips = removeRootMotionFromClips(gltf.animations || [], gltf.parser?.json);
+    const mixer = new THREE.AnimationMixer(model);
+    model.userData.mixer = mixer;
+    model.userData.actions = new Map(clips.map((clip) => [clip.name, mixer.clipAction(clip)]));
+    model.userData.activeAction = null;
     playModelAction(model, "Idle");
   }).catch((error) => {
     console.warn(`Failed to load character model: ${config.path}`, error);
+  });
+}
+
+function loadCharacterGltf(path) {
+  return new Promise((resolve, reject) => {
+    gltfLoader.load(path, resolve, undefined, reject);
+  });
+}
+
+function removeRootMotionFromClips(clips, json) {
+  const rootJoint = json?.skins?.[0]?.joints?.[0];
+  const rootName = rootJoint !== undefined ? json?.nodes?.[rootJoint]?.name : "";
+  if (!rootName) return clips;
+  return clips.map((clip) => {
+    const tracks = clip.tracks.filter((track) => !(track.name === `${rootName}.position` || track.name.endsWith(`/${rootName}.position`)));
+    return new THREE.AnimationClip(clip.name, clip.duration, tracks);
   });
 }
 
