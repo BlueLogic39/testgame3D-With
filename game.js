@@ -139,9 +139,9 @@ const AUDIO_FILES = {
 };
 
 const CHARACTER_TYPES = {
-  archer: { label: "繧｢繝ｼ繝√Ε繝ｼ", color: 0x57c4a7, remoteColor: 0x5aa7ff },
-  witch: { label: "繧ｦ繧｣繝・メ", color: 0x8b5cf6, remoteColor: 0xb07cff },
-  saber: { label: "繧ｻ繧､繝舌・", color: 0xd9dfe8, remoteColor: 0x91c7ff },
+  archer: { label: "アーチャー", color: 0x57c4a7, remoteColor: 0x5aa7ff },
+  witch: { label: "ウィッチ", color: 0x8b5cf6, remoteColor: 0xb07cff },
+  saber: { label: "セイバー", color: 0xd9dfe8, remoteColor: 0x91c7ff },
 };
 
 const CHARACTER_MODELS = {
@@ -1186,6 +1186,7 @@ function swingSaber(player) {
 function applySaberSlash(player, angle) {
   const range = player.slashRange || 5.2;
   const arc = player.slashArc || THREE.MathUtils.degToRad(100);
+  let hit = false;
   for (const enemy of state.enemies) {
     const d = distance(player, enemy);
     if (d > range + enemy.radius) continue;
@@ -1193,8 +1194,9 @@ function applySaberSlash(player, angle) {
     if (Math.abs(angleDiff(toEnemy, angle)) > arc / 2) continue;
     enemy.hp -= player.damage;
     enemy.lastHitBy = player.id;
+    hit = true;
   }
-  addSlashEffect(player.x, player.z, range, arc, angle, 0xdfe8f3, player.id);
+  addSlashEffect(player.x, player.z, range, arc, angle, hit ? 0xfff1a6 : 0x91c7ff, player.id);
 }
 
 function isSaberSpinning(player) {
@@ -1279,9 +1281,9 @@ function activateSkill(player) {
 }
 
 function skillName(character) {
-  if (character === "witch") return "鬲泌･ｳ縺ｮ螟ｧ辷・匱";
+  if (character === "witch") return "魔女の大爆発";
   if (character === "saber") return "回転突進斬り";
-  return "繧｢繝ｭ繝ｼ繝ｬ繧､繝ｳ";
+  return "アローレイン";
 }
 
 function castArcherSkill(player, baseAngle) {
@@ -1879,12 +1881,16 @@ function addSlashEffect(x, z, radius, arc, angle, color, owner = "", skill = fal
   mesh.position.set(x, 0.18, z);
   mesh.rotation.y = angle;
   scene.add(mesh);
-  state.effects.push({ id: crypto.randomUUID(), kind: "slash", owner, skill, x, z, radius, arc, angle, color, mesh, life: 0.22, start: 0.22 });
+  const life = skill ? 0.18 : 0.34;
+  state.effects.push({ id: crypto.randomUUID(), kind: "slash", owner, skill, x, z, radius, arc, angle, color, mesh, life, start: life });
 }
 
 function makeSlashMesh(effect) {
   const radius = effect.radius || 5.2;
   const arc = effect.arc || THREE.MathUtils.degToRad(100);
+  const color = effect.color || 0xdfe8f3;
+  const group = new THREE.Group();
+
   const shape = new THREE.Shape();
   shape.moveTo(0, 0);
   const steps = 28;
@@ -1893,10 +1899,41 @@ function makeSlashMesh(effect) {
     shape.lineTo(Math.sin(a) * radius, Math.cos(a) * radius);
   }
   shape.lineTo(0, 0);
-  const material = new THREE.MeshBasicMaterial({ color: effect.color || 0xdfe8f3, transparent: true, opacity: 0.46, side: THREE.DoubleSide, depthWrite: false });
-  const mesh = new THREE.Mesh(new THREE.ShapeGeometry(shape), material);
-  mesh.rotation.x = -Math.PI / 2;
-  return mesh;
+  const fanMaterial = new THREE.MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity: 0.34,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  const fan = new THREE.Mesh(new THREE.ShapeGeometry(shape), fanMaterial);
+  fan.rotation.x = -Math.PI / 2;
+  group.add(fan);
+
+  const arcMesh = makeSlashArcMesh(radius, arc, 0.09, 0xffffff, 0.92);
+  const glowMesh = makeSlashArcMesh(radius * 0.86, arc * 0.9, 0.035, color, 0.72);
+  const innerMesh = makeSlashArcMesh(radius * 0.58, arc * 0.76, 0.025, 0xdfe8f3, 0.48);
+  group.add(arcMesh, glowMesh, innerMesh);
+  return group;
+}
+
+function makeSlashArcMesh(radius, arc, thickness, color, opacity) {
+  const points = [];
+  const steps = 30;
+  for (let i = 0; i <= steps; i += 1) {
+    const a = -arc / 2 + (arc * i) / steps;
+    points.push(new THREE.Vector3(Math.sin(a) * radius, 0.08, Math.cos(a) * radius));
+  }
+  const curve = new THREE.CatmullRomCurve3(points);
+  const material = new THREE.MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  return new THREE.Mesh(new THREE.TubeGeometry(curve, 28, thickness, 8, false), material);
 }
 
 function updateEffects(dt) {
@@ -1904,9 +1941,18 @@ function updateEffects(dt) {
     effect.life -= dt;
     const t = 1 - effect.life / effect.start;
     effect.mesh.scale.setScalar(1 + t * 0.8);
-    effect.mesh.material.opacity = Math.max(0, 0.75 * (1 - t));
+    setEffectOpacity(effect.mesh, Math.max(0, 0.75 * (1 - t)));
   }
   removeDead(state.effects, (effect) => effect.life <= 0);
+}
+
+function setEffectOpacity(mesh, opacity) {
+  mesh.traverse((node) => {
+    const materials = node.material ? (Array.isArray(node.material) ? node.material : [node.material]) : [];
+    for (const material of materials) {
+      if (material.transparent) material.opacity = opacity;
+    }
+  });
 }
 
 function removeDead(list, predicate) {
@@ -2596,7 +2642,7 @@ function syncEffects(effects) {
     mesh.position.set(effect.x, 0.12, effect.z);
     if (typeof effect.angle === "number") mesh.rotation.y = effect.angle;
     mesh.scale.setScalar(1 + t * 0.8);
-    mesh.material.opacity = Math.max(0, 0.75 * (1 - t));
+    setEffectOpacity(mesh, Math.max(0, 0.75 * (1 - t)));
   }
 }
 
