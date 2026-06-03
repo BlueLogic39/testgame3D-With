@@ -486,6 +486,7 @@ function attachCharacterModel(group, character) {
       child.castShadow = true;
       child.receiveShadow = true;
     });
+    applyCharacterModelStyle(model, character);
     group.add(model);
     group.userData.modelRoot = model;
     group.userData.keepModelProps = config.keepProps;
@@ -503,6 +504,20 @@ function attachCharacterModel(group, character) {
     group.userData.externalModelPending = false;
     setFallbackModelVisible(group, true);
     setPlayerDeadVisual({ mesh: group }, Boolean(group.userData.parts?.coffin?.visible));
+  });
+}
+
+function applyCharacterModelStyle(model, character) {
+  if (character !== "witch") return;
+  model.traverse((child) => {
+    if (!child.isMesh || !child.material) return;
+    const materialsToEdit = Array.isArray(child.material) ? child.material : [child.material];
+    for (const material of materialsToEdit) {
+      if (material.name !== "Hair" || !material.color) continue;
+      material.color.set("#c79de2");
+      if (material.emissive) material.emissive.setHex(0x17091f);
+      material.needsUpdate = true;
+    }
   });
 }
 
