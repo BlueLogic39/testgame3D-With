@@ -155,10 +155,10 @@ const fbxLoader = new FBXLoader();
 const fbxModelCache = new Map();
 
 const FBX_ASSETS = {
-  bow: { path: "./model_FBX/Bow_Wooden.fbx", size: 1.18, position: [-0.48, 1.42, -0.04], rotation: [0, 0, -0.48], scale: [1, 1, 1] },
+  bow: { path: "./model_FBX/Bow_Wooden.fbx", size: 1.18, position: [-0.34, 1.26, 0.08], rotation: [0, Math.PI, 0], scale: [1, 1, 1] },
   arrow: { path: "./model_FBX/Arrow.fbx", size: 1.85, position: [0, 0, 0], rotation: [0, Math.PI, 0], scale: [1, 1, 1] },
-  staff: { path: "./model_FBX/WoodenStaff.fbx", size: 1.62, position: [0.48, 1.36, -0.1], rotation: [0, 0, -0.34], scale: [1, 1, 1] },
-  sword: { path: "./model_FBX/Sword.fbx", size: 1.45, position: [0.5, 1.18, -0.16], rotation: [0, 0, -0.62], scale: [1, 1, 1] },
+  staff: { path: "./model_FBX/WoodenStaff.fbx", size: 1.62, position: [0.58, 1.12, 0.08], rotation: [0, 0, -0.24], scale: [1, 1, 1] },
+  sword: { path: "./model_FBX/Sword.fbx", size: 1.45, position: [0.56, 0.98, 0.02], rotation: [0, 0, -0.62], scale: [1, 1, 1] },
   heart: { path: "./model_FBX/Heart.fbx", size: 0.92, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
 };
 
@@ -481,18 +481,18 @@ function addCharacterProps(group, character, bodyMat) {
 
 function makeOldBowMesh() {
   const bow = new THREE.Mesh(new THREE.TorusGeometry(0.44, 0.035, 8, 24, Math.PI * 1.35), materials.arrow);
-  bow.position.set(-0.62, 1.35, 0.05);
-  bow.rotation.set(Math.PI / 2, 0, -0.65);
+  bow.position.set(-0.34, 1.26, 0.08);
+  bow.rotation.set(Math.PI / 2, Math.PI, 0);
   return bow;
 }
 
 function makeOldStaffMesh() {
   const group = new THREE.Group();
   const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 1.35, 10), materials.witchHat);
-  shaft.position.set(0.62, 1.34, -0.08);
-  shaft.rotation.z = -0.22;
+  shaft.position.set(0.58, 1.12, 0.08);
+  shaft.rotation.z = -0.18;
   const gem = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 8), materials.magic);
-  gem.position.set(0.78, 1.98, -0.08);
+  gem.position.set(0.72, 1.74, 0.08);
   group.add(shaft, gem);
   return group;
 }
@@ -501,10 +501,10 @@ function makeOldSwordMesh(bodyMat) {
   const group = new THREE.Group();
   const blade = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.15, 0.08), materials.saberBlade);
   blade.name = "saberBlade";
-  blade.position.set(0.7, 1.25, -0.18);
+  blade.position.set(0.76, 1.05, 0.02);
   blade.rotation.z = -0.45;
   const guard = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.08, 0.12), bodyMat);
-  guard.position.set(0.52, 0.83, -0.08);
+  guard.position.set(0.58, 0.63, 0.12);
   guard.rotation.z = -0.45;
   group.add(blade, guard);
   return group;
