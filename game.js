@@ -2762,7 +2762,7 @@ function nearestGemPlayer(gem) {
 }
 
 function playerNameById(id) {
-  return state.players.find((p) => p.id === id)?.name || net.lobbyPlayers.find((p) => p.id === id)?.name || "莉悶・繝励Ξ繧､繝､繝ｼ";
+  return state.players.find((p) => p.id === id)?.name || net.lobbyPlayers.find((p) => p.id === id)?.name || "他のプレイヤー";
 }
 
 function playerName() {
@@ -2881,7 +2881,9 @@ function addPlayerToMatch(id, name, character = "archer") {
 }
 
 function removePlayerEverywhere(id) {
-  const leaving = playerNameById(id);
+  const leaving = state.players.find((p) => p.id === id)?.name
+    || net.lobbyPlayers.find((p) => p.id === id)?.name
+    || "他のプレイヤー";
   removeLobbyPlayer(id);
   const index = state.players.findIndex((p) => p.id === id);
   if (index >= 0) {
