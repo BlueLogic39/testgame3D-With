@@ -582,12 +582,19 @@ function buildGltfAnimationClips(gltf, buffers) {
       const output = readGltfAccessor(gltf, buffers, sampler.output);
       if (!input || !output) continue;
       const nodeName = gltfNodeName(gltf, channel.target.node);
+      if (isRootMotionTrack(gltf, channel)) continue;
       if (channel.target.path === "translation") tracks.push(new THREE.VectorKeyframeTrack(`${nodeName}.position`, input.array, output.array));
       if (channel.target.path === "rotation") tracks.push(new THREE.QuaternionKeyframeTrack(`${nodeName}.quaternion`, input.array, output.array));
       if (channel.target.path === "scale") tracks.push(new THREE.VectorKeyframeTrack(`${nodeName}.scale`, input.array, output.array));
     }
     return new THREE.AnimationClip(animation.name || "Action", -1, tracks);
   });
+}
+
+function isRootMotionTrack(gltf, channel) {
+  if (channel.target.path !== "translation") return false;
+  const skin = gltf.skins?.[0];
+  return skin?.joints?.[0] === channel.target.node;
 }
 
 function gltfNodeName(gltf, index) {
