@@ -141,6 +141,14 @@ const CHARACTER_TYPES = {
   saber: { label: "セイバー", color: 0xd9dfe8, remoteColor: 0x91c7ff },
 };
 
+const CHARACTER_MODELS = {
+  archer: { path: "./model_glTF/Elf.gltf", scale: 0.72, keepProps: true },
+  witch: { path: "./model_glTF/Witch.gltf", scale: 0.68, keepProps: false },
+  saber: { path: "./model_glTF/Knight_Male.gltf", scale: 0.78, keepProps: true },
+};
+
+const gltfModelCache = new Map();
+
 const CHARACTER_CODEX = [
   {
     id: "archer",
@@ -376,6 +384,7 @@ function makePlayerMesh(name, local, character = "archer") {
   head.position.y = 2.18;
   head.castShadow = true;
   group.add(head);
+  const fallbackCore = [body, head];
 
   const armGeo = new THREE.CapsuleGeometry(0.13, 0.62, 4, 8);
   const legGeo = new THREE.CapsuleGeometry(0.15, 0.72, 4, 8);
@@ -392,12 +401,13 @@ function makePlayerMesh(name, local, character = "archer") {
     leg.position.set(side * 0.24, 0.58, 0);
     leg.castShadow = true;
     group.add(leg);
+    fallbackCore.push(arm, leg);
   }
 
   const label = makeNameLabel(name);
   label.position.y = 3.35;
   group.add(label);
-  addCharacterProps(group, type, bodyMat);
+  const propMeshes = addCharacterProps(group, type, bodyMat) || [];
   const coffin = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.42, 1.45), new THREE.MeshStandardMaterial({ color: 0x5b3424, roughness: 0.85 }));
   coffin.name = "coffin";
   coffin.position.y = 0.42;
@@ -411,6 +421,9 @@ function makePlayerMesh(name, local, character = "archer") {
     rightLeg: group.getObjectByName("rightLeg"),
     coffin,
   };
+  group.userData.fallbackCore = fallbackCore;
+  group.userData.characterProps = propMeshes;
+  attachCharacterModel(group, type);
   return group;
 }
 
@@ -422,7 +435,7 @@ function addCharacterProps(group, character, bodyMat) {
     cone.position.y = 2.9;
     cone.rotation.z = -0.18;
     group.add(brim, cone);
-    return;
+    return [brim, cone];
   }
   if (character === "saber") {
     const blade = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.15, 0.08), materials.saberBlade);
@@ -433,12 +446,147 @@ function addCharacterProps(group, character, bodyMat) {
     guard.position.set(0.52, 0.83, -0.08);
     guard.rotation.z = -0.45;
     group.add(blade, guard);
-    return;
+    return [blade, guard];
   }
   const bow = new THREE.Mesh(new THREE.TorusGeometry(0.44, 0.035, 8, 24, Math.PI * 1.35), materials.arrow);
   bow.position.set(-0.62, 1.35, 0.05);
   bow.rotation.set(Math.PI / 2, 0, -0.65);
   group.add(bow);
+  return [bow];
+}
+
+function attachCharacterModel(group, character) {
+  const config = CHARACTER_MODELS[character];
+  if (!config) return;
+  loadSimpleGltf(config.path).then((template) => {
+    const model = cloneModelInstance(template);
+    model.name = "modelRoot";
+    model.scale.setScalar(config.scale || 1);
+    model.position.y = 0;
+    model.traverse((child) => {
+      if (!child.isMesh) return;
+      child.castShadow = true;
+      child.receiveShadow = true;
+    });
+    group.add(model);
+    group.userData.modelRoot = model;
+    group.userData.keepModelProps = config.keepProps;
+    for (const mesh of group.userData.fallbackCore || []) mesh.visible = false;
+    if (!config.keepProps) {
+      for (const mesh of group.userData.characterProps || []) mesh.visible = false;
+    }
+    setPlayerDeadVisual({ mesh: group }, Boolean(group.userData.parts?.coffin?.visible));
+  }).catch((error) => {
+    console.warn(`Failed to load character model: ${config.path}`, error);
+  });
+}
+
+async function loadSimpleGltf(path) {
+  if (!gltfModelCache.has(path)) {
+    gltfModelCache.set(path, fetch(path).then((response) => {
+      if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+      return response.json();
+    }).then((gltf) => buildSimpleGltfScene(gltf)));
+  }
+  return gltfModelCache.get(path);
+}
+
+function buildSimpleGltfScene(gltf) {
+  const buffers = (gltf.buffers || []).map((buffer) => decodeGltfBuffer(buffer.uri));
+  const materialsList = (gltf.materials || []).map(makeGltfMaterial);
+  const root = new THREE.Group();
+  for (const meshDef of gltf.meshes || []) {
+    for (const primitive of meshDef.primitives || []) {
+      if ((primitive.mode ?? 4) !== 4) continue;
+      const geometry = new THREE.BufferGeometry();
+      const position = readGltfAccessor(gltf, buffers, primitive.attributes?.POSITION);
+      if (!position) continue;
+      geometry.setAttribute("position", new THREE.BufferAttribute(position.array, position.itemSize));
+      const normal = readGltfAccessor(gltf, buffers, primitive.attributes?.NORMAL);
+      if (normal) geometry.setAttribute("normal", new THREE.BufferAttribute(normal.array, normal.itemSize));
+      const index = readGltfAccessor(gltf, buffers, primitive.indices);
+      if (index) geometry.setIndex(new THREE.BufferAttribute(index.array, 1));
+      geometry.computeBoundingSphere();
+      if (!normal) geometry.computeVertexNormals();
+      const material = materialsList[primitive.material] || new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.55 });
+      root.add(new THREE.Mesh(geometry, material));
+    }
+  }
+  root.rotation.y = Math.PI;
+  return root;
+}
+
+function decodeGltfBuffer(uri) {
+  if (!uri?.startsWith("data:")) throw new Error("Only embedded glTF buffers are supported.");
+  const base64 = uri.slice(uri.indexOf(",") + 1);
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+function readGltfAccessor(gltf, buffers, accessorIndex) {
+  if (accessorIndex === undefined || accessorIndex === null) return null;
+  const accessor = gltf.accessors[accessorIndex];
+  const view = gltf.bufferViews[accessor.bufferView];
+  const itemSize = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4, MAT4: 16 }[accessor.type] || 1;
+  const ArrayType = {
+    5120: Int8Array,
+    5121: Uint8Array,
+    5122: Int16Array,
+    5123: Uint16Array,
+    5125: Uint32Array,
+    5126: Float32Array,
+  }[accessor.componentType];
+  if (!ArrayType) throw new Error(`Unsupported glTF component type: ${accessor.componentType}`);
+  const buffer = buffers[view.buffer];
+  const byteOffset = (view.byteOffset || 0) + (accessor.byteOffset || 0);
+  const length = accessor.count * itemSize;
+  if (view.byteStride && view.byteStride !== itemSize * ArrayType.BYTES_PER_ELEMENT) {
+    const output = new ArrayType(length);
+    const dataView = new DataView(buffer.buffer, buffer.byteOffset + byteOffset, view.byteLength - (accessor.byteOffset || 0));
+    for (let i = 0; i < accessor.count; i += 1) {
+      for (let j = 0; j < itemSize; j += 1) {
+        const offset = i * view.byteStride + j * ArrayType.BYTES_PER_ELEMENT;
+        output[i * itemSize + j] = readGltfComponent(dataView, offset, accessor.componentType);
+      }
+    }
+    return { array: output, itemSize };
+  }
+  return { array: new ArrayType(buffer.buffer, buffer.byteOffset + byteOffset, length), itemSize };
+}
+
+function readGltfComponent(dataView, offset, componentType) {
+  if (componentType === 5120) return dataView.getInt8(offset);
+  if (componentType === 5121) return dataView.getUint8(offset);
+  if (componentType === 5122) return dataView.getInt16(offset, true);
+  if (componentType === 5123) return dataView.getUint16(offset, true);
+  if (componentType === 5125) return dataView.getUint32(offset, true);
+  return dataView.getFloat32(offset, true);
+}
+
+function makeGltfMaterial(materialDef = {}) {
+  const pbr = materialDef.pbrMetallicRoughness || {};
+  const factor = pbr.baseColorFactor || [1, 1, 1, 1];
+  const material = new THREE.MeshStandardMaterial({
+    color: new THREE.Color(factor[0], factor[1], factor[2]),
+    roughness: pbr.roughnessFactor ?? 0.55,
+    metalness: pbr.metallicFactor ?? 0,
+    transparent: factor[3] < 1,
+    opacity: factor[3] ?? 1,
+    side: THREE.DoubleSide,
+  });
+  return material;
+}
+
+function cloneModelInstance(template) {
+  const model = template.clone(true);
+  model.traverse((child) => {
+    if (!child.isMesh) return;
+    if (Array.isArray(child.material)) child.material = child.material.map((material) => material.clone());
+    else child.material = child.material.clone();
+  });
+  return model;
 }
 
 function makeNameLabel(name) {
@@ -573,17 +721,28 @@ function updatePlayerFlash(player, dt) {
 }
 
 function setPlayerFlash(mesh, active) {
-  for (const child of mesh.children) {
-    if (!child.material || !child.material.emissive) continue;
+  mesh.traverse((child) => {
+    if (!child.material || !child.material.emissive) return;
     child.material.emissive.setHex(active ? 0xff2b2b : 0x000000);
-  }
+  });
 }
 
 function setPlayerDeadVisual(player, dead) {
   const parts = player.mesh.userData.parts;
   if (!parts) return;
+  const modelRoot = player.mesh.userData.modelRoot;
+  const fallbackCore = player.mesh.userData.fallbackCore || [];
+  const characterProps = player.mesh.userData.characterProps || [];
   for (const child of player.mesh.children) {
     if (child === parts.coffin || child.type === "Sprite") continue;
+    if (modelRoot && fallbackCore.includes(child)) {
+      child.visible = false;
+      continue;
+    }
+    if (modelRoot && !player.mesh.userData.keepModelProps && characterProps.includes(child)) {
+      child.visible = false;
+      continue;
+    }
     child.visible = !dead;
   }
   parts.coffin.visible = dead;
