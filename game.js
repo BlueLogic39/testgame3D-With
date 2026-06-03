@@ -1877,7 +1877,7 @@ function makeThunderBoltMesh() {
 }
 
 function addSlashEffect(x, z, radius, arc, angle, color, owner = "", skill = false) {
-  const mesh = makeSlashMesh({ radius, arc, color });
+  const mesh = makeSlashMesh({ radius, arc, color, skill });
   mesh.position.set(x, 0.18, z);
   mesh.rotation.y = angle;
   scene.add(mesh);
@@ -1902,7 +1902,7 @@ function makeSlashMesh(effect) {
   const fanMaterial = new THREE.MeshBasicMaterial({
     color,
     transparent: true,
-    opacity: 0.34,
+    opacity: effect.skill ? 0.34 : 0.22,
     side: THREE.DoubleSide,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
@@ -1911,10 +1911,17 @@ function makeSlashMesh(effect) {
   fan.rotation.x = -Math.PI / 2;
   group.add(fan);
 
-  const arcMesh = makeSlashArcMesh(radius, arc, 0.09, 0xffffff, 0.92);
-  const glowMesh = makeSlashArcMesh(radius * 0.86, arc * 0.9, 0.035, color, 0.72);
-  const innerMesh = makeSlashArcMesh(radius * 0.58, arc * 0.76, 0.025, 0xdfe8f3, 0.48);
-  group.add(arcMesh, glowMesh, innerMesh);
+  if (effect.skill) {
+    const arcMesh = makeSlashArcMesh(radius, arc, 0.09, 0xffffff, 0.92);
+    const glowMesh = makeSlashArcMesh(radius * 0.86, arc * 0.9, 0.035, color, 0.72);
+    const innerMesh = makeSlashArcMesh(radius * 0.58, arc * 0.76, 0.025, 0xdfe8f3, 0.48);
+    group.add(arcMesh, glowMesh, innerMesh);
+  } else {
+    const edge = makeSlashArcMesh(radius, arc, 0.075, 0xffffff, 0.95);
+    const rangeLineA = makeSlashRangeLine(-arc / 2, radius, color);
+    const rangeLineB = makeSlashRangeLine(arc / 2, radius, color);
+    group.add(edge, rangeLineA, rangeLineB);
+  }
   return group;
 }
 
@@ -1936,11 +1943,27 @@ function makeSlashArcMesh(radius, arc, thickness, color, opacity) {
   return new THREE.Mesh(new THREE.TubeGeometry(curve, 28, thickness, 8, false), material);
 }
 
+function makeSlashRangeLine(angle, radius, color) {
+  const points = [
+    new THREE.Vector3(0, 0.09, 0),
+    new THREE.Vector3(Math.sin(angle) * radius, 0.09, Math.cos(angle) * radius),
+  ];
+  const curve = new THREE.CatmullRomCurve3(points);
+  const material = new THREE.MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity: 0.64,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  return new THREE.Mesh(new THREE.TubeGeometry(curve, 1, 0.025, 6, false), material);
+}
+
 function updateEffects(dt) {
   for (const effect of state.effects) {
     effect.life -= dt;
     const t = 1 - effect.life / effect.start;
-    effect.mesh.scale.setScalar(1 + t * 0.8);
+    effect.mesh.scale.setScalar(effect.skill ? 1 + t * 0.8 : 1);
     setEffectOpacity(effect.mesh, Math.max(0, 0.75 * (1 - t)));
   }
   removeDead(state.effects, (effect) => effect.life <= 0);
@@ -1973,8 +1996,8 @@ function oldEndGame(won) {
   state.won = won;
   net.phase = "gameover";
   ui.endTitle.textContent = won ? "Clear!" : "Game Over";
-  ui.endText.textContent = `${formatTime(state.elapsed)} 逕溷ｭ・/ ${state.kills}菴捺茶遐ｴ / 繝ｬ繝吶Ν${localPlayer()?.level || 1}`;
-  ui.restartButton.textContent = net.mode === "solo" ? "繧ゅ≧荳蠎ｦ" : "蜷後§繝｡繝ｳ繝舌・縺ｧ繧ゅ≧荳蠎ｦ";
+  ui.endText.textContent = endSummaryText(state.elapsed, state.kills, true);
+  ui.restartButton.textContent = net.mode === "solo" ? "もう一度" : "同じメンバーでもう一度";
   ui.disbandButton.textContent = net.mode === "solo" ? "タイトルに戻る" : "解散する";
   ui.disbandButton.classList.remove("hidden");
   ui.gameOver.classList.remove("hidden");
@@ -2213,15 +2236,15 @@ function updateUi() {
   ui.skillText.closest(".skill-hud")?.classList.toggle("ready", skillPct >= 1);
   ui.skillReadyHint?.classList.toggle("hidden", skillPct < 1 || net.phase !== "playing" || !state.running);
   const recent = player.upgrades.length ? player.upgrades.slice(-5).join(" / ") : "強化なし";
-  const room = net.roomCode ? ` / 驛ｨ螻・${net.roomCode}` : "";
+  const room = net.roomCode ? ` / 部屋 ${net.roomCode}` : "";
   const revive = player.dead ? ` / 復活まで${Math.max(0, Math.ceil(player.reviveAt - state.elapsed))}秒` : "";
-  const characterName = CHARACTER_TYPES[player.character || "archer"]?.label || "繧｢繝ｼ繝√Ε繝ｼ";
+  const characterName = CHARACTER_TYPES[player.character || "archer"]?.label || "アーチャー";
   const weapon = player.character === "saber"
-    ? `阮吶℃謇輔＞${Math.round(THREE.MathUtils.radToDeg(player.slashArc || 0))}蠎ｦ`
+    ? `薙ぎ払い${Math.round(THREE.MathUtils.radToDeg(player.slashArc || 0))}度`
     : player.character === "witch"
-      ? `繝輔ぃ繧､繧｢${player.magicBolts || 1}逋ｺ`
-      : `${player.arrows}譛ｬ / 蠕梧婿${player.backShots || 0}譛ｬ / 雋ｫ騾・{player.pierce}`;
-  ui.build.textContent = `${characterName} / ${weapon} / 螽∝鴨${Math.round(player.damage)} / ${recent}${room}${revive}`;
+      ? `ファイア${player.magicBolts || 1}発`
+      : `${player.arrows}本 / 後方${player.backShots || 0}本 / 貫通${player.pierce}`;
+  ui.build.textContent = `${characterName} / ${weapon} / 威力${Math.round(player.damage)} / ${recent}${room}${revive}`;
 }
 
 function resize() {
@@ -2489,16 +2512,16 @@ function handleHostData(data) {
     sfx(data.won ? "victory" : "gameover");
     ui.skillText.closest(".skill-hud")?.classList.add("hidden");
     ui.endTitle.textContent = data.won ? "Clear!" : "Game Over";
-    ui.endText.textContent = `${formatTime(data.elapsed)} 逕溷ｭ・/ ${data.kills}菴捺茶遐ｴ`;
-    ui.restartButton.textContent = "蜷後§繝｡繝ｳ繝舌・縺ｧ繧ゅ≧荳蠎ｦ";
+    ui.endText.textContent = endSummaryText(data.elapsed, data.kills, false);
+    ui.restartButton.textContent = "もう一度に投票";
     ui.disbandButton.classList.remove("hidden");
     ui.gameOver.classList.remove("hidden");
   }
   if (data.type === "gameOver") {
-    ui.restartButton.textContent = "繧ゅ≧荳蠎ｦ縺ｫ謚慕･ｨ";
-    ui.voteText.textContent = `蜀肴姶謚慕･ｨ: 0/${data.total || "?"}`;
+    ui.restartButton.textContent = "もう一度に投票";
+    ui.voteText.textContent = `再戦投票: 0/${data.total || "?"}`;
   }
-  if (data.type === "voteStatus") ui.voteText.textContent = `蜀肴姶謚慕･ｨ: ${data.count}/${data.total}`;
+  if (data.type === "voteStatus") ui.voteText.textContent = `再戦投票: ${data.count}/${data.total}`;
   if (data.type === "disband") leaveRoom();
 }
 
@@ -2641,7 +2664,7 @@ function syncEffects(effects) {
     const t = 1 - effect.life / effect.start;
     mesh.position.set(effect.x, 0.12, effect.z);
     if (typeof effect.angle === "number") mesh.rotation.y = effect.angle;
-    mesh.scale.setScalar(1 + t * 0.8);
+    mesh.scale.setScalar(effect.skill ? 1 + t * 0.8 : 1);
     setEffectOpacity(mesh, Math.max(0, 0.75 * (1 - t)));
   }
 }
@@ -2749,6 +2772,13 @@ function formatTime(seconds) {
   return `${m}:${s}`;
 }
 
+function endSummaryText(elapsed, kills, includeLevel = true) {
+  const level = localPlayer()?.level || 1;
+  const parts = [`${formatTime(elapsed)}`, `${kills}体撃破`];
+  if (includeLevel) parts.push(`レベル${level}`);
+  return parts.join(" / ");
+}
+
 function distance(a, b) {
   return Math.hypot(a.x - b.x, a.z - b.z);
 }
@@ -2788,10 +2818,10 @@ function endGame(won) {
   ui.skillText.closest(".skill-hud")?.classList.add("hidden");
   net.restartVotes = new Set();
   ui.endTitle.textContent = won ? "Clear!" : "Game Over";
-  ui.endText.textContent = `${formatTime(state.elapsed)} 逕溷ｭ・/ ${state.kills}菴捺茶遐ｴ / 繝ｬ繝吶Ν${localPlayer()?.level || 1}`;
-  ui.restartButton.textContent = net.mode === "solo" ? "繧ゅ≧荳蠎ｦ" : "繧ゅ≧荳蠎ｦ縺ｫ謚慕･ｨ";
+  ui.endText.textContent = endSummaryText(state.elapsed, state.kills, true);
+  ui.restartButton.textContent = net.mode === "solo" ? "もう一度" : "もう一度に投票";
   ui.disbandButton.textContent = net.mode === "solo" ? "タイトルに戻る" : "解散する";
-  ui.voteText.textContent = net.mode === "solo" ? "" : `蜀肴姶謚慕･ｨ: 0/${state.players.length}`;
+  ui.voteText.textContent = net.mode === "solo" ? "" : `再戦投票: 0/${state.players.length}`;
   ui.disbandButton.classList.remove("hidden");
   ui.gameOver.classList.remove("hidden");
   if (net.mode === "host") broadcast({ type: "gameOver", won, elapsed: state.elapsed, kills: state.kills, total: state.players.length });
@@ -2810,7 +2840,7 @@ function voteRestart(playerId = localPlayerId) {
   net.restartVotes.add(playerId);
   const count = net.restartVotes.size;
   const total = state.players.length;
-  ui.voteText.textContent = `蜀肴姶謚慕･ｨ: ${count}/${total}`;
+  ui.voteText.textContent = `再戦投票: ${count}/${total}`;
   broadcast({ type: "voteStatus", count, total });
   if (count >= total) {
     ui.restartButton.disabled = false;
