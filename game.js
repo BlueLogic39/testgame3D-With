@@ -2334,7 +2334,7 @@ async function createRoom() {
   selectedRoomKey = code;
   rememberRoom({ code, name: roomName, host: playerName(), hasPassword: Boolean(password), password });
   renderRoomList();
-  ui.roomStatus.textContent = `貅門ｙ荳ｭ: ${code}`;
+  ui.roomStatus.textContent = `準備中: ${code}`;
   net.peer = new Peer(`vansaba-${code}`);
   net.peer.on("open", () => showLobby("ホストです。参加者が揃ったら開始してください。"));
   net.peer.on("connection", (conn) => {
@@ -2400,7 +2400,7 @@ function showLobby(message) {
   ui.levelUp.classList.add("hidden");
   hideStatus();
   ui.lobby.classList.remove("hidden");
-  ui.lobbyCode.textContent = `繝代せ繝ｯ繝ｼ繝・ ${net.roomCode}`;
+  ui.lobbyCode.textContent = net.roomPassword ? `パスワード: ${net.roomPassword}` : `部屋ID: ${net.roomCode}`;
   ui.lobbyStatus.textContent = message;
   ui.lobbyStartButton.classList.toggle("hidden", net.mode !== "host");
   renderLobbyPlayers();
@@ -2411,9 +2411,8 @@ function renderLobbyPlayers() {
   for (const player of net.lobbyPlayers) {
     const row = document.createElement("div");
     row.className = "lobby-player";
-    row.innerHTML = `<span>${player.name}</span><span>${player.host ? "ホスト" : "参加"}</span>`;
-    const className = CHARACTER_TYPES[player.character || "archer"]?.label || "繧｢繝ｼ繝√Ε繝ｼ";
-    row.innerHTML = `<span>${player.name} / ${className}</span><span>${player.host ? "Host" : "Guest"}</span>`;
+    const className = CHARACTER_TYPES[player.character || "archer"]?.label || "アーチャー";
+    row.innerHTML = `<span>${player.name} / ${className}</span><span>${player.host ? "ホスト" : "参加"}</span>`;
     ui.lobbyPlayers.appendChild(row);
   }
   updateOnlineBadge();
@@ -2430,8 +2429,8 @@ function handleClientData(conn, data) {
     conn.playerId = data.id;
     net.clients.set(data.id, conn);
     upsertLobbyPlayer({ id: data.id, name: data.name || "Guest", character: data.character || "archer", host: false });
-    showToast(`${data.name || "Guest"}縺悟・螳､縺励∪縺励◆`);
-    broadcast({ type: "toast", text: `${data.name || "Guest"}縺悟・螳､縺励∪縺励◆` });
+    showToast(`${data.name || "Guest"}が入室しました`);
+    broadcast({ type: "toast", text: `${data.name || "Guest"}が入室しました` });
     if (net.phase === "playing" && state?.running) {
       addPlayerToMatch(data.id, data.name || "Guest", data.character || "archer");
       conn.send({ type: "start", players: state.players.map((p) => ({ id: p.id, name: p.name, character: p.character })) });
@@ -2895,8 +2894,8 @@ function removePlayerEverywhere(id) {
     hideStatus();
     broadcast({ type: "levelDone", playerId: id });
   }
-  showToast(`${leaving}縺碁螳､縺励∪縺励◆`);
-  broadcast({ type: "toast", text: `${leaving}縺碁螳､縺励∪縺励◆` });
+  showToast(`${leaving}が退室しました`);
+  broadcast({ type: "toast", text: `${leaving}が退室しました` });
   updateOnlineBadge();
   sendHostSnapshot();
 }
