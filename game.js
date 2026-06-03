@@ -155,10 +155,10 @@ const fbxLoader = new FBXLoader();
 const fbxModelCache = new Map();
 
 const FBX_ASSETS = {
-  bow: { path: "./model_FBX/Bow_Wooden.fbx", size: 1.05, position: [-0.66, 1.36, 0.04], rotation: [0, 0, -0.65], scale: [1, 1, 1] },
-  arrow: { path: "./model_FBX/Arrow.fbx", size: 1.25, position: [0, 0, 0], rotation: [0, Math.PI, 0], scale: [1, 1, 1] },
-  staff: { path: "./model_FBX/WoodenStaff.fbx", size: 1.45, position: [0.62, 1.35, -0.08], rotation: [0, 0, -0.22], scale: [1, 1, 1] },
-  sword: { path: "./model_FBX/Sword.fbx", size: 1.25, position: [0.74, 1.23, -0.18], rotation: [0, 0, -0.45], scale: [1, 1, 1] },
+  bow: { path: "./model_FBX/Bow_Wooden.fbx", size: 1.18, position: [-0.48, 1.42, -0.04], rotation: [0, 0, -0.48], scale: [1, 1, 1] },
+  arrow: { path: "./model_FBX/Arrow.fbx", size: 1.85, position: [0, 0, 0], rotation: [0, Math.PI, 0], scale: [1, 1, 1] },
+  staff: { path: "./model_FBX/WoodenStaff.fbx", size: 1.62, position: [0.48, 1.36, -0.1], rotation: [0, 0, -0.34], scale: [1, 1, 1] },
+  sword: { path: "./model_FBX/Sword.fbx", size: 1.45, position: [0.5, 1.18, -0.16], rotation: [0, 0, -0.62], scale: [1, 1, 1] },
   heart: { path: "./model_FBX/Heart.fbx", size: 0.92, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
 };
 
@@ -1715,7 +1715,22 @@ function makeEnemyMesh(enemy) {
 }
 
 function makeArrowMesh() {
-  return makeFbxMesh("arrow", makeOldArrowMesh);
+  const group = new THREE.Group();
+  group.add(makeFbxMesh("arrow", makeOldArrowMesh));
+  addArrowVisibilityBoost(group);
+  return group;
+}
+
+function addArrowVisibilityBoost(group) {
+  const glowMat = new THREE.MeshBasicMaterial({ color: 0xfff2a8, transparent: true, opacity: 0.68, depthWrite: false });
+  const trailMat = new THREE.MeshBasicMaterial({ color: 0xffc84a, transparent: true, opacity: 0.34, depthWrite: false });
+  const core = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 1.95, 10), glowMat);
+  core.rotation.x = Math.PI / 2;
+  const halo = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 1.7, 12, 1, true), trailMat);
+  halo.rotation.x = Math.PI / 2;
+  const tip = new THREE.Mesh(new THREE.SphereGeometry(0.16, 12, 8), glowMat.clone());
+  tip.position.z = -0.95;
+  group.add(halo, core, tip);
 }
 
 function makeOldArrowMesh() {
