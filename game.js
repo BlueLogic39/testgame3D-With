@@ -1357,6 +1357,7 @@ function spawnEnemies(dt) {
   const count = state.elapsed > 85 ? 4 : state.elapsed > 40 ? 2 : 1;
   for (let i = 0; i < count; i += 1) {
     const shooter = state.elapsed > 18 && Math.random() < Math.min(0.12, 0.03 + state.elapsed / 960);
+    if (!shooter && Math.random() > 0.75) continue;
     addEnemy(false, shooter);
   }
   if (state.elapsed > 150 && !state.bossSpawned) {
@@ -1385,7 +1386,7 @@ function addEnemy(boss, shooter) {
     speed: boss ? 2.4 : shooter ? 2.1 + state.elapsed * 0.006 : 2.8 + Math.random() * 1.7 + state.elapsed * 0.01,
     damage: boss ? 22 : shooter ? 12 : 9,
     touchTimer: 0,
-    shotTimer: shooter ? 1.2 + Math.random() * 1.4 : 0,
+    shotTimer: shooter ? (1.2 + Math.random() * 1.4) * 1.5 : 0,
     xp: boss ? 90 : shooter ? redXp * 3 : redXp,
     boss,
     shooter,
@@ -1412,7 +1413,7 @@ function updateEnemies(dt) {
       enemy.shotTimer -= dt;
       if (enemy.shotTimer <= 0) {
         shootEnemyBullet(enemy, target);
-        enemy.shotTimer = 1.65 + Math.random() * 0.7;
+        enemy.shotTimer = (1.65 + Math.random() * 0.7) * 1.5;
       }
     }
 
