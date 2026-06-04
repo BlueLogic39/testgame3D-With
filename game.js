@@ -183,9 +183,9 @@ const CHARACTER_CODEX = [
     id: "saber",
     role: "近距離の前方制圧キャラクター",
     weapon: "2秒ごとにマウス方向へ90度の剣閃で薙ぎ払います。",
-    passive: "近い敵をまとめて斬れる代わりに、通常攻撃の間隔は長めです。",
+    passive: "バーサーカー: 敵を倒すたびに攻撃速度が1%上がります。",
     skill: "回転突進斬り: スペースキーで2秒間回転斬りしながらマウス方向へ突進します。",
-    upgrades: ["剣閃範囲 +15度", "踏み込み斬り", "二連斬り"],
+    upgrades: ["剣閃範囲 +15度", "飛燕斬", "二連斬り"],
   },
 ];
 
@@ -227,7 +227,7 @@ upgrades.push(
   { name: "魔法陣＜雷＞", desc: "自分の周辺に雷の魔法陣を設置する。取得するたび範囲と設置時間が伸びる。", classes: ["witch"], apply: (p) => (p.thunderCircle += 1) },
   { name: "ファイア巨大化", desc: "ファイアが大きくなり、魔力爆発の範囲と威力が伸びる。さらに連鎖爆発が+1される。", classes: ["witch"], apply: (p) => { p.magicRadius += 0.12; p.damage *= 1.08; p.magicSplash += 1; p.chainExplosion += 1; } },
   { name: "剣閃範囲 +15度", desc: "薙ぎ払いの横範囲が15度広がり、奥への届く距離も15%伸びる。", classes: ["saber"], apply: (p) => { p.slashArc += THREE.MathUtils.degToRad(15); p.slashRange *= 1.15; } },
-  { name: "踏み込み斬り", desc: "通常の薙ぎ払い時にマウス方向へ短く踏み込む。重ねるほど踏み込み距離が伸びる。", classes: ["saber"], apply: (p) => (p.saberLunge += 1) },
+  { name: "飛燕斬", desc: "通常攻撃と同時にマウス方向へ飛ぶ斬撃を放つ。重ねるほど貫通、大きさ、威力が伸びる。", classes: ["saber"], apply: (p) => (p.flyingSlash += 1) },
   { name: "二連斬り", desc: "薙ぎ払いの直後に、少しずらした追加の斬撃を放つ。", classes: ["saber"], apply: (p) => (p.doubleSlash += 1) }
 );
 
@@ -365,7 +365,7 @@ function makePlayer(id, name, x, z, local, character = "archer") {
     thunderTimer: 2.8,
     slashArc: THREE.MathUtils.degToRad(90),
     slashRange: 5.2,
-    saberLunge: 0,
+    flyingSlash: 0,
     doubleSlash: 0,
     spinSlashUntil: 0,
     spinSlashAngle: 0,
@@ -1177,21 +1177,38 @@ function shootMagic(player) {
 
 function swingSaber(player) {
   const base = Math.atan2(player.input.aimX - player.x, player.input.aimZ - player.z);
-  applySaberLunge(player, base);
   const swings = Math.max(1, 1 + (player.doubleSlash || 0));
   for (let i = 0; i < swings; i += 1) {
     const angle = base + (i === 0 ? 0 : (i % 2 === 0 ? -0.28 : 0.28));
     applySaberSlash(player, angle);
   }
+  fireFlyingSlash(player, base);
 }
 
-function applySaberLunge(player, angle) {
-  if ((player.saberLunge || 0) <= 0) return;
-  const step = Math.min(1.7, 0.55 + player.saberLunge * 0.25);
-  player.x = clamp(player.x + Math.sin(angle) * step, -WORLD.half + 1.2, WORLD.half - 1.2);
-  player.z = clamp(player.z + Math.cos(angle) * step, -WORLD.half + 1.2, WORLD.half - 1.2);
-  player.mesh.position.set(player.x, 0, player.z);
-  addRing(player.x, player.z, 1.1 + player.saberLunge * 0.08, 0x91c7ff);
+function fireFlyingSlash(player, angle) {
+  const level = player.flyingSlash || 0;
+  if (level <= 0) return;
+  const radius = 0.56 + level * 0.08;
+  const slash = {
+    id: crypto.randomUUID(),
+    x: player.x + Math.sin(angle) * 1.45,
+    z: player.z + Math.cos(angle) * 1.45,
+    vx: Math.sin(angle) * 20,
+    vz: Math.cos(angle) * 20,
+    radius,
+    life: 1.15 + level * 0.08,
+    damage: player.damage * (0.55 + level * 0.12),
+    pierce: Math.max(0, level - 1),
+    owner: player.id,
+    kind: "flyingSlash",
+    angle,
+    hit: new Set(),
+    mesh: makeFlyingSlashMesh({ radius }),
+  };
+  slash.mesh.rotation.y = angle;
+  slash.mesh.position.set(slash.x, 1.05, slash.z);
+  scene.add(slash.mesh);
+  state.arrows.push(slash);
 }
 
 function applySaberSlash(player, angle) {
@@ -1429,7 +1446,10 @@ function updateEnemies(dt) {
     state.kills += 1;
     dropGem(enemy.x, enemy.z, enemy.xp, enemy.shooter ? "shooter" : "normal");
     const owner = state.players.find((p) => p.id === enemy.lastHitBy) || localPlayer();
-    if (owner) owner.hp = Math.min(owner.maxHp, owner.hp + owner.lifeSteal);
+    if (owner) {
+      owner.hp = Math.min(owner.maxHp, owner.hp + owner.lifeSteal);
+      if (owner.character === "saber") addAttackSpeed(owner, 0.01);
+    }
     addRing(enemy.x, enemy.z, enemy.boss ? 3.2 : 1.4, enemy.shooter ? 0x3fb7d6 : enemy.boss ? 0x57c4a7 : 0xf2c14e);
   }
   removeDead(state.enemies, (enemy) => enemy.hp <= 0);
@@ -1519,7 +1539,8 @@ function updateArrows(dt) {
         enemy.lastHitBy = arrow.owner;
         arrow.hit.add(enemy);
         if (arrow.kind === "magic") sfx("fire");
-        addRing(enemy.x, enemy.z, arrow.kind === "magic" ? 1.0 : 0.8, arrow.kind === "magic" ? 0xff6b2c : 0xf2c14e);
+        const hitColor = arrow.kind === "magic" ? 0xff6b2c : arrow.kind === "flyingSlash" ? 0x91c7ff : 0xf2c14e;
+        addRing(enemy.x, enemy.z, arrow.kind === "magic" ? 1.0 : arrow.kind === "flyingSlash" ? 1.15 : 0.8, hitColor);
         if (arrow.kind === "magic" && arrow.splash > 0) {
           const splashRadius = 1.4 + arrow.splash * 0.42;
           const splashDamage = arrow.damage * (0.35 + arrow.splash * 0.14);
@@ -1803,7 +1824,25 @@ function makeMagicMesh() {
 }
 
 function makeProjectileMesh(item = {}) {
-  return item.kind === "magic" ? makeMagicMesh() : makeArrowMesh();
+  if (item.kind === "magic") return makeMagicMesh();
+  if (item.kind === "flyingSlash") return makeFlyingSlashMesh(item);
+  return makeArrowMesh();
+}
+
+function makeFlyingSlashMesh(item = {}) {
+  const radius = item.radius || 0.62;
+  const group = new THREE.Group();
+  const blade = makeSlashArcMesh(radius * 1.55, THREE.MathUtils.degToRad(112), 0.055, 0xffffff, 0.92);
+  const glow = makeSlashArcMesh(radius * 1.18, THREE.MathUtils.degToRad(96), 0.035, 0x91c7ff, 0.72);
+  const core = new THREE.Mesh(
+    new THREE.SphereGeometry(radius * 0.2, 12, 8),
+    new THREE.MeshBasicMaterial({ color: 0xdfe8f3, transparent: true, opacity: 0.82, depthWrite: false, blending: THREE.AdditiveBlending })
+  );
+  blade.rotation.x = -0.08;
+  glow.rotation.x = -0.08;
+  group.add(blade, glow, core);
+  group.scale.setScalar(Math.max(0.75, radius / 0.62));
+  return group;
 }
 
 function makeBulletMesh() {
@@ -2582,7 +2621,7 @@ function sendHostSnapshot(force = false) {
       skillCharge: p.skillCharge, skillCooldown: p.skillCooldown,
       spinSlashUntil: p.spinSlashUntil, spinSlashAngle: p.spinSlashAngle,
       arrows: p.arrows, backShots: p.backShots, damage: p.damage, pierce: p.pierce,
-      saberLunge: p.saberLunge,
+      flyingSlash: p.flyingSlash,
       baseFireRate: p.baseFireRate, attackSpeedBonus: p.attackSpeedBonus, fireRate: p.fireRate,
       magicSplash: p.magicSplash, magicRadius: p.magicRadius, chainExplosion: p.chainExplosion, thunderCircle: p.thunderCircle,
       rerolls: p.rerolls, upgrades: p.upgrades,
@@ -2647,7 +2686,9 @@ function syncSimpleMeshes(cache, items, factory, y) {
       mesh = factory(item);
       scene.add(mesh);
       cache.set(item.id, mesh);
-      if (item.owner === localPlayerId && !item.skill) sfx(item.kind === "magic" ? "witchAttack" : "archerAttack");
+      if (item.owner === localPlayerId && !item.skill) {
+        sfx(item.kind === "magic" ? "witchAttack" : item.kind === "flyingSlash" ? "saberAttack" : "archerAttack");
+      }
     }
     mesh.position.set(item.x, y || item.radius || 0.6, item.z);
     if (typeof item.angle === "number") mesh.rotation.y = item.angle;
