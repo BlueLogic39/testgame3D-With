@@ -167,7 +167,7 @@ const CHARACTER_CODEX = [
     id: "archer",
     role: "扱いやすい遠距離アタッカー",
     weapon: "マウス方向へ矢を連射します。矢の本数、貫通、バックショットで攻撃方向を広げられます。",
-    passive: "専用パッシブはまだありません。素直な射撃性能が持ち味です。",
+    passive: "追い風: 遠くの敵に矢を当てるほどダメージが上がります。距離8以上で+20%、距離14以上で+40%。",
     skill: "アローレイン: スペースキーで前方へ大量の矢を一気に放ちます。",
     upgrades: ["矢の本数 +1", "貫通 +1", "バックショット"],
   },
@@ -1125,6 +1125,8 @@ function fireArrow(player, angle) {
     id: crypto.randomUUID(),
     x: player.x + Math.sin(angle) * 1.15,
     z: player.z + Math.cos(angle) * 1.15,
+    startX: player.x,
+    startZ: player.z,
     vx: Math.sin(angle) * 24,
     vz: Math.cos(angle) * 24,
     radius: 0.25,
@@ -1323,6 +1325,8 @@ function castArcherSkill(player, baseAngle) {
       id: crypto.randomUUID(),
       x: player.x + Math.sin(angle) * 1.25,
       z: player.z + Math.cos(angle) * 1.25,
+      startX: player.x,
+      startZ: player.z,
       vx: Math.sin(angle) * 30,
       vz: Math.cos(angle) * 30,
       radius: 0.25,
@@ -1534,7 +1538,8 @@ function updateArrows(dt) {
     for (const enemy of state.enemies) {
       if (arrow.hit.has(enemy)) continue;
       if (distance(arrow, enemy) < arrow.radius + enemy.radius) {
-        enemy.hp -= arrow.damage;
+        const finalDamage = arrow.damage * projectileDamageMultiplier(arrow, enemy);
+        enemy.hp -= finalDamage;
         enemy.lastHitBy = arrow.owner;
         arrow.hit.add(enemy);
         if (arrow.kind === "magic") sfx("fire");
@@ -1554,6 +1559,16 @@ function updateArrows(dt) {
     }
   }
   removeDead(state.arrows, (a) => a.life <= 0 || Math.abs(a.x) > WORLD.half + 4 || Math.abs(a.z) > WORLD.half + 4);
+}
+
+function projectileDamageMultiplier(projectile, target) {
+  if (projectile.kind !== "arrow") return 1;
+  const owner = state.players.find((player) => player.id === projectile.owner);
+  if (owner?.character !== "archer") return 1;
+  const traveled = Math.hypot(target.x - (projectile.startX ?? projectile.x), target.z - (projectile.startZ ?? projectile.z));
+  if (traveled >= 14) return 1.4;
+  if (traveled >= 8) return 1.2;
+  return 1;
 }
 
 function dropGem(x, z, value, kind = "normal") {
