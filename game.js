@@ -81,6 +81,7 @@ const ui = {
 
 const WORLD = { half: 34 };
 const keys = new Set();
+let debugSkillPresses = [];
 const aim = new THREE.Vector3(0, 0, -8);
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
@@ -1273,6 +1274,33 @@ function requestSkillUse() {
   }
   activateSkill(player);
   if (net.mode === "host") sendHostSnapshot(true);
+}
+
+function fillSkillForDebug(playerId = localPlayerId) {
+  const player = state?.players?.find((p) => p.id === playerId);
+  if (!player || !state.running || net.phase !== "playing") return false;
+  player.skillCharge = player.skillCooldown || 30;
+  if (player.local) updateUi();
+  return true;
+}
+
+function requestDebugSkillFill() {
+  if (net.phase !== "playing" || !state.running) return;
+  if (net.mode === "client") {
+    sendToHost({ type: "debugSkillFill", id: localPlayerId });
+    return;
+  }
+  fillSkillForDebug(localPlayerId);
+}
+
+function trackDebugSkillKey() {
+  const now = performance.now();
+  debugSkillPresses = debugSkillPresses.filter((time) => now - time <= 2000);
+  debugSkillPresses.push(now);
+  if (debugSkillPresses.length >= 3) {
+    debugSkillPresses = [];
+    requestDebugSkillFill();
+  }
 }
 
 function attackSoundKey(character) {
@@ -2517,6 +2545,9 @@ function handleClientData(conn, data) {
   if (data.type === "restartRequest" && net.phase === "gameover") voteRestart(data.id);
   if (data.type === "leave") removePlayerEverywhere(data.id);
   if (data.type === "comm") broadcastComm(data.id, data.text);
+  if (data.type === "debugSkillFill") {
+    if (fillSkillForDebug(data.id)) sendHostSnapshot(true);
+  }
   if (data.type === "skill") {
     const player = state.players.find((p) => p.id === data.id);
     if (player && activateSkill(player)) sendHostSnapshot(true);
@@ -3217,6 +3248,9 @@ window.addEventListener("keydown", (event) => {
     event.preventDefault();
     togglePause();
     return;
+  }
+  if (event.code === "KeyP" && !event.repeat && net.phase === "playing" && state.running) {
+    trackDebugSkillKey();
   }
   if (event.code === "Space") {
     event.preventDefault();

@@ -218,12 +218,12 @@ canvas {
 
 .skill-banner {
   position: absolute;
-  top: 48%;
+  top: 18px;
   left: 50%;
   z-index: 9;
-  width: min(620px, calc(100% - 32px));
-  transform: translate(-50%, -50%) scale(0.96);
-  padding: 18px 22px 20px;
+  width: min(465px, calc(100% - 32px));
+  transform: translateX(-50%) scale(0.96);
+  padding: 13px 17px 15px;
   overflow: hidden;
   border: 1px solid rgba(255, 240, 168, 0.78);
   border-radius: 8px;
@@ -262,24 +262,24 @@ canvas {
 .skill-banner-label {
   display: block;
   color: #ffdc73;
-  font-size: 12px;
+  font-size: 10px;
   font-weight: 900;
   letter-spacing: 0.12em;
 }
 
 .skill-banner strong {
   display: block;
-  margin-top: 5px;
+  margin-top: 4px;
   color: #ffffff;
-  font-size: clamp(30px, 5vw, 56px);
+  font-size: clamp(23px, 3.8vw, 42px);
   line-height: 1;
 }
 
 .skill-banner span:last-child {
   display: block;
-  margin-top: 8px;
+  margin-top: 6px;
   color: #f5d7c2;
-  font-size: 15px;
+  font-size: 12px;
   font-weight: 800;
 }
 
@@ -290,23 +290,23 @@ canvas {
 @keyframes skillBannerPop {
   0% {
     opacity: 0;
-    transform: translate(-50%, -50%) scale(0.72);
+    transform: translateX(-50%) translateY(-16px) scale(0.72);
     filter: blur(3px);
   }
   12% {
     opacity: 1;
-    transform: translate(-50%, -50%) scale(1.06);
+    transform: translateX(-50%) translateY(0) scale(1.06);
     filter: blur(0);
   }
   24% {
-    transform: translate(-50%, -50%) scale(1);
+    transform: translateX(-50%) translateY(0) scale(1);
   }
   78% {
     opacity: 1;
   }
   100% {
     opacity: 0;
-    transform: translate(-50%, -50%) scale(1.04);
+    transform: translateX(-50%) translateY(-10px) scale(1.04);
   }
 }
 
