@@ -1265,7 +1265,6 @@ function requestSkillUse() {
   const player = localPlayer();
   if (!canUseSkill(player)) return;
   if (net.mode === "client") {
-    sfx(skillSoundKey(player.character));
     sendToHost({ type: "skill", id: localPlayerId });
     return;
   }
@@ -1300,7 +1299,7 @@ function canUseSkill(player) {
 function activateSkill(player) {
   if (!canUseSkill(player)) return false;
   player.skillCharge = 0;
-  sfx(skillSoundKey(player.character));
+  sfx(skillSoundKey(player.character), { broadcast: net.mode === "host" });
   const angle = Math.atan2(player.input.aimX - player.x, player.input.aimZ - player.z);
   if (player.character === "witch") castWitchSkill(player);
   else if (player.character === "saber") castSaberSkill(player, angle);
@@ -1542,7 +1541,7 @@ function updateArrows(dt) {
         enemy.hp -= finalDamage;
         enemy.lastHitBy = arrow.owner;
         arrow.hit.add(enemy);
-        if (arrow.kind === "magic") sfx("fire");
+        if (arrow.kind === "magic") sfx("fire", { broadcast: net.mode === "host" });
         const hitColor = arrow.kind === "magic" ? 0xff6b2c : arrow.kind === "flyingSlash" ? 0x91c7ff : 0xf2c14e;
         addRing(enemy.x, enemy.z, arrow.kind === "magic" ? 1.0 : arrow.kind === "flyingSlash" ? 1.15 : 0.8, hitColor);
         if (arrow.kind === "magic" && arrow.splash > 0) {
@@ -1595,13 +1594,13 @@ function updateGems(dt) {
     if (d < player.radius + gem.radius) {
       player.xp += gem.value;
       gem.collected = true;
-      if (player.local) sfx("gem");
+      if (player.local || net.mode === "host") sfx("gem", { broadcast: net.mode === "host" });
       while (player.xp >= player.xpNext) {
         player.xp -= player.xpNext;
         player.level += 1;
         player.xpNext = Math.floor(player.xpNext * 1.28 + 7);
         if (player.character === "saber") addAttackSpeed(player, 0.1);
-        if (player.local) sfx("level");
+        if (player.local || net.mode === "host") sfx("level", { broadcast: net.mode === "host" });
         openLevelUp(player);
       }
     }
@@ -1638,7 +1637,7 @@ function updateHearts(dt) {
       if (distance(heart, player) < heart.radius + player.radius) {
         player.hp = Math.min(player.maxHp, player.hp + heart.heal);
         heart.collected = true;
-        if (player.local) sfx("heal");
+        if (player.local || net.mode === "host") sfx("heal", { broadcast: net.mode === "host" });
         addRing(player.x, player.z, 1.8, 0xff4f7b);
         break;
       }
@@ -1706,7 +1705,7 @@ function addThunderStorm(circle, count) {
 }
 
 function explode(x, z, radius, damage) {
-  sfx("explode");
+  sfx("explode", { broadcast: net.mode === "host" });
   addRing(x, z, radius, 0xe8784f);
   for (const enemy of state.enemies) {
     if (distance({ x, z }, enemy) < radius + enemy.radius) enemy.hp -= damage;
@@ -1714,7 +1713,7 @@ function explode(x, z, radius, damage) {
 }
 
 function magicExplosion(x, z, radius, damage, chainLeft = 0, owner = "", chained = new Set()) {
-  sfx("explode");
+  sfx("explode", { broadcast: net.mode === "host" });
   addRing(x, z, radius, 0xff6b2c);
   addRing(x, z, radius * 0.55, 0xffd166);
   const nextBursts = [];
@@ -2100,15 +2099,23 @@ function stopBgm() {
   audio.bgm.currentTime = 0;
 }
 
-function sfx(kind) {
+function sfx(kind, options = {}) {
+  playSound(kind, options);
+}
+
+function playSound(kind, options = {}) {
   initAudio();
   if (kind === "gem") kind = Math.random() < 0.5 ? "gemA" : "gemB";
   if (kind === "thunder") kind = Math.random() < 0.5 ? "thunderA" : "thunderB";
   const base = audio.sounds[kind];
-  if (!base) return;
-  const sound = base.cloneNode();
-  sound.volume = effectiveSeVolume();
-  sound.play().catch(() => {});
+  if (base) {
+    const sound = base.cloneNode();
+    sound.volume = effectiveSeVolume();
+    sound.play().catch(() => {});
+  }
+  if (net.mode === "host" && options.broadcast && !options.remote) {
+    broadcast({ type: "sound", kind });
+  }
 }
 
 function thunderSfx() {
@@ -2547,6 +2554,7 @@ function handleHostData(data) {
     animationId = requestAnimationFrame(loop);
   }
   if (data.type === "snapshot") applySnapshot(data);
+  if (data.type === "sound") playSound(data.kind, { remote: true });
   if (data.type === "pause") {
     if (data.paused) applyPause(data.id);
     else clearPause();
@@ -2701,7 +2709,7 @@ function syncSimpleMeshes(cache, items, factory, y) {
       mesh = factory(item);
       scene.add(mesh);
       cache.set(item.id, mesh);
-      if (item.owner === localPlayerId && !item.skill) {
+      if (item.owner && !item.skill) {
         sfx(item.kind === "magic" ? "witchAttack" : item.kind === "flyingSlash" ? "saberAttack" : "archerAttack");
       }
     }
@@ -2726,7 +2734,7 @@ function syncEffects(effects) {
       mesh = effect.kind === "slash" ? makeSlashMesh(effect) : effect.kind === "thunder" ? makeThunderBoltMesh(effect) : makeRingMesh(effect);
       scene.add(mesh);
       cache.set(effect.id, mesh);
-      if (effect.kind === "slash" && effect.owner === localPlayerId && !effect.skill) sfx("saberAttack");
+      if (effect.kind === "slash" && effect.owner && !effect.skill) sfx("saberAttack");
       if (effect.kind === "thunder") thunderSfx();
     }
     const t = 1 - effect.life / effect.start;
