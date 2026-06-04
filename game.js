@@ -183,9 +183,9 @@ const CHARACTER_CODEX = [
     id: "saber",
     role: "近距離の前方制圧キャラクター",
     weapon: "2秒ごとにマウス方向へ90度の剣閃で薙ぎ払います。",
-    passive: "バーサーカー: 敵を倒すたびに攻撃速度が1%上がります。",
+    passive: "バーサーカー: レベルが上がるたびに攻撃速度が10%上がります。",
     skill: "回転突進斬り: スペースキーで2秒間回転斬りしながらマウス方向へ突進します。",
-    upgrades: ["剣閃範囲 +15度", "飛燕斬", "二連斬り"],
+    upgrades: ["剣閃範囲 +10度", "飛燕斬", "二連斬り"],
   },
 ];
 
@@ -226,7 +226,7 @@ upgrades.push(
   { name: "ファイア +1", desc: "ウィッチのファイアが同時に1つ増える。散らして撃てるので群れに強い。", classes: ["witch"], apply: (p) => (p.magicBolts += 1) },
   { name: "魔法陣＜雷＞", desc: "自分の周辺に雷の魔法陣を設置する。取得するたび範囲と設置時間が伸びる。", classes: ["witch"], apply: (p) => (p.thunderCircle += 1) },
   { name: "ファイア巨大化", desc: "ファイアが大きくなり、魔力爆発の範囲と威力が伸びる。さらに連鎖爆発が+1される。", classes: ["witch"], apply: (p) => { p.magicRadius += 0.12; p.damage *= 1.08; p.magicSplash += 1; p.chainExplosion += 1; } },
-  { name: "剣閃範囲 +15度", desc: "薙ぎ払いの横範囲が15度広がり、奥への届く距離も15%伸びる。", classes: ["saber"], apply: (p) => { p.slashArc += THREE.MathUtils.degToRad(15); p.slashRange *= 1.15; } },
+  { name: "剣閃範囲 +10度", desc: "薙ぎ払いの横範囲が10度広がり、奥への届く距離も15%伸びる。", classes: ["saber"], apply: (p) => { p.slashArc += THREE.MathUtils.degToRad(10); p.slashRange *= 1.15; } },
   { name: "飛燕斬", desc: "通常攻撃と同時にマウス方向へ飛ぶ斬撃を放つ。重ねるほど貫通、大きさ、威力が伸びる。", classes: ["saber"], apply: (p) => (p.flyingSlash += 1) },
   { name: "二連斬り", desc: "薙ぎ払いの直後に、少しずらした追加の斬撃を放つ。", classes: ["saber"], apply: (p) => (p.doubleSlash += 1) }
 );
@@ -1188,7 +1188,7 @@ function swingSaber(player) {
 function fireFlyingSlash(player, angle) {
   const level = player.flyingSlash || 0;
   if (level <= 0) return;
-  const radius = 0.56 + level * 0.08;
+  const radius = (0.56 + level * 0.08) * 1.2;
   const slash = {
     id: crypto.randomUUID(),
     x: player.x + Math.sin(angle) * 1.45,
@@ -1448,7 +1448,6 @@ function updateEnemies(dt) {
     const owner = state.players.find((p) => p.id === enemy.lastHitBy) || localPlayer();
     if (owner) {
       owner.hp = Math.min(owner.maxHp, owner.hp + owner.lifeSteal);
-      if (owner.character === "saber") addAttackSpeed(owner, 0.01);
     }
     addRing(enemy.x, enemy.z, enemy.boss ? 3.2 : 1.4, enemy.shooter ? 0x3fb7d6 : enemy.boss ? 0x57c4a7 : 0xf2c14e);
   }
@@ -1586,6 +1585,7 @@ function updateGems(dt) {
         player.xp -= player.xpNext;
         player.level += 1;
         player.xpNext = Math.floor(player.xpNext * 1.28 + 7);
+        if (player.character === "saber") addAttackSpeed(player, 0.1);
         if (player.local) sfx("level");
         openLevelUp(player);
       }
