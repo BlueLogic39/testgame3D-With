@@ -226,7 +226,7 @@ upgrades.push(
   { name: "ファイア +1", desc: "ウィッチのファイアが同時に1つ増える。散らして撃てるので群れに強い。", classes: ["witch"], apply: (p) => (p.magicBolts += 1) },
   { name: "魔法陣＜雷＞", desc: "自分の周辺に雷の魔法陣を設置する。取得するたび範囲と設置時間が伸びる。", classes: ["witch"], apply: (p) => (p.thunderCircle += 1) },
   { name: "ファイア巨大化", desc: "ファイアが大きくなり、魔力爆発の範囲と威力が伸びる。さらに連鎖爆発が+1される。", classes: ["witch"], apply: (p) => { p.magicRadius += 0.12; p.damage *= 1.08; p.magicSplash += 1; p.chainExplosion += 1; } },
-  { name: "剣閃範囲 +10度", desc: "薙ぎ払いの横範囲が10度広がり、奥への届く距離も15%伸びる。", classes: ["saber"], apply: (p) => { p.slashArc += THREE.MathUtils.degToRad(10); p.slashRange *= 1.15; } },
+  { name: "剣閃範囲 +10度", desc: "薙ぎ払いの横範囲が10度広がり、奥への届く距離も10%伸びる。", classes: ["saber"], apply: (p) => { p.slashArc += THREE.MathUtils.degToRad(10); p.slashRange *= 1.1; } },
   { name: "飛燕斬", desc: "通常攻撃と同時にマウス方向へ飛ぶ斬撃を放つ。重ねるほど貫通、大きさ、威力が伸びる。", classes: ["saber"], apply: (p) => (p.flyingSlash += 1) },
   { name: "二連斬り", desc: "薙ぎ払いの直後に、少しずらした追加の斬撃を放つ。", classes: ["saber"], apply: (p) => (p.doubleSlash += 1) }
 );
@@ -1188,7 +1188,7 @@ function swingSaber(player) {
 function fireFlyingSlash(player, angle) {
   const level = player.flyingSlash || 0;
   if (level <= 0) return;
-  const radius = (0.56 + level * 0.08) * 1.2;
+  const radius = 0.56 + level * 0.08;
   const slash = {
     id: crypto.randomUUID(),
     x: player.x + Math.sin(angle) * 1.45,
@@ -1198,7 +1198,7 @@ function fireFlyingSlash(player, angle) {
     radius,
     life: 1.15 + level * 0.08,
     damage: player.damage * (0.55 + level * 0.12),
-    pierce: Math.max(0, level - 1),
+    pierce: Math.max(0, (level - 1) * 2),
     owner: player.id,
     kind: "flyingSlash",
     angle,
