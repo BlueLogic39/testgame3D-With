@@ -59,6 +59,7 @@ const ui = {
   closeCodexButton: document.getElementById("closeCodexButton"),
   codexCanvas: document.getElementById("codexCanvas"),
   codexCards: document.getElementById("codexCards"),
+  codexModelToggle: document.getElementById("codexModelToggle"),
   codexName: document.getElementById("codexName"),
   codexRole: document.getElementById("codexRole"),
   codexWeapon: document.getElementById("codexWeapon"),
@@ -404,10 +405,11 @@ function updateFireRate(player) {
   player.fireRate = base / (1 + (player.attackSpeedBonus || 0));
 }
 
-function makePlayerMesh(name, local, character = "archer") {
+function makePlayerMesh(name, local, character = "archer", options = {}) {
   const group = new THREE.Group();
   const type = CHARACTER_TYPES[character] ? character : "archer";
-  const useExternalModel = Boolean(CHARACTER_MODELS[type]);
+  const useLegacyModel = Boolean(options.legacy);
+  const useExternalModel = !useLegacyModel && Boolean(CHARACTER_MODELS[type]);
   const bodyMat = new THREE.MeshStandardMaterial({
     color: local ? CHARACTER_TYPES[type].color : CHARACTER_TYPES[type].remoteColor,
     roughness: type === "saber" ? 0.38 : 0.55,
@@ -445,7 +447,7 @@ function makePlayerMesh(name, local, character = "archer") {
   const label = makeNameLabel(name);
   label.position.y = 3.35;
   group.add(label);
-  const propMeshes = addCharacterProps(group, type, bodyMat) || [];
+  const propMeshes = addCharacterProps(group, type, bodyMat, useLegacyModel) || [];
   const coffin = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.42, 1.45), new THREE.MeshStandardMaterial({ color: 0x5b3424, roughness: 0.85 }));
   coffin.name = "coffin";
   coffin.position.y = 0.42;
@@ -463,22 +465,22 @@ function makePlayerMesh(name, local, character = "archer") {
   group.userData.characterProps = propMeshes;
   group.userData.externalModelPending = useExternalModel;
   if (useExternalModel) setFallbackModelVisible(group, false);
-  attachCharacterModel(group, type);
+  if (!useLegacyModel) attachCharacterModel(group, type);
   return group;
 }
 
-function addCharacterProps(group, character, bodyMat) {
+function addCharacterProps(group, character, bodyMat, useLegacyModel = false) {
   if (character === "witch") {
-    const staff = makeFbxMesh("staff", makeOldStaffMesh);
+    const staff = useLegacyModel ? makeOldStaffMesh() : makeFbxMesh("staff", makeOldStaffMesh);
     group.add(staff);
     return [staff];
   }
   if (character === "saber") {
-    const sword = makeFbxMesh("sword", () => makeOldSwordMesh(bodyMat));
+    const sword = useLegacyModel ? makeOldSwordMesh(bodyMat) : makeFbxMesh("sword", () => makeOldSwordMesh(bodyMat));
     group.add(sword);
     return [sword];
   }
-  const bow = makeFbxMesh("bow", makeOldBowMesh);
+  const bow = useLegacyModel ? makeOldBowMesh() : makeFbxMesh("bow", makeOldBowMesh);
   group.add(bow);
   return [bow];
 }
@@ -2247,8 +2249,13 @@ function initCodexViewer() {
   );
   floor.rotation.x = -Math.PI / 2;
   codexScene.add(floor);
-  codexViewer = { scene: codexScene, camera: codexCamera, renderer: codexRenderer, model: null, rotation: 0, dragging: false, lastX: 0, raf: 0 };
+  codexViewer = { scene: codexScene, camera: codexCamera, renderer: codexRenderer, model: null, character: "archer", modelMode: "current", rotation: 0, dragging: false, lastX: 0, raf: 0 };
   buildCodexCards();
+  ui.codexModelToggle?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-model-mode]");
+    if (!button) return;
+    setCodexModelMode(button.dataset.modelMode);
+  });
   ui.codexCanvas.addEventListener("pointerdown", (event) => {
     codexViewer.dragging = true;
     codexViewer.lastX = event.clientX;
@@ -2284,12 +2291,8 @@ function buildCodexCards() {
 function selectCodexCharacter(character) {
   const info = CHARACTER_CODEX.find((item) => item.id === character) || CHARACTER_CODEX[0];
   if (!codexViewer) return;
-  if (codexViewer.model) codexViewer.scene.remove(codexViewer.model);
-  codexViewer.model = makePlayerMesh(CHARACTER_TYPES[info.id].label, true, info.id);
-  codexViewer.model.scale.setScalar(1.25);
-  codexViewer.model.position.y = -0.08;
-  codexViewer.rotation = 0;
-  codexViewer.scene.add(codexViewer.model);
+  codexViewer.character = info.id;
+  renderCodexModel(info);
   ui.codexName.textContent = CHARACTER_TYPES[info.id].label;
   ui.codexRole.textContent = info.role;
   ui.codexWeapon.textContent = info.weapon;
@@ -2298,6 +2301,31 @@ function selectCodexCharacter(character) {
   ui.codexUpgrades.innerHTML = info.upgrades.map((upgrade) => `<li>${upgrade}</li>`).join("");
   for (const button of ui.codexCards.querySelectorAll("[data-character]")) {
     button.classList.toggle("selected", button.dataset.character === info.id);
+  }
+  updateCodexModelToggle();
+}
+
+function renderCodexModel(info) {
+  if (codexViewer.model) codexViewer.scene.remove(codexViewer.model);
+  codexViewer.model = makePlayerMesh(CHARACTER_TYPES[info.id].label, true, info.id, { legacy: codexViewer.modelMode === "legacy" });
+  codexViewer.model.scale.setScalar(1.25);
+  codexViewer.model.position.y = -0.08;
+  codexViewer.rotation = 0;
+  codexViewer.scene.add(codexViewer.model);
+}
+
+function setCodexModelMode(mode) {
+  if (!codexViewer || !["current", "legacy"].includes(mode)) return;
+  if (codexViewer.modelMode === mode) return;
+  codexViewer.modelMode = mode;
+  const info = CHARACTER_CODEX.find((item) => item.id === codexViewer.character) || CHARACTER_CODEX[0];
+  renderCodexModel(info);
+  updateCodexModelToggle();
+}
+
+function updateCodexModelToggle() {
+  for (const button of ui.codexModelToggle?.querySelectorAll("[data-model-mode]") || []) {
+    button.classList.toggle("selected", button.dataset.modelMode === codexViewer.modelMode);
   }
 }
 

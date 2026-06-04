@@ -594,6 +594,32 @@ h2 {
   background: #2d2b20;
 }
 
+.codex-model-toggle {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  padding: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(12, 15, 18, 0.42);
+}
+
+.codex-model-toggle button {
+  min-height: 34px;
+  padding: 7px 8px;
+  color: #dce4e1;
+  background: transparent;
+  border: 1px solid transparent;
+  box-shadow: none;
+  font-size: 13px;
+}
+
+.codex-model-toggle button.selected {
+  color: #121417;
+  background: #f2c14e;
+  border-color: #ffd86b;
+}
+
 .codex-detail {
   display: grid;
   gap: 6px;
