@@ -216,6 +216,100 @@ canvas {
   pointer-events: none;
 }
 
+.skill-banner {
+  position: absolute;
+  top: 48%;
+  left: 50%;
+  z-index: 9;
+  width: min(620px, calc(100% - 32px));
+  transform: translate(-50%, -50%) scale(0.96);
+  padding: 18px 22px 20px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 240, 168, 0.78);
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, rgba(11, 14, 18, 0), rgba(11, 14, 18, 0.92) 16%, rgba(60, 24, 21, 0.9) 52%, rgba(11, 14, 18, 0.92) 84%, rgba(11, 14, 18, 0)),
+    linear-gradient(135deg, rgba(255, 216, 107, 0.2), rgba(255, 93, 58, 0.18));
+  color: #fff7d7;
+  text-align: center;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.9);
+  box-shadow:
+    0 0 34px rgba(242, 193, 78, 0.38),
+    0 18px 42px rgba(0, 0, 0, 0.48);
+  pointer-events: none;
+  animation: skillBannerPop 1500ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.skill-banner::before,
+.skill-banner::after {
+  content: "";
+  position: absolute;
+  left: 10%;
+  right: 10%;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #ffd86b, #ff6b4a, transparent);
+  box-shadow: 0 0 14px rgba(255, 216, 107, 0.7);
+}
+
+.skill-banner::before {
+  top: 7px;
+}
+
+.skill-banner::after {
+  bottom: 7px;
+}
+
+.skill-banner-label {
+  display: block;
+  color: #ffdc73;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+}
+
+.skill-banner strong {
+  display: block;
+  margin-top: 5px;
+  color: #ffffff;
+  font-size: clamp(30px, 5vw, 56px);
+  line-height: 1;
+}
+
+.skill-banner span:last-child {
+  display: block;
+  margin-top: 8px;
+  color: #f5d7c2;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.skill-banner.flash {
+  animation: skillBannerPop 1500ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes skillBannerPop {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.72);
+    filter: blur(3px);
+  }
+  12% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.06);
+    filter: blur(0);
+  }
+  24% {
+    transform: translate(-50%, -50%) scale(1);
+  }
+  78% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1.04);
+  }
+}
+
 .update-corner {
   position: absolute;
   left: 10px;

@@ -39,6 +39,9 @@ const ui = {
   leaveRoomButton: document.getElementById("leaveRoomButton"),
   lobbyStatus: document.getElementById("lobbyStatus"),
   toast: document.getElementById("toast"),
+  skillBanner: document.getElementById("skillBanner"),
+  skillBannerName: document.getElementById("skillBannerName"),
+  skillBannerPlayer: document.getElementById("skillBannerPlayer"),
   radialMenu: document.getElementById("radialMenu"),
   updateButton: document.getElementById("updateButton"),
   updateInfo: document.getElementById("updateInfo"),
@@ -1304,8 +1307,8 @@ function activateSkill(player) {
   if (player.character === "witch") castWitchSkill(player);
   else if (player.character === "saber") castSaberSkill(player, angle);
   else castArcherSkill(player, angle);
-  showToast(`${player.name}: ${skillName(player.character)}`);
-  if (net.mode === "host") broadcast({ type: "toast", text: `${player.name}: ${skillName(player.character)}` });
+  showSkillBanner(player.name, skillName(player.character));
+  if (net.mode === "host") broadcast({ type: "skillBanner", playerName: player.name, skill: skillName(player.character) });
   return true;
 }
 
@@ -2560,6 +2563,7 @@ function handleHostData(data) {
     else clearPause();
   }
   if (data.type === "toast") showToast(data.text);
+  if (data.type === "skillBanner") showSkillBanner(data.playerName, data.skill);
   if (data.type === "comm") showToast(`${data.name}: ${data.text}`);
   if (data.type === "levelOffer" && data.playerId === localPlayerId) {
     net.waitingFor = localPlayerId;
@@ -2929,6 +2933,20 @@ function showToast(text) {
   ui.toast.classList.remove("hidden");
   clearTimeout(ui.toast._timer);
   ui.toast._timer = setTimeout(() => ui.toast.classList.add("hidden"), 2600);
+}
+
+function showSkillBanner(playerName, skill) {
+  if (!ui.skillBanner) {
+    showToast(`${playerName}: ${skill}`);
+    return;
+  }
+  ui.skillBannerName.textContent = skill || "";
+  ui.skillBannerPlayer.textContent = playerName ? `${playerName} 発動` : "固有スキル発動";
+  ui.skillBanner.classList.remove("hidden", "flash");
+  void ui.skillBanner.offsetWidth;
+  ui.skillBanner.classList.add("flash");
+  clearTimeout(ui.skillBanner._timer);
+  ui.skillBanner._timer = setTimeout(() => ui.skillBanner.classList.add("hidden"), 1500);
 }
 
 function updateOnlineBadge() {
