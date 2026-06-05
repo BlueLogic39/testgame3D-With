@@ -102,6 +102,7 @@ let spectateIndex = 0;
 let radialActive = false;
 let radialChoice = "Hello!";
 let selectedRoomKey = "";
+let selectedOnlineRoom = null;
 let selectedCharacterId = "archer";
 let net = {
   mode: "solo",
@@ -113,11 +114,13 @@ let net = {
   roomCode: "",
   roomName: "",
   roomPassword: "",
+  roomOwnerToken: "",
   pausedBy: null,
   waitingFor: null,
   lastSend: 0,
   restartVotes: new Set(),
 };
+let lobbyHeartbeatTimer = 0;
 let codexViewer = null;
 let audio = {
   bgm: null,
@@ -145,6 +148,10 @@ const AUDIO_FILES = {
   thunderA: "kaminari1.mp3",
   thunderB: "kaminari2.mp3",
 };
+
+const SUPABASE_URL = "https://oeizknymvzmokzxksidg.supabase.co";
+const SUPABASE_KEY = "sb_publishable_dGQHfQBP0GXAv1ILQXn3lA_I_SSPrcz";
+const ONLINE_ROOM_TTL_SECONDS = 45;
 
 const CHARACTER_TYPES = {
   archer: { label: "アーチャー", color: 0x57c4a7, remoteColor: 0x5aa7ff },
@@ -2454,13 +2461,17 @@ async function createRoom() {
   net.roomCode = code;
   net.roomName = roomName;
   net.roomPassword = password;
+  net.roomOwnerToken = crypto.randomUUID();
   net.lobbyPlayers = [{ id: localPlayerId, name: playerName(), character: selectedCharacter(), host: true }];
   selectedRoomKey = code;
   rememberRoom({ code, name: roomName, host: playerName(), hasPassword: Boolean(password), password });
   renderRoomList();
   ui.roomStatus.textContent = `準備中: ${code}`;
   net.peer = new Peer(`vansaba-${code}`);
-  net.peer.on("open", () => showLobby("ホストです。参加者が揃ったら開始してください。"));
+  net.peer.on("open", () => {
+    showLobby("ホストです。参加者が揃ったら開始してください。");
+    startLobbyHeartbeat();
+  });
   net.peer.on("connection", (conn) => {
     net.clients.set(conn.peer, conn);
     conn.on("data", (data) => handleClientData(conn, data));
@@ -2827,6 +2838,7 @@ function removeLobbyPlayer(id) {
 function broadcastLobby() {
   renderLobbyPlayers();
   broadcast({ type: "lobby", players: net.lobbyPlayers });
+  heartbeatRoom().catch((error) => console.warn("Failed to update room player count", error));
 }
 
 function sendToHost(message) {
@@ -2846,11 +2858,108 @@ function broadcast(message) {
   }
 }
 
+function supabaseReady() {
+  return Boolean(SUPABASE_URL && SUPABASE_KEY && window.fetch);
+}
+
+async function supabaseRequest(path, options = {}) {
+  if (!supabaseReady()) throw new Error("Supabase is not configured.");
+  const response = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    ...options,
+    headers: {
+      apikey: SUPABASE_KEY,
+      Authorization: `Bearer ${SUPABASE_KEY}`,
+      "Content-Type": "application/json",
+      ...(options.headers || {}),
+    },
+  });
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(text || `Supabase request failed: ${response.status}`);
+  }
+  if (response.status === 204) return null;
+  const text = await response.text();
+  return text ? JSON.parse(text) : null;
+}
+
+function onlineRoomFromRow(row) {
+  return {
+    code: row.room_id,
+    name: row.room_name,
+    host: row.host_name,
+    hasPassword: Boolean(row.has_password),
+    password: "",
+    playerCount: row.player_count || 1,
+    online: true,
+  };
+}
+
+async function fetchOnlineRooms() {
+  const rows = await supabaseRequest(`active_rooms?select=*&order=updated_at.desc&limit=24`);
+  return (rows || []).map(onlineRoomFromRow);
+}
+
+async function publishRoom() {
+  if (!supabaseReady() || net.mode !== "host" || !net.roomCode || !net.roomOwnerToken) return;
+  await supabaseRequest("rpc/register_room", {
+    method: "POST",
+    body: JSON.stringify({
+      p_room_id: net.roomCode,
+      p_room_name: net.roomName || net.roomCode,
+      p_host_name: playerName(),
+      p_has_password: Boolean(net.roomPassword),
+      p_owner_token: net.roomOwnerToken,
+      p_player_count: Math.max(1, net.lobbyPlayers.length || state?.players?.length || 1),
+    }),
+  });
+}
+
+async function heartbeatRoom() {
+  if (!supabaseReady() || net.mode !== "host" || !net.roomCode || !net.roomOwnerToken) return;
+  await supabaseRequest("rpc/heartbeat_room", {
+    method: "POST",
+    body: JSON.stringify({
+      p_room_id: net.roomCode,
+      p_owner_token: net.roomOwnerToken,
+      p_player_count: Math.max(1, net.lobbyPlayers.length || state?.players?.length || 1),
+    }),
+  });
+}
+
+function startLobbyHeartbeat() {
+  stopLobbyHeartbeat();
+  publishRoom().catch((error) => {
+    console.warn("Failed to publish room", error);
+    ui.roomStatus.textContent = "オンライン部屋一覧への登録に失敗しました。部屋IDでの参加は使えます。";
+  });
+  lobbyHeartbeatTimer = window.setInterval(() => {
+    heartbeatRoom().catch((error) => console.warn("Failed to heartbeat room", error));
+  }, 10000);
+}
+
+function stopLobbyHeartbeat() {
+  if (lobbyHeartbeatTimer) clearInterval(lobbyHeartbeatTimer);
+  lobbyHeartbeatTimer = 0;
+}
+
+function closeOnlineRoom(roomCode = net.roomCode, ownerToken = net.roomOwnerToken) {
+  if (!supabaseReady() || !roomCode || !ownerToken) return;
+  supabaseRequest("rpc/close_room", {
+    method: "POST",
+    body: JSON.stringify({ p_room_id: roomCode, p_owner_token: ownerToken }),
+  }).catch((error) => console.warn("Failed to close online room", error));
+}
+
 function closeConnections() {
+  const closingRoomCode = net.roomCode;
+  const closingOwnerToken = net.roomOwnerToken;
+  const closingAsHost = net.mode === "host";
+  stopLobbyHeartbeat();
+  if (closingAsHost) closeOnlineRoom(closingRoomCode, closingOwnerToken);
   if (net.conn) net.conn.close();
   for (const conn of net.clients.values()) conn.close();
   if (net.peer) net.peer.destroy();
-  net = { mode: "solo", phase: "menu", peer: null, conn: null, clients: new Map(), lobbyPlayers: [], roomCode: "", roomName: "", roomPassword: "", pausedBy: null, waitingFor: null, lastSend: 0, restartVotes: new Set() };
+  net = { mode: "solo", phase: "menu", peer: null, conn: null, clients: new Map(), lobbyPlayers: [], roomCode: "", roomName: "", roomPassword: "", roomOwnerToken: "", pausedBy: null, waitingFor: null, lastSend: 0, restartVotes: new Set() };
 }
 
 function leaveRoom() {
@@ -3068,9 +3177,11 @@ function joinRoom(options = {}) {
     ui.roomStatus.textContent = "パスワードを入力してください。";
     return;
   }
-  const password = directCode ? (options.password || "").trim() : ui.joinPasswordPanel.classList.contains("hidden")
-    ? (ui.roomPasswordInput.value.trim() || room?.password || "")
-    : ui.joinPasswordInput.value.trim();
+  const password = directCode
+    ? (options.password || "").trim()
+    : ui.joinPasswordPanel.classList.contains("hidden")
+      ? (room?.online ? "" : ui.roomPasswordInput.value.trim() || room?.password || "")
+      : ui.joinPasswordInput.value.trim();
   const code = directCode || room?.code || roomKey(roomName);
   if (!roomName) {
     ui.roomStatus.textContent = "参加する部屋を選択するか、部屋IDを入力してください。";
@@ -3143,24 +3254,34 @@ function rememberRoom(room) {
 }
 
 function selectedRoom() {
+  if (selectedOnlineRoom?.code === selectedRoomKey) return selectedOnlineRoom;
   return loadRooms().find((room) => room.code === selectedRoomKey);
 }
 
-function renderRoomList() {
+async function renderRoomList() {
   if (!ui.roomList) return;
-  const rooms = loadRooms();
+  const localRooms = loadRooms();
+  let onlineRooms = [];
+  try {
+    onlineRooms = await fetchOnlineRooms();
+  } catch (error) {
+    console.warn("Failed to fetch online rooms", error);
+  }
+  const onlineCodes = new Set(onlineRooms.map((room) => room.code));
+  const rooms = [...onlineRooms, ...localRooms.filter((room) => !onlineCodes.has(room.code))];
   ui.roomList.innerHTML = "";
   if (!rooms.length) {
-    ui.roomList.innerHTML = `<p class="small">表示できる部屋がありません。</p>`;
+    ui.roomList.innerHTML = `<p class="small">表示できる部屋がありません。ホストの部屋IDを直接入力して参加できます。</p>`;
     return;
   }
   for (const room of rooms) {
     const button = document.createElement("button");
     button.type = "button";
     button.className = `room-card ${room.code === selectedRoomKey ? "selected" : ""}`;
-    button.innerHTML = `<strong>${room.name}</strong><span>${room.hasPassword ? "鍵あり" : "鍵なし"}</span><small>ホスト: ${room.host}</small><small>ID: ${room.code}</small>`;
+    button.innerHTML = `<strong>${room.name}</strong><span>${room.hasPassword ? "鍵あり" : "鍵なし"}${room.online ? ` / ${room.playerCount || 1}人` : ""}</span><small>ホスト: ${room.host}</small><small>ID: ${room.code}</small>`;
     button.addEventListener("click", () => {
       selectedRoomKey = room.code;
+      selectedOnlineRoom = room.online ? room : null;
       ui.roomNameInput.value = room.name;
       ui.roomPasswordInput.value = room.password || "";
       if (room.hasPassword) {
