@@ -18,7 +18,11 @@ const ui = {
   openCreateRoomButton: document.getElementById("openCreateRoomButton"),
   openJoinRoomButton: document.getElementById("openJoinRoomButton"),
   characterSelect: document.getElementById("characterSelect"),
+  stageSelect: document.getElementById("stageSelect"),
+  difficultySelect: document.getElementById("difficultySelect"),
   createRoomPanel: document.getElementById("createRoomPanel"),
+  roomStageSelect: document.getElementById("roomStageSelect"),
+  roomDifficultySelect: document.getElementById("roomDifficultySelect"),
   joinRoomPanel: document.getElementById("joinRoomPanel"),
   backFromCreateButton: document.getElementById("backFromCreateButton"),
   backFromJoinButton: document.getElementById("backFromJoinButton"),
@@ -101,6 +105,8 @@ let radialChoice = "Hello!";
 let selectedRoomKey = "";
 let selectedOnlineRoom = null;
 let selectedCharacterId = "archer";
+let selectedStageId = "stage1";
+let selectedDifficultyId = "normal";
 let net = {
   mode: "solo",
   phase: "menu",
@@ -112,6 +118,8 @@ let net = {
   roomName: "",
   roomPassword: "",
   roomOwnerToken: "",
+  stageId: "stage1",
+  difficultyId: "normal",
   pausedBy: null,
   waitingFor: null,
   lastSend: 0,
@@ -154,6 +162,15 @@ const CHARACTER_TYPES = {
   archer: { label: "アーチャー", color: 0x57c4a7, remoteColor: 0x5aa7ff },
   witch: { label: "ウィッチ", color: 0x8b5cf6, remoteColor: 0xb07cff },
   saber: { label: "セイバー", color: 0xd9dfe8, remoteColor: 0x91c7ff },
+};
+
+const STAGES = {
+  stage1: { label: "ステージ1", description: "現在のフィールド" },
+};
+
+const DIFFICULTIES = {
+  easy: { label: "イージー", description: "青い敵なし", shooterEnemies: false },
+  normal: { label: "ノーマル", description: "通常ルール", shooterEnemies: true },
 };
 
 const CHARACTER_MODELS = {
@@ -239,7 +256,7 @@ upgrades.push(
   { name: "魔法陣＜雷＞", desc: "自分の周辺に雷の魔法陣を設置する。取得するたび範囲と設置時間が伸びる。", classes: ["witch"], apply: (p) => (p.thunderCircle += 1) },
   { name: "ファイア巨大化", desc: "ファイアが大きくなり、魔力爆発の範囲と威力が伸びる。さらに連鎖爆発が+1される。", classes: ["witch"], apply: (p) => { p.magicRadius += 0.12; p.damage *= 1.08; p.magicSplash += 1; p.chainExplosion += 1; } },
   { name: "剣閃範囲 +10度", desc: "薙ぎ払いの横範囲が10度広がり、奥への届く距離も10%伸びる。", classes: ["saber"], apply: (p) => { p.slashArc += THREE.MathUtils.degToRad(10); p.slashRange *= 1.1; } },
-  { name: "飛燕斬", desc: "通常攻撃と同時にマウス方向へ飛ぶ斬撃を放つ。重ねるほど貫通、大きさ、威力が伸びる。", classes: ["saber"], apply: (p) => (p.flyingSlash += 1) },
+  { name: "飛燕斬", desc: "通常攻撃と同時に飛ぶ斬撃を放つ。初回は威力67%、貫通0。以後は1回ごとに威力+12%、大きさ+0.08、貫通+2。", classes: ["saber"], apply: (p) => (p.flyingSlash += 1) },
   { name: "二連斬り", desc: "薙ぎ払いの直後に、少しずらした追加の斬撃を放つ。", classes: ["saber"], apply: (p) => (p.doubleSlash += 1) }
 );
 
@@ -300,7 +317,7 @@ function initThree() {
   window.addEventListener("resize", resize);
 }
 
-function newState(playerInfos) {
+function newState(playerInfos, options = {}) {
   const players = playerInfos.map((info, index) => {
     const angle = (Math.PI * 2 * index) / Math.max(1, playerInfos.length);
     const player = makePlayer(info.id, info.name, Math.sin(angle) * 2, Math.cos(angle) * 2, info.id === localPlayerId, info.character || "archer");
@@ -319,6 +336,8 @@ function newState(playerInfos) {
     pauseReason: null,
     pendingLevel: null,
     players,
+    stageId: STAGES[options.stageId] ? options.stageId : "stage1",
+    difficultyId: DIFFICULTIES[options.difficultyId] ? options.difficultyId : "normal",
     enemies: [],
     arrows: [],
     enemyBullets: [],
@@ -880,12 +899,16 @@ function startGame(mode = "solo") {
   if (state) resetSceneEntities();
   net.mode = mode;
   net.phase = "playing";
+  if (mode !== "client") {
+    net.stageId = selectedStage();
+    net.difficultyId = selectedDifficulty();
+  }
   net.pausedBy = null;
   net.waitingFor = null;
   net.restartVotes = new Set();
   if (mode !== "client") localPlayerId = "host";
   const players = mode === "host" && net.lobbyPlayers.length ? net.lobbyPlayers : [{ id: localPlayerId, name: playerName(), character: selectedCharacter() }];
-  state = newState(players);
+  state = newState(players, { stageId: net.stageId, difficultyId: net.difficultyId });
   state.running = true;
   lastTime = performance.now();
   initAudio();
@@ -900,7 +923,7 @@ function startGame(mode = "solo") {
   updateUi();
   updateOnlineBadge();
   animationId = requestAnimationFrame(loop);
-  if (mode === "host") broadcast({ type: "start", players: net.lobbyPlayers });
+  if (mode === "host") broadcast({ type: "start", players: net.lobbyPlayers, stageId: net.stageId, difficultyId: net.difficultyId });
 }
 
 function resetSceneEntities() {
@@ -1415,8 +1438,9 @@ function spawnEnemies(dt) {
   const pressure = Math.min(1.4, state.elapsed / 105);
   state.spawnTimer = Math.max(0.24, (0.72 - pressure * 0.34) / 0.75);
   const count = state.elapsed > 85 ? 4 : state.elapsed > 40 ? 2 : 1;
+  const allowShooters = DIFFICULTIES[state.difficultyId]?.shooterEnemies !== false;
   for (let i = 0; i < count; i += 1) {
-    const shooter = state.elapsed > 18 && Math.random() < Math.min(0.12, 0.03 + state.elapsed / 960);
+    const shooter = allowShooters && state.elapsed > 18 && Math.random() < Math.min(0.12, 0.03 + state.elapsed / 960);
     if (!shooter && Math.random() > 0.75) continue;
     addEnemy(false, shooter);
   }
@@ -2460,6 +2484,8 @@ async function createRoom() {
   net.roomName = roomName;
   net.roomPassword = password;
   net.roomOwnerToken = crypto.randomUUID();
+  net.stageId = selectedStage();
+  net.difficultyId = selectedDifficulty();
   net.lobbyPlayers = [{ id: localPlayerId, name: playerName(), character: selectedCharacter(), host: true }];
   selectedRoomKey = code;
   rememberRoom({ code, name: roomName, host: playerName(), hasPassword: Boolean(password), password });
@@ -2533,10 +2559,17 @@ function showLobby(message) {
   ui.levelUp.classList.add("hidden");
   hideStatus();
   ui.lobby.classList.remove("hidden");
-  ui.lobbyCode.textContent = net.roomPassword ? `部屋ID: ${net.roomCode} / パスワード: ${net.roomPassword}` : `部屋ID: ${net.roomCode}`;
+  ui.lobbyCode.textContent = lobbyRoomText();
   ui.lobbyStatus.textContent = message;
   ui.lobbyStartButton.classList.toggle("hidden", net.mode !== "host");
   renderLobbyPlayers();
+}
+
+function lobbyRoomText() {
+  const stage = STAGES[net.stageId]?.label || "ステージ1";
+  const difficulty = DIFFICULTIES[net.difficultyId]?.label || "ノーマル";
+  const password = net.roomPassword ? ` / パスワード: ${net.roomPassword}` : "";
+  return `部屋ID: ${net.roomCode}${password} / ${stage} / ${difficulty}`;
 }
 
 function renderLobbyPlayers() {
@@ -2566,7 +2599,7 @@ function handleClientData(conn, data) {
     broadcast({ type: "toast", text: `${data.name || "Guest"}が入室しました` });
     if (net.phase === "playing" && state?.running) {
       addPlayerToMatch(data.id, data.name || "Guest", data.character || "archer");
-      conn.send({ type: "start", players: state.players.map((p) => ({ id: p.id, name: p.name, character: p.character })) });
+      conn.send({ type: "start", players: state.players.map((p) => ({ id: p.id, name: p.name, character: p.character })), stageId: state.stageId, difficultyId: state.difficultyId });
       sendHostSnapshot(true);
     }
     broadcastLobby();
@@ -2598,6 +2631,8 @@ function handleHostData(data) {
   if (!data) return;
   if (data.type === "lobby") {
     net.lobbyPlayers = data.players || [];
+    net.stageId = data.stageId || net.stageId || "stage1";
+    net.difficultyId = data.difficultyId || net.difficultyId || "normal";
     if (net.phase === "playing") {
       updateOnlineBadge();
       return;
@@ -2606,6 +2641,8 @@ function handleHostData(data) {
   }
   if (data.type === "start") {
     net.phase = "playing";
+    net.stageId = data.stageId || net.stageId || "stage1";
+    net.difficultyId = data.difficultyId || net.difficultyId || "normal";
     net.restartVotes = new Set();
     initAudio();
     sfx("start");
@@ -2620,7 +2657,7 @@ function handleHostData(data) {
     hideStatus();
     cancelAnimationFrame(animationId);
     if (state) resetSceneEntities();
-    state = newState(data.players || [{ id: localPlayerId, name: playerName() }]);
+    state = newState(data.players || [{ id: localPlayerId, name: playerName() }], { stageId: net.stageId, difficultyId: net.difficultyId });
     state.running = true;
     ui.restartButton.disabled = false;
     updateOnlineBadge();
@@ -2835,7 +2872,7 @@ function removeLobbyPlayer(id) {
 
 function broadcastLobby() {
   renderLobbyPlayers();
-  broadcast({ type: "lobby", players: net.lobbyPlayers });
+  broadcast({ type: "lobby", players: net.lobbyPlayers, stageId: net.stageId, difficultyId: net.difficultyId });
   heartbeatRoom().catch((error) => console.warn("Failed to update room player count", error));
 }
 
@@ -2928,7 +2965,7 @@ function startLobbyHeartbeat() {
   stopLobbyHeartbeat();
   publishRoom().catch((error) => {
     console.warn("Failed to publish room", error);
-    ui.roomStatus.textContent = "オンライン部屋一覧への登録に失敗しました。部屋IDでの参加は使えます。";
+    ui.roomStatus.textContent = "オンライン部屋一覧への登録に失敗しました。時間をおいてもう一度作成してください。";
   });
   lobbyHeartbeatTimer = window.setInterval(() => {
     heartbeatRoom().catch((error) => console.warn("Failed to heartbeat room", error));
@@ -2957,7 +2994,7 @@ function closeConnections() {
   if (net.conn) net.conn.close();
   for (const conn of net.clients.values()) conn.close();
   if (net.peer) net.peer.destroy();
-  net = { mode: "solo", phase: "menu", peer: null, conn: null, clients: new Map(), lobbyPlayers: [], roomCode: "", roomName: "", roomPassword: "", roomOwnerToken: "", pausedBy: null, waitingFor: null, lastSend: 0, restartVotes: new Set() };
+  net = { mode: "solo", phase: "menu", peer: null, conn: null, clients: new Map(), lobbyPlayers: [], roomCode: "", roomName: "", roomPassword: "", roomOwnerToken: "", stageId: selectedStage(), difficultyId: selectedDifficulty(), pausedBy: null, waitingFor: null, lastSend: 0, restartVotes: new Set() };
 }
 
 function leaveRoom() {
@@ -3020,6 +3057,37 @@ function normalizePasswordInput(input) {
 
 function selectedCharacter() {
   return CHARACTER_TYPES[selectedCharacterId] ? selectedCharacterId : "archer";
+}
+
+function selectedStage() {
+  return STAGES[selectedStageId] ? selectedStageId : "stage1";
+}
+
+function selectedDifficulty() {
+  return DIFFICULTIES[selectedDifficultyId] ? selectedDifficultyId : "normal";
+}
+
+function selectStage(stageId) {
+  selectedStageId = STAGES[stageId] ? stageId : "stage1";
+  updateStageDifficultyButtons();
+}
+
+function selectDifficulty(difficultyId) {
+  selectedDifficultyId = DIFFICULTIES[difficultyId] ? difficultyId : "normal";
+  updateStageDifficultyButtons();
+}
+
+function updateStageDifficultyButtons() {
+  for (const root of [ui.stageSelect, ui.roomStageSelect]) {
+    for (const button of root?.querySelectorAll("[data-stage]") || []) {
+      button.classList.toggle("selected", button.dataset.stage === selectedStageId);
+    }
+  }
+  for (const root of [ui.difficultySelect, ui.roomDifficultySelect]) {
+    for (const button of root?.querySelectorAll("[data-difficulty]") || []) {
+      button.classList.toggle("selected", button.dataset.difficulty === selectedDifficultyId);
+    }
+  }
 }
 
 function makeRoomCode() {
@@ -3195,7 +3263,7 @@ function joinRoom(options = {}) {
       : ui.joinPasswordInput.value.trim();
   const code = directCode || room?.code || roomKey(roomName);
   if (!roomName) {
-    ui.roomStatus.textContent = "参加する部屋を選択するか、部屋IDを入力してください。";
+    ui.roomStatus.textContent = "参加する部屋を選択してください。";
     return;
   }
   closeConnections();
@@ -3459,6 +3527,7 @@ ui.startButton.addEventListener("click", () => startGame("solo"));
 ui.openCreateRoomButton.addEventListener("click", () => {
   ui.start.classList.add("hidden");
   ui.createRoomPanel.classList.remove("hidden");
+  updateStageDifficultyButtons();
 });
 ui.openJoinRoomButton.addEventListener("click", () => {
   ui.start.classList.add("hidden");
@@ -3483,6 +3552,18 @@ ui.bgmVolume.addEventListener("input", (event) => setVolume("bgm", event.target.
 ui.seVolume.addEventListener("input", (event) => setVolume("se", event.target.value));
 ui.roomPasswordInput.addEventListener("input", () => normalizePasswordInput(ui.roomPasswordInput));
 ui.joinPasswordInput.addEventListener("input", () => normalizePasswordInput(ui.joinPasswordInput));
+for (const root of [ui.stageSelect, ui.roomStageSelect]) {
+  root?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-stage]");
+    if (button) selectStage(button.dataset.stage);
+  });
+}
+for (const root of [ui.difficultySelect, ui.roomDifficultySelect]) {
+  root?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-difficulty]");
+    if (button) selectDifficulty(button.dataset.difficulty);
+  });
+}
 ui.codexButton.addEventListener("click", openCharacterCodex);
 ui.closeCodexButton.addEventListener("click", closeCharacterCodex);
 if (ui.characterSelect) {

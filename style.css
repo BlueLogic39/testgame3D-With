@@ -499,6 +499,68 @@ h2 {
   line-height: 1.3;
 }
 
+.stage-mode-panel {
+  display: grid;
+  gap: 7px;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(12, 15, 18, 0.32);
+}
+
+.stage-mode-panel.compact {
+  padding: 8px;
+}
+
+.stage-mode-panel > strong {
+  color: #ffd86b;
+  font-size: 13px;
+  text-align: left;
+}
+
+.stage-select,
+.difficulty-select {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.stage-select {
+  grid-template-columns: 1fr;
+}
+
+.stage-select button,
+.difficulty-select button {
+  min-height: 56px;
+  display: grid;
+  align-content: center;
+  gap: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 7px;
+  padding: 8px;
+  color: #f3f0e8;
+  background: #1d2328;
+}
+
+.stage-select button.selected,
+.difficulty-select button.selected {
+  border-color: #f2c14e;
+  background: #2d2b20;
+}
+
+.stage-select strong,
+.difficulty-select strong {
+  color: #ffd86b;
+  font-size: 14px;
+}
+
+.stage-select span,
+.difficulty-select span {
+  color: #c8d0cf;
+  font-size: 12px;
+  line-height: 1.25;
+}
+
 .room-list {
   display: grid;
   gap: 6px;
