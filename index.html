@@ -65,9 +65,21 @@
                 <strong>セイバー</strong><span>剣で前方を薙ぎ払う</span>
               </button>
             </div>
+            <div class="room-row">
+              <button id="openCreateRoomButton" type="button">部屋を作る</button>
+              <button id="openJoinRoomButton" type="button">部屋に参加する</button>
+            </div>
+            <p id="roomStatus" class="small">部屋作成または参加を選んでください。</p>
+          </div>
+          <p class="small">移動: WASD / 矢印キー　狙う: マウス　ポーズ: Esc　コミュニケーション: T長押し</p>
+        </div>
+
+        <div id="stageSelectPanel" class="overlay hidden">
+          <h2>ステージセレクト</h2>
+          <div class="start-panel">
             <div class="stage-mode-panel">
               <strong>ステージ</strong>
-              <div id="stageSelect" class="stage-select" aria-label="ステージ選択">
+              <div id="stageSelect" class="stage-select carousel" aria-label="ステージ選択">
                 <button class="selected" type="button" data-stage="stage1"><strong>ステージ1</strong><span>現在のフィールド</span></button>
               </div>
               <strong>難易度</strong>
@@ -76,13 +88,9 @@
                 <button class="selected" type="button" data-difficulty="normal"><strong>ノーマル</strong><span>通常ルール</span></button>
               </div>
             </div>
-            <div class="room-row">
-              <button id="openCreateRoomButton" type="button">部屋を作る</button>
-              <button id="openJoinRoomButton" type="button">部屋に参加する</button>
-            </div>
-            <p id="roomStatus" class="small">部屋作成または参加を選んでください。</p>
+            <button id="stageStartButton" type="button">ゲームを開始する</button>
+            <button id="backFromStageButton" class="secondary" type="button">戻る</button>
           </div>
-          <p class="small">移動: WASD / 矢印キー　狙う: マウス　ポーズ: Esc　コミュニケーション: T長押し</p>
         </div>
 
         <div id="createRoomPanel" class="overlay hidden">
@@ -150,7 +158,7 @@
 
         <div id="updateInfo" class="overlay hidden">
           <h2>アップデート情報</h2>
-          <p>2026-06-06: ステージと難易度の選択を追加しました。現在は仮名称の「ステージ1」を選択でき、難易度は「ノーマル」と「イージー」から選べます。イージーでは弾を撃つ青い敵が出現しません。ソロ開始前と部屋作成前に選択でき、マルチプレイではホストが選んだ設定で開始されます。セイバー専用強化「飛燕斬」の説明も、威力、貫通、大きさの伸びが分かるように数値入りへ変更しました。</p>
+          <p>2026-06-06: ステージセレクトと難易度選択を追加しました。「ソロで始める」を押すとステージセレクト画面へ進み、「ゲームを開始する」で開始します。現在は仮名称の「ステージ1」を選択でき、難易度は「ノーマル」と「イージー」から選べます。イージーでは弾を撃つ青い敵が出現しません。マルチプレイでは部屋作成時にホストが設定します。セイバー専用強化「飛燕斬」の説明も、威力、貫通、大きさの伸びが分かるように数値入りへ変更しました。</p>
           <p>2026-06-05: Supabaseを使ったオンライン部屋一覧に対応しました。ホストが部屋を作ると、部屋名、ホスト名、パスワードの有無、部屋ID、人数が一覧に表示され、参加者は表示された部屋をクリックして参加できます。ゲーム中の通信はこれまで通りP2Pのままで、パスワード本文はサーバーに保存しません。</p>
           <p>2026-06-05: キャラクター図鑑にモデル表示切り替えを追加しました。「現在のモデル」と「旧モデル」を切り替えられるようになり、外部3Dモデルに変更する前のシンプルな旧モデルも図鑑内で確認できます。旧モデルは図鑑専用の表示なので、プレイ中の見た目には影響しません。</p>
           <p>2026-06-05: アーチャーのパッシブスキル「追い風」を追加しました。遠くの敵に矢を当てるほどダメージが上がり、距離8以上で+20%、距離14以上で+40%になります。通常の矢だけでなく、固有スキル「アローレイン」の矢にも追い風が乗ります。</p>

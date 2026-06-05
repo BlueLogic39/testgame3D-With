@@ -15,6 +15,9 @@ const ui = {
   build: document.getElementById("build"),
   start: document.getElementById("start"),
   startButton: document.getElementById("startButton"),
+  stageSelectPanel: document.getElementById("stageSelectPanel"),
+  stageStartButton: document.getElementById("stageStartButton"),
+  backFromStageButton: document.getElementById("backFromStageButton"),
   openCreateRoomButton: document.getElementById("openCreateRoomButton"),
   openJoinRoomButton: document.getElementById("openJoinRoomButton"),
   characterSelect: document.getElementById("characterSelect"),
@@ -915,6 +918,7 @@ function startGame(mode = "solo") {
   sfx("start");
   startBgm();
   ui.start.classList.add("hidden");
+  ui.stageSelectPanel.classList.add("hidden");
   ui.lobby.classList.add("hidden");
   ui.levelUp.classList.add("hidden");
   ui.gameOver.classList.add("hidden");
@@ -3376,6 +3380,7 @@ function showTitle() {
   stopBgm();
   ui.skillText.closest(".skill-hud")?.classList.add("hidden");
   ui.start.classList.remove("hidden");
+  ui.stageSelectPanel.classList.add("hidden");
   ui.createRoomPanel.classList.add("hidden");
   ui.joinRoomPanel.classList.add("hidden");
   ui.joinPasswordPanel.classList.add("hidden");
@@ -3523,7 +3528,13 @@ canvas.addEventListener("mousemove", (event) => {
   if (radialActive) updateRadialChoice(event);
 });
 canvas.addEventListener("pointerdown", updateAim);
-ui.startButton.addEventListener("click", () => startGame("solo"));
+ui.startButton.addEventListener("click", () => {
+  ui.start.classList.add("hidden");
+  ui.stageSelectPanel.classList.remove("hidden");
+  updateStageDifficultyButtons();
+});
+ui.stageStartButton.addEventListener("click", () => startGame("solo"));
+ui.backFromStageButton.addEventListener("click", showTitle);
 ui.openCreateRoomButton.addEventListener("click", () => {
   ui.start.classList.add("hidden");
   ui.createRoomPanel.classList.remove("hidden");
