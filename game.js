@@ -31,9 +31,6 @@ const ui = {
   joinPasswordLabel: document.getElementById("joinPasswordLabel"),
   joinPasswordInput: document.getElementById("joinPasswordInput"),
   confirmJoinButton: document.getElementById("confirmJoinButton"),
-  directRoomCodeInput: document.getElementById("directRoomCodeInput"),
-  directRoomPasswordInput: document.getElementById("directRoomPasswordInput"),
-  directJoinButton: document.getElementById("directJoinButton"),
   roomStatus: document.getElementById("roomStatus"),
   lobby: document.getElementById("lobby"),
   lobbyCode: document.getElementById("lobbyCode"),
@@ -3212,17 +3209,6 @@ function joinRoom(options = {}) {
   });
 }
 
-function joinRoomByCode() {
-  const code = ui.directRoomCodeInput.value.trim().toUpperCase();
-  if (!code) {
-    ui.roomStatus.textContent = "ホストの待機部屋に表示されている部屋IDを入力してください。";
-    return;
-  }
-  selectedRoomKey = "";
-  ui.joinPasswordPanel.classList.add("hidden");
-  joinRoom({ code, password: ui.directRoomPasswordInput.value });
-}
-
 function roomKey(name) {
   const text = (name || "").trim();
   let hash = 2166136261;
@@ -3271,7 +3257,7 @@ async function renderRoomList() {
   const rooms = [...onlineRooms, ...localRooms.filter((room) => !onlineCodes.has(room.code))];
   ui.roomList.innerHTML = "";
   if (!rooms.length) {
-    ui.roomList.innerHTML = `<p class="small">表示できる部屋がありません。ホストの部屋IDを直接入力して参加できます。</p>`;
+    ui.roomList.innerHTML = `<p class="small">表示できる部屋がありません。</p>`;
     return;
   }
   for (const room of rooms) {
@@ -3464,15 +3450,12 @@ ui.openJoinRoomButton.addEventListener("click", () => {
   ui.start.classList.add("hidden");
   ui.joinRoomPanel.classList.remove("hidden");
   ui.joinPasswordPanel.classList.add("hidden");
-  ui.directRoomCodeInput.value = "";
-  ui.directRoomPasswordInput.value = "";
   renderRoomList();
 });
 ui.backFromCreateButton.addEventListener("click", showTitle);
 ui.backFromJoinButton.addEventListener("click", showTitle);
 ui.hostButton.addEventListener("click", createRoom);
 ui.confirmJoinButton.addEventListener("click", joinRoom);
-ui.directJoinButton.addEventListener("click", joinRoomByCode);
 ui.lobbyStartButton.addEventListener("click", () => startGame("host"));
 ui.leaveRoomButton.addEventListener("click", leaveRoom);
 ui.restartButton.addEventListener("click", restartMatch);

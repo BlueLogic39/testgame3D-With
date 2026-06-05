@@ -86,12 +86,6 @@
 
         <div id="joinRoomPanel" class="overlay hidden">
           <h2>部屋に参加する</h2>
-          <div class="start-panel direct-join-panel">
-            <label>部屋ID <input id="directRoomCodeInput" maxlength="32" placeholder="例: ROOM-ABC123" /></label>
-            <label>パスワード任意 <input id="directRoomPasswordInput" maxlength="12" placeholder="なしでもOK" /></label>
-            <button id="directJoinButton" type="button">部屋IDで参加する</button>
-          </div>
-          <p class="small">別のPCやブラウザから参加する時は、ホストの待機部屋に表示されている部屋IDを入力してください。</p>
           <div id="roomList" class="room-list"></div>
           <div id="joinPasswordPanel" class="start-panel hidden">
             <p id="joinPasswordLabel" class="small"></p>
@@ -134,7 +128,7 @@
 
         <div id="updateInfo" class="overlay hidden">
           <h2>アップデート情報</h2>
-          <p>2026-06-05: Supabaseを使ったオンライン部屋一覧に対応しました。ホストが部屋を作ると、部屋名、ホスト名、パスワードの有無、部屋ID、人数が一覧に表示されます。ゲーム中の通信はこれまで通りP2Pのままで、パスワード本文はサーバーに保存しません。部屋IDを直接入力して参加する方法も残しています。</p>
+          <p>2026-06-05: Supabaseを使ったオンライン部屋一覧に対応しました。ホストが部屋を作ると、部屋名、ホスト名、パスワードの有無、部屋ID、人数が一覧に表示され、参加者は表示された部屋をクリックして参加できます。ゲーム中の通信はこれまで通りP2Pのままで、パスワード本文はサーバーに保存しません。</p>
           <p>2026-06-05: キャラクター図鑑にモデル表示切り替えを追加しました。「現在のモデル」と「旧モデル」を切り替えられるようになり、外部3Dモデルに変更する前のシンプルな旧モデルも図鑑内で確認できます。旧モデルは図鑑専用の表示なので、プレイ中の見た目には影響しません。</p>
           <p>2026-06-05: アーチャーのパッシブスキル「追い風」を追加しました。遠くの敵に矢を当てるほどダメージが上がり、距離8以上で+20%、距離14以上で+40%になります。通常の矢だけでなく、固有スキル「アローレイン」の矢にも追い風が乗ります。</p>
           <p>2026-06-04: セイバーのバランスを再調整しました。パッシブスキル「バーサーカー」は敵を倒すたびに攻撃速度+1%から、レベルが上がるたびに攻撃速度+10%へ変更しました。専用強化「剣閃範囲 +15度」は「剣閃範囲 +10度」に弱体化し、奥への届く距離も+10%に調整しました。飛燕斬はデフォルトの斬撃サイズを元に戻し、複数取得した時の貫通増加を+1ずつから+2ずつへ強化しました。</p>
