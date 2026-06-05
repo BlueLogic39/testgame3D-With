@@ -2450,6 +2450,7 @@ async function createRoom() {
   }
   closeConnections();
   const roomName = ui.roomNameInput.value.trim() || `${playerName()}の部屋`;
+  normalizePasswordInput(ui.roomPasswordInput);
   const password = ui.roomPasswordInput.value.trim();
   const code = roomKey(roomName);
   localPlayerId = "host";
@@ -3006,6 +3007,17 @@ function playerName() {
   return ui.playerName.value.trim().slice(0, 14) || "Player";
 }
 
+function toHalfWidth(text) {
+  return text
+    .replace(/[！-～]/g, (char) => String.fromCharCode(char.charCodeAt(0) - 0xfee0))
+    .replace(/　/g, " ");
+}
+
+function normalizePasswordInput(input) {
+  const normalized = toHalfWidth(input.value);
+  if (input.value !== normalized) input.value = normalized;
+}
+
 function selectedCharacter() {
   return CHARACTER_TYPES[selectedCharacterId] ? selectedCharacterId : "archer";
 }
@@ -3168,6 +3180,8 @@ function joinRoom(options = {}) {
   const directCode = (options.code || "").trim().toUpperCase();
   const room = directCode ? null : selectedRoom();
   const roomName = directCode ? directCode : room?.name || ui.roomNameInput.value.trim();
+  normalizePasswordInput(ui.joinPasswordInput);
+  normalizePasswordInput(ui.roomPasswordInput);
   if (room?.hasPassword && ui.joinPasswordInput.value.trim() === "") {
     ui.joinPasswordPanel.classList.remove("hidden");
     ui.joinPasswordLabel.textContent = `${room.name} はパスワードが必要です。`;
@@ -3467,6 +3481,8 @@ ui.settingsButton.addEventListener("click", () => ui.settingsPanel.classList.tog
 ui.masterVolume.addEventListener("input", (event) => setVolume("master", event.target.value));
 ui.bgmVolume.addEventListener("input", (event) => setVolume("bgm", event.target.value));
 ui.seVolume.addEventListener("input", (event) => setVolume("se", event.target.value));
+ui.roomPasswordInput.addEventListener("input", () => normalizePasswordInput(ui.roomPasswordInput));
+ui.joinPasswordInput.addEventListener("input", () => normalizePasswordInput(ui.joinPasswordInput));
 ui.codexButton.addEventListener("click", openCharacterCodex);
 ui.closeCodexButton.addEventListener("click", closeCharacterCodex);
 if (ui.characterSelect) {

@@ -78,7 +78,7 @@
           <h2>部屋を作る</h2>
           <div class="start-panel">
             <label>部屋名 <input id="roomNameInput" maxlength="20" placeholder="例: のんびり部屋" /></label>
-            <label>パスワード任意 <input id="roomPasswordInput" maxlength="12" placeholder="なしでもOK" /></label>
+            <label>パスワード任意 <input id="roomPasswordInput" maxlength="12" inputmode="latin" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="なしでもOK" /></label>
             <button id="hostButton" type="button">作成する</button>
             <button id="backFromCreateButton" class="secondary" type="button">戻る</button>
           </div>
@@ -89,7 +89,7 @@
           <div id="roomList" class="room-list"></div>
           <div id="joinPasswordPanel" class="start-panel hidden">
             <p id="joinPasswordLabel" class="small"></p>
-            <input id="joinPasswordInput" maxlength="12" placeholder="パスワード" />
+            <input id="joinPasswordInput" maxlength="12" inputmode="latin" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="パスワード" />
             <button id="confirmJoinButton" type="button">参加する</button>
           </div>
           <button id="backFromJoinButton" class="secondary" type="button">戻る</button>

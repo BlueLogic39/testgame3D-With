@@ -501,21 +501,23 @@ h2 {
 
 .room-list {
   display: grid;
-  gap: 7px;
-  max-height: 130px;
+  gap: 6px;
+  width: min(560px, 100%);
+  max-height: 218px;
   overflow: auto;
 }
 
 .room-card {
   display: grid;
   grid-template-columns: 1fr auto;
-  gap: 6px 12px;
+  gap: 4px 12px;
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 6px;
-  padding: 9px 11px;
+  padding: 8px 11px;
   text-align: left;
   color: #f3f0e8;
   background: #1d2328;
+  font-size: 15px;
 }
 
 .room-card.selected {
@@ -525,6 +527,7 @@ h2 {
 
 .room-card small {
   color: #c8d0cf;
+  font-size: 12px;
 }
 
 .room-code {
