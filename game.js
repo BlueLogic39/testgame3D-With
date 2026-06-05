@@ -31,6 +31,9 @@ const ui = {
   joinPasswordLabel: document.getElementById("joinPasswordLabel"),
   joinPasswordInput: document.getElementById("joinPasswordInput"),
   confirmJoinButton: document.getElementById("confirmJoinButton"),
+  directRoomCodeInput: document.getElementById("directRoomCodeInput"),
+  directRoomPasswordInput: document.getElementById("directRoomPasswordInput"),
+  directJoinButton: document.getElementById("directJoinButton"),
   roomStatus: document.getElementById("roomStatus"),
   lobby: document.getElementById("lobby"),
   lobbyCode: document.getElementById("lobbyCode"),
@@ -2521,7 +2524,7 @@ function showLobby(message) {
   ui.levelUp.classList.add("hidden");
   hideStatus();
   ui.lobby.classList.remove("hidden");
-  ui.lobbyCode.textContent = net.roomPassword ? `パスワード: ${net.roomPassword}` : `部屋ID: ${net.roomCode}`;
+  ui.lobbyCode.textContent = net.roomPassword ? `部屋ID: ${net.roomCode} / パスワード: ${net.roomPassword}` : `部屋ID: ${net.roomCode}`;
   ui.lobbyStatus.textContent = message;
   ui.lobbyStartButton.classList.toggle("hidden", net.mode !== "host");
   renderLobbyPlayers();
@@ -3050,26 +3053,27 @@ function broadcastComm(id, text) {
   broadcast({ type: "comm", name, text });
 }
 
-function joinRoom() {
+function joinRoom(options = {}) {
   if (!window.Peer) {
     ui.roomStatus.textContent = "PeerJSを読み込めませんでした。";
     return;
   }
   initAudio();
-  const room = selectedRoom();
-  const roomName = room?.name || ui.roomNameInput.value.trim();
+  const directCode = (options.code || "").trim().toUpperCase();
+  const room = directCode ? null : selectedRoom();
+  const roomName = directCode ? directCode : room?.name || ui.roomNameInput.value.trim();
   if (room?.hasPassword && ui.joinPasswordInput.value.trim() === "") {
     ui.joinPasswordPanel.classList.remove("hidden");
     ui.joinPasswordLabel.textContent = `${room.name} はパスワードが必要です。`;
     ui.roomStatus.textContent = "パスワードを入力してください。";
     return;
   }
-  const password = ui.joinPasswordPanel.classList.contains("hidden")
+  const password = directCode ? (options.password || "").trim() : ui.joinPasswordPanel.classList.contains("hidden")
     ? (ui.roomPasswordInput.value.trim() || room?.password || "")
     : ui.joinPasswordInput.value.trim();
-  const code = room?.code || roomKey(roomName);
+  const code = directCode || room?.code || roomKey(roomName);
   if (!roomName) {
-    ui.roomStatus.textContent = "参加する部屋を選択するか、部屋名を入力してください。";
+    ui.roomStatus.textContent = "参加する部屋を選択するか、部屋IDを入力してください。";
     return;
   }
   closeConnections();
@@ -3084,7 +3088,7 @@ function joinRoom() {
     net.conn = net.peer.connect(`vansaba-${code}`, { reliable: false });
     net.conn.on("open", () => {
       sendToHost({ type: "hello", id: localPlayerId, name: playerName(), character: selectedCharacter(), password });
-      rememberRoom({ code, name: roomName, host: room?.host || "Unknown", hasPassword: Boolean(password), password });
+      rememberRoom({ code, name: room?.name || roomName, host: room?.host || "Unknown", hasPassword: Boolean(password), password });
       renderRoomList();
       showLobby("ホストの開始を待っています。");
     });
@@ -3095,6 +3099,17 @@ function joinRoom() {
     ui.roomStatus.textContent = `参加エラー: ${error.type || error.message}`;
     if (room?.code) removeRememberedRoom(room.code);
   });
+}
+
+function joinRoomByCode() {
+  const code = ui.directRoomCodeInput.value.trim().toUpperCase();
+  if (!code) {
+    ui.roomStatus.textContent = "ホストの待機部屋に表示されている部屋IDを入力してください。";
+    return;
+  }
+  selectedRoomKey = "";
+  ui.joinPasswordPanel.classList.add("hidden");
+  joinRoom({ code, password: ui.directRoomPasswordInput.value });
 }
 
 function roomKey(name) {
@@ -3328,12 +3343,15 @@ ui.openJoinRoomButton.addEventListener("click", () => {
   ui.start.classList.add("hidden");
   ui.joinRoomPanel.classList.remove("hidden");
   ui.joinPasswordPanel.classList.add("hidden");
+  ui.directRoomCodeInput.value = "";
+  ui.directRoomPasswordInput.value = "";
   renderRoomList();
 });
 ui.backFromCreateButton.addEventListener("click", showTitle);
 ui.backFromJoinButton.addEventListener("click", showTitle);
 ui.hostButton.addEventListener("click", createRoom);
 ui.confirmJoinButton.addEventListener("click", joinRoom);
+ui.directJoinButton.addEventListener("click", joinRoomByCode);
 ui.lobbyStartButton.addEventListener("click", () => startGame("host"));
 ui.leaveRoomButton.addEventListener("click", leaveRoom);
 ui.restartButton.addEventListener("click", restartMatch);

@@ -86,6 +86,12 @@
 
         <div id="joinRoomPanel" class="overlay hidden">
           <h2>部屋に参加する</h2>
+          <div class="start-panel direct-join-panel">
+            <label>部屋ID <input id="directRoomCodeInput" maxlength="32" placeholder="例: ROOM-ABC123" /></label>
+            <label>パスワード任意 <input id="directRoomPasswordInput" maxlength="12" placeholder="なしでもOK" /></label>
+            <button id="directJoinButton" type="button">部屋IDで参加する</button>
+          </div>
+          <p class="small">別のPCやブラウザから参加する時は、ホストの待機部屋に表示されている部屋IDを入力してください。</p>
           <div id="roomList" class="room-list"></div>
           <div id="joinPasswordPanel" class="start-panel hidden">
             <p id="joinPasswordLabel" class="small"></p>
