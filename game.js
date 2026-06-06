@@ -205,11 +205,11 @@ const CHARACTER_CODEX = [
   },
   {
     id: "witch",
-    role: "範囲攻撃が得意な魔法アタッカー",
+    role: "元素魔法を操る範囲アタッカー",
     weapon: "火炎弾のファイアを放ちます。弾速は控えめですが、命中時に周囲を巻き込みます。",
     passive: "魔力爆発: ファイアが命中すると範囲ダメージが発生します。ファイア巨大化を取るほど範囲、威力、連鎖回数が伸びます。",
     skill: "魔女の大爆発: スペースキーで周囲を大きく爆発させます。",
-    upgrades: ["ファイア +1", "魔法陣＜雷＞", "ファイア巨大化"],
+    upgrades: ["アイススパイク", "雷迅", "ファイア巨大化"],
   },
   {
     id: "saber",
@@ -232,6 +232,7 @@ const materials = {
   boss: new THREE.MeshStandardMaterial({ color: 0x8b5cf6, roughness: 0.6, emissive: 0x1b0f38 }),
   arrow: new THREE.MeshStandardMaterial({ color: 0xf2c14e, roughness: 0.28, metalness: 0.15 }),
   magic: new THREE.MeshStandardMaterial({ color: 0xff6b2c, roughness: 0.28, emissive: 0x7a1b05 }),
+  ice: new THREE.MeshStandardMaterial({ color: 0x9fe8ff, roughness: 0.18, metalness: 0.05, emissive: 0x124b68, transparent: true, opacity: 0.9 }),
   bullet: new THREE.MeshStandardMaterial({ color: 0xff7a42, roughness: 0.35, emissive: 0x3a1206 }),
   gem: new THREE.MeshStandardMaterial({ color: 0x58d5b7, roughness: 0.2, emissive: 0x0d4739 }),
   shooterGem: new THREE.MeshStandardMaterial({ color: 0x4aa3ff, roughness: 0.2, emissive: 0x082c62 }),
@@ -255,8 +256,8 @@ upgrades[0].classes = ["archer"];
 upgrades[3].classes = ["archer"];
 upgrades[7].classes = ["archer"];
 upgrades.push(
-  { name: "ファイア +1", desc: "ウィッチのファイアが同時に1つ増える。散らして撃てるので群れに強い。", classes: ["witch"], apply: (p) => (p.magicBolts += 1) },
-  { name: "魔法陣＜雷＞", desc: "自分の周辺に雷の魔法陣を設置する。取得するたび範囲と設置時間が伸びる。", classes: ["witch"], apply: (p) => (p.thunderCircle += 1) },
+  { name: "アイススパイク", desc: "一定間隔で近くの敵の足元から氷柱を出す。取得するたび氷柱+1、スロー時間+0.35秒。", classes: ["witch"], apply: (p) => (p.iceSpike += 1) },
+  { name: "雷迅", desc: "自分の周辺に雷の魔法陣を設置し、無数の雷で敵を翻弄する。取得するたび範囲と設置時間が伸びる。", classes: ["witch"], apply: (p) => (p.thunderCircle += 1) },
   { name: "ファイア巨大化", desc: "ファイアが大きくなり、魔力爆発の範囲と威力が伸びる。さらに連鎖爆発が+1される。", classes: ["witch"], apply: (p) => { p.magicRadius += 0.12; p.damage *= 1.08; p.magicSplash += 1; p.chainExplosion += 1; } },
   { name: "剣閃範囲 +10度", desc: "薙ぎ払いの横範囲が10度広がり、奥への届く距離も10%伸びる。", classes: ["saber"], apply: (p) => { p.slashArc += THREE.MathUtils.degToRad(10); p.slashRange *= 1.1; } },
   { name: "飛燕斬", desc: "通常攻撃と同時に飛ぶ斬撃を放つ。初回は威力67%、貫通0。以後は1回ごとに威力+12%、大きさ+0.08、貫通+2。", classes: ["saber"], apply: (p) => (p.flyingSlash += 1) },
@@ -395,6 +396,8 @@ function makePlayer(id, name, x, z, local, character = "archer") {
     magicSplash: 0,
     magicRadius: 0.34,
     chainExplosion: 0,
+    iceSpike: 0,
+    iceTimer: 3.2,
     thunderCircle: 0,
     thunderTimer: 2.8,
     slashArc: THREE.MathUtils.degToRad(90),
@@ -1000,8 +1003,17 @@ function updatePlayers(dt) {
       shoot(player);
       player.fireTimer = player.fireRate;
     }
+    updatePlayerIceSpike(player, dt);
     updatePlayerThunderCircle(player, dt);
   }
+}
+
+function updatePlayerIceSpike(player, dt) {
+  if ((player.iceSpike || 0) <= 0) return;
+  player.iceTimer = (player.iceTimer || 0) - dt;
+  if (player.iceTimer > 0) return;
+  castIceSpikes(player);
+  player.iceTimer = Math.max(2.8, 5.2 - player.iceSpike * 0.22);
 }
 
 function updatePlayerThunderCircle(player, dt) {
@@ -1491,8 +1503,9 @@ function updateEnemies(dt) {
     const angle = Math.atan2(target.x - enemy.x, target.z - enemy.z);
     const keepDistance = enemy.shooter && distance(enemy, target) < 10;
     const dir = keepDistance ? -1 : 1;
-    enemy.x += Math.sin(angle) * enemy.speed * dir * dt;
-    enemy.z += Math.cos(angle) * enemy.speed * dir * dt;
+    const slow = state.elapsed < (enemy.slowUntil || 0) ? 0.48 : 1;
+    enemy.x += Math.sin(angle) * enemy.speed * slow * dir * dt;
+    enemy.z += Math.cos(angle) * enemy.speed * slow * dir * dt;
     enemy.touchTimer -= dt;
     enemy.mesh.position.set(enemy.x, enemy.radius, enemy.z);
     enemy.mesh.rotation.y += dt * (enemy.boss ? 1.2 : 2.6);
@@ -1762,6 +1775,50 @@ function updateMagicCircles(dt) {
     }
   }
   removeDead(state.magicCircles, (circle) => circle.life <= 0);
+}
+
+function castIceSpikes(player) {
+  const level = player.iceSpike || 0;
+  const count = Math.max(1, level);
+  const slowDuration = 1.15 + level * 0.35;
+  const damage = player.damage * (0.52 + level * 0.08);
+  const radius = 0.72;
+  const targets = state.enemies
+    .filter((enemy) => enemy.hp > 0 && distance(player, enemy) < 18)
+    .sort((a, b) => distance(player, a) - distance(player, b))
+    .slice(0, count);
+  for (const enemy of targets) {
+    enemy.hp -= damage;
+    enemy.lastHitBy = player.id;
+    enemy.slowUntil = Math.max(enemy.slowUntil || 0, state.elapsed + slowDuration);
+    addIceSpike(enemy.x, enemy.z, radius);
+    addRing(enemy.x, enemy.z, 0.72, 0x9fe8ff);
+  }
+}
+
+function addIceSpike(x, z, radius = 0.72) {
+  const mesh = makeIceSpikeMesh({ radius });
+  mesh.position.set(x, 0.1, z);
+  scene.add(mesh);
+  state.effects.push({ id: crypto.randomUUID(), kind: "ice", x, z, radius, mesh, life: 0.46, start: 0.46 });
+}
+
+function makeIceSpikeMesh(effect = {}) {
+  const group = new THREE.Group();
+  const radius = effect.radius || 0.72;
+  const main = new THREE.Mesh(new THREE.ConeGeometry(radius * 0.28, 1.25, 5), materials.ice.clone());
+  main.position.y = 0.62;
+  main.rotation.y = Math.PI / 5;
+  group.add(main);
+  for (let i = 0; i < 4; i += 1) {
+    const angle = (Math.PI * 2 * i) / 4 + 0.35;
+    const shard = new THREE.Mesh(new THREE.ConeGeometry(radius * 0.16, 0.82, 5), materials.ice.clone());
+    shard.position.set(Math.cos(angle) * radius * 0.34, 0.4, Math.sin(angle) * radius * 0.34);
+    shard.rotation.z = 0.28;
+    shard.rotation.y = angle;
+    group.add(shard);
+  }
+  return group;
 }
 
 function addThunderStorm(circle, count) {
@@ -2762,7 +2819,7 @@ function sendHostSnapshot(force = false) {
       arrows: p.arrows, backShots: p.backShots, damage: p.damage, pierce: p.pierce,
       flyingSlash: p.flyingSlash,
       baseFireRate: p.baseFireRate, attackSpeedBonus: p.attackSpeedBonus, fireRate: p.fireRate,
-      magicSplash: p.magicSplash, magicRadius: p.magicRadius, chainExplosion: p.chainExplosion, thunderCircle: p.thunderCircle,
+      magicSplash: p.magicSplash, magicRadius: p.magicRadius, chainExplosion: p.chainExplosion, iceSpike: p.iceSpike, thunderCircle: p.thunderCircle,
       rerolls: p.rerolls, upgrades: p.upgrades,
     })),
     enemies: state.enemies.map((e) => ({ id: e.id, x: e.x, z: e.z, radius: e.radius, boss: e.boss, shooter: e.shooter })),
@@ -2847,7 +2904,7 @@ function syncEffects(effects) {
   for (const effect of effects) {
     let mesh = cache.get(effect.id);
     if (!mesh) {
-      mesh = effect.kind === "slash" ? makeSlashMesh(effect) : effect.kind === "thunder" ? makeThunderBoltMesh(effect) : makeRingMesh(effect);
+      mesh = effect.kind === "slash" ? makeSlashMesh(effect) : effect.kind === "thunder" ? makeThunderBoltMesh(effect) : effect.kind === "ice" ? makeIceSpikeMesh(effect) : makeRingMesh(effect);
       scene.add(mesh);
       cache.set(effect.id, mesh);
       if (effect.kind === "slash" && effect.owner && !effect.skill) sfx("saberAttack");
