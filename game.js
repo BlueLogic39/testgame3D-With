@@ -283,7 +283,7 @@ upgrades[0].classes = ["archer"];
 upgrades[3].classes = ["archer"];
 upgrades[7].classes = ["archer"];
 upgrades.push(
-  { name: "アイススパイク", desc: "一定間隔で近くの敵の足元から氷柱を出す。取得するたび氷柱+1、スロー時間+1秒、威力が少し伸びる。", classes: ["witch"], apply: (p) => (p.iceSpike += 1) },
+  { name: "アイススパイク", desc: "一定間隔で近くの敵の足元から氷柱を出す。取得するたび氷柱+2、スロー時間+1秒、威力が少し伸びる。", classes: ["witch"], apply: (p) => (p.iceSpike += 1) },
   { name: "サンダーストーム", desc: "自分の周辺に雷の魔法陣を設置し、無数の雷で敵を翻弄する。取得するたび範囲、設置時間、威力が伸びる。攻撃速度で再設置も早くなる。", classes: ["witch"], apply: (p) => (p.thunderCircle += 1) },
   { name: "ファイア巨大化", desc: "ファイアが大きくなり、魔力爆発の範囲と威力が伸びる。さらに連鎖爆発が+1される。", classes: ["witch"], apply: (p) => { p.magicRadius += 0.12; p.damage *= 1.08; p.magicSplash += 1; p.chainExplosion += 1; } },
   { name: "剣閃範囲 +10度", desc: "薙ぎ払いの横範囲が10度広がり、奥への届く距離も10%伸びる。", classes: ["saber"], apply: (p) => { p.slashArc += THREE.MathUtils.degToRad(10); p.slashRange *= 1.1; } },
@@ -2071,7 +2071,7 @@ function updateMagicCircles(dt) {
 
 function castIceSpikes(player) {
   const level = player.iceSpike || 0;
-  const count = Math.max(1, level);
+  const count = Math.max(1, level * 2);
   const slowDuration = 0.5 + level * 1;
   const damage = witchSpellDamage(player, 0.52 + level * 0.12);
   const radius = 0.72;
