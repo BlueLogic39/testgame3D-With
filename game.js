@@ -145,6 +145,7 @@ const AUDIO_FILES = {
   archerSkill: "arrowskillsound.mp3",
   witchAttack: "wicthmagicsound.mp3",
   witchSkill: "wicthskillsound.mp3",
+  witchIceSpike: "wwicthicespikesound.mp3",
   saberAttack: "swordsound.mp3",
   saberSkill: "swordskillsound.mp3",
   victory: "victory.mp3",
@@ -209,7 +210,7 @@ const CHARACTER_CODEX = [
     weapon: "火炎弾のファイアを放ちます。弾速は控えめですが、命中時に周囲を巻き込みます。",
     passive: "魔力爆発: ファイアが命中すると範囲ダメージが発生します。ファイア巨大化を取るほど範囲、威力、連鎖回数が伸びます。",
     skill: "魔女の大爆発: スペースキーで周囲を大きく爆発させます。",
-    upgrades: ["アイススパイク", "雷迅", "ファイア巨大化"],
+    upgrades: ["アイススパイク", "サンダーストーム", "ファイア巨大化"],
   },
   {
     id: "saber",
@@ -257,7 +258,7 @@ upgrades[3].classes = ["archer"];
 upgrades[7].classes = ["archer"];
 upgrades.push(
   { name: "アイススパイク", desc: "一定間隔で近くの敵の足元から氷柱を出す。取得するたび氷柱+1、スロー時間+0.35秒。", classes: ["witch"], apply: (p) => (p.iceSpike += 1) },
-  { name: "雷迅", desc: "自分の周辺に雷の魔法陣を設置し、無数の雷で敵を翻弄する。取得するたび範囲と設置時間が伸びる。", classes: ["witch"], apply: (p) => (p.thunderCircle += 1) },
+  { name: "サンダーストーム", desc: "自分の周辺に雷の魔法陣を設置し、無数の雷で敵を翻弄する。取得するたび範囲と設置時間が伸びる。", classes: ["witch"], apply: (p) => (p.thunderCircle += 1) },
   { name: "ファイア巨大化", desc: "ファイアが大きくなり、魔力爆発の範囲と威力が伸びる。さらに連鎖爆発が+1される。", classes: ["witch"], apply: (p) => { p.magicRadius += 0.12; p.damage *= 1.08; p.magicSplash += 1; p.chainExplosion += 1; } },
   { name: "剣閃範囲 +10度", desc: "薙ぎ払いの横範囲が10度広がり、奥への届く距離も10%伸びる。", classes: ["saber"], apply: (p) => { p.slashArc += THREE.MathUtils.degToRad(10); p.slashRange *= 1.1; } },
   { name: "飛燕斬", desc: "通常攻撃と同時に飛ぶ斬撃を放つ。初回は威力67%、貫通0。以後は1回ごとに威力+12%、大きさ+0.08、貫通+2。", classes: ["saber"], apply: (p) => (p.flyingSlash += 1) },
@@ -1511,7 +1512,7 @@ function updateEnemies(dt) {
     enemy.mesh.rotation.y += dt * (enemy.boss ? 1.2 : 2.6);
 
     if (enemy.shooter) {
-      enemy.shotTimer -= dt;
+      enemy.shotTimer -= dt * slow;
       if (enemy.shotTimer <= 0) {
         shootEnemyBullet(enemy, target);
         enemy.shotTimer = (1.65 + Math.random() * 0.7) * 1.5;
@@ -1794,6 +1795,7 @@ function castIceSpikes(player) {
     addIceSpike(enemy.x, enemy.z, radius);
     addRing(enemy.x, enemy.z, 0.72, 0x9fe8ff);
   }
+  if (targets.length) sfx("witchIceSpike", { broadcast: net.mode === "host" });
 }
 
 function addIceSpike(x, z, radius = 0.72) {
@@ -1805,15 +1807,15 @@ function addIceSpike(x, z, radius = 0.72) {
 
 function makeIceSpikeMesh(effect = {}) {
   const group = new THREE.Group();
-  const radius = effect.radius || 0.72;
-  const main = new THREE.Mesh(new THREE.ConeGeometry(radius * 0.28, 1.25, 5), materials.ice.clone());
-  main.position.y = 0.62;
+  const radius = (effect.radius || 0.72) * 3;
+  const main = new THREE.Mesh(new THREE.ConeGeometry(radius * 0.28, 3.75, 5), materials.ice.clone());
+  main.position.y = 1.88;
   main.rotation.y = Math.PI / 5;
   group.add(main);
   for (let i = 0; i < 4; i += 1) {
     const angle = (Math.PI * 2 * i) / 4 + 0.35;
-    const shard = new THREE.Mesh(new THREE.ConeGeometry(radius * 0.16, 0.82, 5), materials.ice.clone());
-    shard.position.set(Math.cos(angle) * radius * 0.34, 0.4, Math.sin(angle) * radius * 0.34);
+    const shard = new THREE.Mesh(new THREE.ConeGeometry(radius * 0.16, 2.46, 5), materials.ice.clone());
+    shard.position.set(Math.cos(angle) * radius * 0.34, 1.2, Math.sin(angle) * radius * 0.34);
     shard.rotation.z = 0.28;
     shard.rotation.y = angle;
     group.add(shard);
