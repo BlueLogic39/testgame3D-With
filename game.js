@@ -115,6 +115,12 @@ let selectedOnlineRoom = null;
 let selectedCharacterId = "archer";
 let selectedStageId = "stage1";
 let selectedDifficultyId = "normal";
+let presenceClientId = getPresenceClientId();
+let presenceHeartbeatTimer = 0;
+let presenceCountTimer = 0;
+let presenceCleanupTimer = 0;
+let onlinePresenceCount = 1;
+let onlineBadgeLoading = false;
 let net = {
   mode: "solo",
   phase: "menu",
@@ -286,6 +292,7 @@ updateUi();
 updateOnlineBadge();
 renderRoomList();
 loadAudioSettings();
+startPresenceHeartbeat();
 
 function initThree() {
   scene = new THREE.Scene();
@@ -1038,6 +1045,7 @@ function startGame(mode = "solo") {
   state = newState(players, { stageId: net.stageId, difficultyId: net.difficultyId });
   applyStageTheme(state.stageId);
   state.running = true;
+  heartbeatPresence().catch((error) => console.warn("Failed to heartbeat presence", error));
   lastTime = performance.now();
   initAudio();
   sfx("start");
@@ -2889,6 +2897,7 @@ async function createRoom() {
   net.stageId = selectedStage();
   net.difficultyId = selectedDifficulty();
   net.lobbyPlayers = [{ id: localPlayerId, name: playerName(), character: selectedCharacter(), host: true }];
+  heartbeatPresence().catch((error) => console.warn("Failed to heartbeat presence", error));
   selectedRoomKey = code;
   rememberRoom({ code, name: roomName, host: playerName(), hasPassword: Boolean(password), password });
   renderRoomList();
@@ -2965,6 +2974,8 @@ function showLobby(message) {
   ui.lobbyStatus.textContent = message;
   ui.lobbyStartButton.classList.toggle("hidden", net.mode !== "host");
   renderLobbyPlayers();
+  heartbeatPresence().catch((error) => console.warn("Failed to heartbeat presence", error));
+  refreshOnlinePresenceCount();
 }
 
 function lobbyRoomText() {
@@ -3413,6 +3424,100 @@ function closeOnlineRoom(roomCode = net.roomCode, ownerToken = net.roomOwnerToke
   }).catch((error) => console.warn("Failed to close online room", error));
 }
 
+function getPresenceClientId() {
+  const key = "vasamodo_presence_client_id";
+  let id = sessionStorage.getItem(key);
+  if (!id) {
+    id = crypto.randomUUID();
+    sessionStorage.setItem(key, id);
+  }
+  return id;
+}
+
+function currentPresenceState() {
+  if (net.phase === "playing") return "playing";
+  if (net.phase === "gameover") return "gameover";
+  if (net.phase === "lobby" || !ui.lobby?.classList.contains("hidden")) return "lobby";
+  if (!ui.joinRoomPanel?.classList.contains("hidden")) return "join";
+  if (!ui.createRoomPanel?.classList.contains("hidden")) return "create";
+  if (!ui.stageSelectPanel?.classList.contains("hidden")) return "stage_select";
+  return "title";
+}
+
+async function heartbeatPresence() {
+  if (!supabaseReady() || !presenceClientId) return;
+  await supabaseRequest("rpc/heartbeat_presence", {
+    method: "POST",
+    body: JSON.stringify({
+      p_client_id: presenceClientId,
+      p_player_name: playerName(),
+      p_room_code: net.roomCode || null,
+      p_page_state: currentPresenceState(),
+    }),
+  });
+}
+
+async function fetchOnlinePresenceCount() {
+  if (!supabaseReady()) return null;
+  const count = await supabaseRequest("rpc/online_presence_count", { method: "POST", body: "{}" });
+  return Number.isFinite(Number(count)) ? Number(count) : null;
+}
+
+async function cleanupOldPresence() {
+  if (!supabaseReady()) return;
+  await supabaseRequest("rpc/cleanup_old_presence", { method: "POST", body: "{}" });
+}
+
+function startPresenceHeartbeat() {
+  stopPresenceHeartbeat();
+  heartbeatPresence().catch((error) => console.warn("Failed to heartbeat presence", error));
+  refreshOnlinePresenceCount();
+  presenceHeartbeatTimer = window.setInterval(() => {
+    heartbeatPresence().catch((error) => console.warn("Failed to heartbeat presence", error));
+  }, 10000);
+  presenceCountTimer = window.setInterval(refreshOnlinePresenceCount, 10000);
+  presenceCleanupTimer = window.setInterval(() => {
+    cleanupOldPresence().catch((error) => console.warn("Failed to cleanup presence", error));
+  }, 60000);
+}
+
+function stopPresenceHeartbeat() {
+  if (presenceHeartbeatTimer) clearInterval(presenceHeartbeatTimer);
+  if (presenceCountTimer) clearInterval(presenceCountTimer);
+  if (presenceCleanupTimer) clearInterval(presenceCleanupTimer);
+  presenceHeartbeatTimer = 0;
+  presenceCountTimer = 0;
+  presenceCleanupTimer = 0;
+}
+
+async function refreshOnlinePresenceCount() {
+  if (onlineBadgeLoading) return;
+  onlineBadgeLoading = true;
+  try {
+    const count = await fetchOnlinePresenceCount();
+    if (count !== null) {
+      onlinePresenceCount = Math.max(1, count);
+      updateOnlineBadge();
+    }
+  } catch (error) {
+    console.warn("Failed to fetch online presence count", error);
+  } finally {
+    onlineBadgeLoading = false;
+  }
+}
+
+function closePresence() {
+  if (!supabaseReady() || !presenceClientId) return;
+  fetch(`${SUPABASE_URL}/rest/v1/online_presence?client_id=eq.${encodeURIComponent(presenceClientId)}`, {
+    method: "DELETE",
+    keepalive: true,
+    headers: {
+      apikey: SUPABASE_KEY,
+      Authorization: `Bearer ${SUPABASE_KEY}`,
+    },
+  }).catch(() => {});
+}
+
 function closeConnections() {
   const closingRoomCode = net.roomCode;
   const closingOwnerToken = net.roomOwnerToken;
@@ -3627,8 +3732,9 @@ function showSkillBanner(playerName, skill) {
 
 function updateOnlineBadge() {
   if (!ui.onlineBadge) return;
-  const count = net.mode === "solo" ? 1 : Math.max(1, net.lobbyPlayers.length || state.players?.length || 1);
-  ui.onlineBadge.textContent = `現在の人数: ${count}`;
+  const fallback = net.mode === "solo" ? 1 : Math.max(1, net.lobbyPlayers.length || state.players?.length || 1);
+  const count = supabaseReady() ? onlinePresenceCount || fallback : fallback;
+  ui.onlineBadge.textContent = `オンライン人数: ${count}`;
 }
 
 function addPlayerToMatch(id, name, character = "archer") {
@@ -3701,6 +3807,7 @@ function joinRoom(options = {}) {
   net.roomName = roomName;
   net.roomPassword = password;
   localPlayerId = `guest-${Math.random().toString(36).slice(2, 7)}`;
+  heartbeatPresence().catch((error) => console.warn("Failed to heartbeat presence", error));
   net.peer = new Peer();
   net.peer.on("open", () => {
     net.conn = net.peer.connect(`vansaba-${code}`, { reliable: false });
@@ -3809,6 +3916,8 @@ function showTitle() {
   ui.joinRoomPanel.classList.add("hidden");
   ui.joinPasswordPanel.classList.add("hidden");
   ui.roomStatus.textContent = "部屋作成または参加を選んでください。";
+  heartbeatPresence().catch((error) => console.warn("Failed to heartbeat presence", error));
+  refreshOnlinePresenceCount();
 }
 
 function restartMatch() {
@@ -3964,6 +4073,7 @@ ui.startButton.addEventListener("click", () => {
   ui.start.classList.add("hidden");
   ui.stageSelectPanel.classList.remove("hidden");
   updateStageDifficultyButtons();
+  heartbeatPresence().catch((error) => console.warn("Failed to heartbeat presence", error));
 });
 ui.stageStartButton.addEventListener("click", () => startGame("solo"));
 ui.backFromStageButton.addEventListener("click", showTitle);
@@ -3971,11 +4081,13 @@ ui.openCreateRoomButton.addEventListener("click", () => {
   ui.start.classList.add("hidden");
   ui.createRoomPanel.classList.remove("hidden");
   updateStageDifficultyButtons();
+  heartbeatPresence().catch((error) => console.warn("Failed to heartbeat presence", error));
 });
 ui.openJoinRoomButton.addEventListener("click", () => {
   ui.start.classList.add("hidden");
   ui.joinRoomPanel.classList.remove("hidden");
   ui.joinPasswordPanel.classList.add("hidden");
+  heartbeatPresence().catch((error) => console.warn("Failed to heartbeat presence", error));
   renderRoomList();
 });
 ui.backFromCreateButton.addEventListener("click", showTitle);
@@ -3987,6 +4099,8 @@ ui.leaveRoomButton.addEventListener("click", leaveRoom);
 ui.restartButton.addEventListener("click", restartMatch);
 ui.disbandButton.addEventListener("click", leaveRoom);
 ui.pauseTitleButton.addEventListener("click", leaveRoom);
+window.addEventListener("pagehide", closePresence);
+window.addEventListener("beforeunload", closePresence);
 ui.updateButton.addEventListener("click", () => ui.updateInfo.classList.remove("hidden"));
 ui.closeUpdateButton.addEventListener("click", () => ui.updateInfo.classList.add("hidden"));
 ui.settingsButton.addEventListener("click", () => ui.settingsPanel.classList.toggle("hidden"));
