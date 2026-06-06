@@ -93,6 +93,7 @@ let debugSkillPresses = [];
 const aim = new THREE.Vector3(0, 0, -8);
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
+let pointerOnCanvas = false;
 const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 
 let scene;
@@ -174,7 +175,7 @@ const CHARACTER_TYPES = {
 
 const STAGES = {
   stage1: { label: "ステージ1", description: "現在のフィールド", duration: 180, bossTime: 150 },
-  stage2: { label: "黒晶鉱山", description: "落石が敵も味方も巻き込む5分ステージ", duration: 300, bossTime: 270, rockfalls: true },
+  stage2: { label: "黒晶鉱山", description: "落石が敵も味方も巻き込む6分ステージ", duration: 360, bossTime: 330, rockfalls: true, bomberEnemies: true },
 };
 
 const DIFFICULTIES = {
@@ -235,6 +236,7 @@ const materials = {
   saberBlade: new THREE.MeshStandardMaterial({ color: 0xdfe8f3, roughness: 0.24, metalness: 0.55 }),
   enemy: new THREE.MeshStandardMaterial({ color: 0xd95f59, roughness: 0.7 }),
   shooter: new THREE.MeshStandardMaterial({ color: 0x3fb7d6, roughness: 0.6, emissive: 0x06232d }),
+  bomber: new THREE.MeshStandardMaterial({ color: 0xe85d9e, roughness: 0.55, emissive: 0x3d071f }),
   boss: new THREE.MeshStandardMaterial({ color: 0x8b5cf6, roughness: 0.6, emissive: 0x1b0f38 }),
   arrow: new THREE.MeshStandardMaterial({ color: 0xf2c14e, roughness: 0.28, metalness: 0.15 }),
   magic: new THREE.MeshStandardMaterial({ color: 0xff6b2c, roughness: 0.28, emissive: 0x7a1b05 }),
@@ -382,6 +384,59 @@ function addMineDecor() {
     group.position.set(x, 0, z);
     stageDecor.add(group);
   }
+  addMineRails();
+  addMineCart(-8, -4, 0.18);
+  addMineCart(19, 13, -0.5);
+}
+
+function addMineRails() {
+  const railMat = new THREE.MeshStandardMaterial({ color: 0x4b5563, roughness: 0.55, metalness: 0.55 });
+  const woodMat = new THREE.MeshStandardMaterial({ color: 0x5b3a25, roughness: 0.85 });
+  const railA = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.12, 58), railMat);
+  const railB = railA.clone();
+  railA.position.set(-1.05, 0.11, 0);
+  railB.position.set(1.05, 0.11, 0);
+  const railGroup = new THREE.Group();
+  railGroup.rotation.y = -0.42;
+  railGroup.add(railA, railB);
+  for (let i = -13; i <= 13; i += 1) {
+    const sleeper = new THREE.Mesh(new THREE.BoxGeometry(3.5, 0.18, 0.34), woodMat);
+    sleeper.position.set(0, 0.08, i * 2.1);
+    sleeper.receiveShadow = true;
+    railGroup.add(sleeper);
+  }
+  stageDecor.add(railGroup);
+}
+
+function addMineCart(x, z, rotation) {
+  const cart = new THREE.Group();
+  const bodyMat = new THREE.MeshStandardMaterial({ color: 0x374151, roughness: 0.58, metalness: 0.32 });
+  const rimMat = new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.5, metalness: 0.6 });
+  const body = new THREE.Mesh(new THREE.BoxGeometry(2.9, 1.05, 1.75), bodyMat);
+  body.position.y = 0.85;
+  body.scale.y = 0.75;
+  body.castShadow = true;
+  body.receiveShadow = true;
+  cart.add(body);
+  const oreMat = materials.violetCrystal.clone();
+  for (let i = 0; i < 5; i += 1) {
+    const ore = new THREE.Mesh(new THREE.DodecahedronGeometry(0.28 + Math.random() * 0.12, 0), oreMat);
+    ore.position.set((Math.random() - 0.5) * 1.6, 1.35 + Math.random() * 0.28, (Math.random() - 0.5) * 0.8);
+    ore.castShadow = true;
+    cart.add(ore);
+  }
+  for (const wx of [-1.1, 1.1]) {
+    for (const wz of [-0.62, 0.62]) {
+      const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 0.18, 14), rimMat);
+      wheel.rotation.z = Math.PI / 2;
+      wheel.position.set(wx, 0.32, wz);
+      wheel.castShadow = true;
+      cart.add(wheel);
+    }
+  }
+  cart.position.set(x, 0, z);
+  cart.rotation.y = rotation;
+  stageDecor.add(cart);
 }
 
 function newState(playerInfos, options = {}) {
@@ -1137,6 +1192,7 @@ function oldSetPlayerFlashUnused(player, flashing, pulse) {
 }
 
 function getLocalInput() {
+  refreshAimFromPointer();
   let dx = 0;
   let dz = 0;
   if (keys.has("KeyW") || keys.has("ArrowUp")) dz -= 1;
@@ -1145,6 +1201,12 @@ function getLocalInput() {
   if (keys.has("KeyD") || keys.has("ArrowRight")) dx += 1;
   const len = Math.hypot(dx, dz) || 1;
   return { dx: dx / len, dz: dz / len, aimX: aim.x, aimZ: aim.z };
+}
+
+function refreshAimFromPointer() {
+  if (!pointerOnCanvas) return;
+  raycaster.setFromCamera(pointer, camera);
+  raycaster.ray.intersectPlane(groundPlane, aim);
 }
 
 function animateHuman(player, moving, dt) {
@@ -1526,19 +1588,21 @@ function spawnEnemies(dt) {
   state.spawnTimer = Math.max(0.24, (0.72 - pressure * 0.34) / 0.75);
   const count = state.elapsed > 85 ? 4 : state.elapsed > 40 ? 2 : 1;
   const allowShooters = DIFFICULTIES[state.difficultyId]?.shooterEnemies !== false;
+  const allowBombers = STAGES[state.stageId]?.bomberEnemies;
   for (let i = 0; i < count; i += 1) {
     const shooter = allowShooters && state.elapsed > 18 && Math.random() < Math.min(0.12, 0.03 + state.elapsed / 960);
+    const bomber = !shooter && allowBombers && state.elapsed > 28 && Math.random() < Math.min(0.16, 0.04 + state.elapsed / 1200);
     if (!shooter && Math.random() > 0.75) continue;
-    addEnemy(false, shooter);
+    addEnemy(false, shooter, bomber);
   }
   const bossTime = STAGES[state.stageId]?.bossTime ?? 150;
   if (state.elapsed > bossTime && !state.bossSpawned) {
     state.bossSpawned = true;
-    addEnemy(true, false);
+    addEnemy(true, false, false);
   }
 }
 
-function addEnemy(boss, shooter) {
+function addEnemy(boss, shooter, bomber = false) {
   const edge = Math.floor(Math.random() * 4);
   const pos = [
     { x: -WORLD.half, z: randomEdge() },
@@ -1552,16 +1616,17 @@ function addEnemy(boss, shooter) {
     id: crypto.randomUUID(),
     x: pos.x,
     z: pos.z,
-    radius: boss ? 1.9 : shooter ? 1.05 : 0.72 + Math.random() * 0.28,
-    hp: boss ? 980 : shooter ? 46 * scale : 28 * scale,
-    maxHp: boss ? 980 : shooter ? 46 * scale : 28 * scale,
-    speed: boss ? 2.4 : shooter ? 2.1 + state.elapsed * 0.006 : 2.8 + Math.random() * 1.7 + state.elapsed * 0.01,
-    damage: boss ? 22 : shooter ? 12 : 9,
+    radius: boss ? 1.9 : shooter ? 1.05 : bomber ? 0.82 : 0.72 + Math.random() * 0.28,
+    hp: boss ? 980 : shooter ? 46 * scale : bomber ? 34 * scale : 28 * scale,
+    maxHp: boss ? 980 : shooter ? 46 * scale : bomber ? 34 * scale : 28 * scale,
+    speed: boss ? 2.4 : shooter ? 2.1 + state.elapsed * 0.006 : bomber ? 4.5 + state.elapsed * 0.008 : 2.8 + Math.random() * 1.7 + state.elapsed * 0.01,
+    damage: boss ? 22 : shooter ? 12 : bomber ? 26 : 9,
     touchTimer: 0,
     shotTimer: shooter ? (1.2 + Math.random() * 1.4) * 1.5 : 0,
-    xp: boss ? 90 : shooter ? redXp * 3 : redXp,
+    xp: boss ? 90 : shooter ? redXp * 3 : bomber ? redXp * 2 : redXp,
     boss,
     shooter,
+    bomber,
   };
   enemy.mesh = makeEnemyMesh(enemy);
   scene.add(enemy.mesh);
@@ -1590,6 +1655,11 @@ function updateEnemies(dt) {
       }
     }
 
+    if (enemy.bomber && distance(enemy, target) < enemy.radius + target.radius + 1.05) {
+      explodeBomber(enemy);
+      continue;
+    }
+
     if (distance(enemy, target) < enemy.radius + target.radius && enemy.touchTimer <= 0) {
       damagePlayer(target, enemy.damage);
       enemy.touchTimer = 0.55;
@@ -1605,9 +1675,28 @@ function updateEnemies(dt) {
     if (owner) {
       owner.hp = Math.min(owner.maxHp, owner.hp + owner.lifeSteal);
     }
-    addRing(enemy.x, enemy.z, enemy.boss ? 3.2 : 1.4, enemy.shooter ? 0x3fb7d6 : enemy.boss ? 0x57c4a7 : 0xf2c14e);
+    addRing(enemy.x, enemy.z, enemy.boss ? 3.2 : enemy.bomber ? 2.2 : 1.4, enemy.bomber ? 0xe85d9e : enemy.shooter ? 0x3fb7d6 : enemy.boss ? 0x57c4a7 : 0xf2c14e);
   }
   removeDead(state.enemies, (enemy) => enemy.hp <= 0);
+}
+
+function explodeBomber(enemy) {
+  if (enemy.hp <= 0) return;
+  enemy.hp = 0;
+  const radius = 3.1;
+  addRing(enemy.x, enemy.z, radius, 0xe85d9e);
+  addRing(enemy.x, enemy.z, radius * 0.55, 0xffd166);
+  for (const player of state.players) {
+    if (player.dead || player.hp <= 0) continue;
+    if (distance(enemy, player) <= radius + player.radius) damagePlayer(player, enemy.damage);
+  }
+  for (const other of state.enemies) {
+    if (other === enemy || other.hp <= 0) continue;
+    if (distance(enemy, other) <= radius + other.radius) {
+      other.hp -= 42;
+      other.lastHitBy = enemy.lastHitBy || nearestLivingPlayer(enemy)?.id || "";
+    }
+  }
 }
 
 function shootEnemyBullet(enemy, target) {
@@ -1806,19 +1895,21 @@ function updateStageHazards(dt) {
   }
   state.rockfallTimer -= dt;
   if (state.rockfallTimer <= 0) {
-    spawnRockfall();
+    const count = Math.min(8, 1 + Math.floor(state.elapsed / 30));
+    for (let i = 0; i < count; i += 1) spawnRockfall(i);
     const pressure = Math.min(1, state.elapsed / 240);
-    state.rockfallTimer = 4.8 - pressure * 1.8 + Math.random() * 2.2;
+    state.rockfallTimer = 5.2 - pressure * 1.6 + Math.random() * 2.2;
   }
   updateRockfalls(dt, true);
 }
 
-function spawnRockfall() {
+function spawnRockfall(index = 0) {
   const living = state.players.filter((p) => !p.dead && p.hp > 0);
   const target = living[Math.floor(Math.random() * living.length)];
-  const nearPlayer = target && Math.random() < 0.62;
-  const x = nearPlayer ? clamp(target.x + (Math.random() - 0.5) * 15, -WORLD.half + 4, WORLD.half - 4) : randomEdge() * 0.82;
-  const z = nearPlayer ? clamp(target.z + (Math.random() - 0.5) * 15, -WORLD.half + 4, WORLD.half - 4) : randomEdge() * 0.82;
+  const nearPlayer = target && Math.random() < 0.66;
+  const spread = 9 + Math.min(12, index * 1.8);
+  const x = nearPlayer ? clamp(target.x + (Math.random() - 0.5) * spread * 2, -WORLD.half + 4, WORLD.half - 4) : randomEdge() * 0.82;
+  const z = nearPlayer ? clamp(target.z + (Math.random() - 0.5) * spread * 2, -WORLD.half + 4, WORLD.half - 4) : randomEdge() * 0.82;
   const rockfall = {
     id: crypto.randomUUID(),
     x,
@@ -2090,6 +2181,16 @@ function oldChooseUpgrade(playerId, upgradeName) {
 }
 
 function makeEnemyMesh(enemy) {
+  if (enemy.bomber) {
+    const group = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.IcosahedronGeometry(enemy.radius, 1), materials.bomber);
+    body.castShadow = true;
+    const core = new THREE.Mesh(new THREE.SphereGeometry(enemy.radius * 0.42, 12, 8), new THREE.MeshBasicMaterial({ color: 0xffb3d1, transparent: true, opacity: 0.8 }));
+    core.position.y = enemy.radius * 0.18;
+    group.add(body, core);
+    group.position.set(enemy.x, enemy.radius, enemy.z);
+    return group;
+  }
   const mesh = new THREE.Mesh(
     new THREE.SphereGeometry(enemy.radius, enemy.boss ? 24 : 16, enemy.boss ? 16 : 10),
     enemy.boss ? materials.boss : enemy.shooter ? materials.shooter : materials.enemy
@@ -2381,9 +2482,6 @@ function render() {
 function initAudio() {
   if (!audio.enabled) return;
   if (audio.loaded) return;
-  audio.bgm = new Audio("./Sounds/gamebgm.mp3");
-  audio.bgm.loop = true;
-  audio.bgm.volume = effectiveBgmVolume();
   for (const [key, file] of Object.entries(AUDIO_FILES)) {
     audio.sounds[key] = new Audio(`./Sounds/${file}`);
     audio.sounds[key].preload = "auto";
@@ -2395,7 +2493,15 @@ function initAudio() {
 
 function startBgm() {
   initAudio();
+  const bgmFile = state?.stageId === "stage2" ? "stage2.mp3" : "gamebgm.mp3";
+  if (!audio.bgm || !audio.bgm.src.endsWith(`/Sounds/${bgmFile}`)) {
+    if (audio.bgm) audio.bgm.pause();
+    audio.bgm = new Audio(`./Sounds/${bgmFile}`);
+    audio.bgm.addEventListener("error", () => console.warn(`BGM load failed: ${bgmFile}`));
+    audio.bgm.loop = true;
+  }
   if (!audio.bgm) return;
+  audio.bgm.volume = effectiveBgmVolume();
   audio.bgm.currentTime = 0;
   audio.bgm.play().catch(() => {});
 }
@@ -2717,8 +2823,8 @@ function updateAim(event) {
   const rect = canvas.getBoundingClientRect();
   pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
   pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-  raycaster.setFromCamera(pointer, camera);
-  raycaster.ray.intersectPlane(groundPlane, aim);
+  pointerOnCanvas = true;
+  refreshAimFromPointer();
 }
 
 function showStatus(title, text = "") {
@@ -3057,7 +3163,7 @@ function sendHostSnapshot(force = false) {
       magicSplash: p.magicSplash, magicRadius: p.magicRadius, chainExplosion: p.chainExplosion, iceSpike: p.iceSpike, thunderCircle: p.thunderCircle,
       rerolls: p.rerolls, upgrades: p.upgrades,
     })),
-    enemies: state.enemies.map((e) => ({ id: e.id, x: e.x, z: e.z, radius: e.radius, boss: e.boss, shooter: e.shooter })),
+    enemies: state.enemies.map((e) => ({ id: e.id, x: e.x, z: e.z, radius: e.radius, boss: e.boss, shooter: e.shooter, bomber: e.bomber })),
     arrows: state.arrows.map((a) => ({ id: a.id, x: a.x, z: a.z, angle: a.angle, kind: a.kind, radius: a.radius, owner: a.owner, skill: a.skill })),
     bullets: state.enemyBullets.map((b) => ({ id: b.id, x: b.x, z: b.z })),
     gems: state.gems.map((g) => ({ id: g.id, x: g.x, z: g.z, kind: g.kind })),
