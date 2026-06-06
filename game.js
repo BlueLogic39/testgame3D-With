@@ -244,6 +244,7 @@ const materials = {
   bullet: new THREE.MeshStandardMaterial({ color: 0xff7a42, roughness: 0.35, emissive: 0x3a1206 }),
   gem: new THREE.MeshStandardMaterial({ color: 0x58d5b7, roughness: 0.2, emissive: 0x0d4739 }),
   shooterGem: new THREE.MeshStandardMaterial({ color: 0x4aa3ff, roughness: 0.2, emissive: 0x082c62 }),
+  bomberGem: new THREE.MeshStandardMaterial({ color: 0xffd84a, roughness: 0.18, emissive: 0x6b4b00 }),
   heart: new THREE.MeshStandardMaterial({ color: 0xff4f7b, roughness: 0.35, emissive: 0x4a0618 }),
   ring: new THREE.MeshBasicMaterial({ color: 0xf2c14e, transparent: true, opacity: 0.75 }),
   crystal: new THREE.MeshStandardMaterial({ color: 0x7dd3fc, roughness: 0.25, metalness: 0.08, emissive: 0x164e63 }),
@@ -1591,7 +1592,7 @@ function spawnEnemies(dt) {
   const allowBombers = STAGES[state.stageId]?.bomberEnemies;
   for (let i = 0; i < count; i += 1) {
     const shooter = allowShooters && state.elapsed > 18 && Math.random() < Math.min(0.12, 0.03 + state.elapsed / 960);
-    const bomber = !shooter && allowBombers && state.elapsed > 28 && Math.random() < Math.min(0.16, 0.04 + state.elapsed / 1200);
+    const bomber = !shooter && allowBombers && state.elapsed >= 180 && Math.random() < Math.min(0.16, 0.04 + state.elapsed / 1200);
     if (!shooter && Math.random() > 0.75) continue;
     addEnemy(false, shooter, bomber);
   }
@@ -1623,7 +1624,7 @@ function addEnemy(boss, shooter, bomber = false) {
     damage: boss ? 22 : shooter ? 12 : bomber ? 26 : 9,
     touchTimer: 0,
     shotTimer: shooter ? (1.2 + Math.random() * 1.4) * 1.5 : 0,
-    xp: boss ? 90 : shooter ? redXp * 3 : bomber ? redXp * 2 : redXp,
+    xp: boss ? 90 : shooter ? redXp * 3 : bomber ? Math.ceil(redXp * 4.5) : redXp,
     boss,
     shooter,
     bomber,
@@ -1670,7 +1671,7 @@ function updateEnemies(dt) {
   const dead = state.enemies.filter((enemy) => enemy.hp <= 0);
   for (const enemy of dead) {
     state.kills += 1;
-    dropGem(enemy.x, enemy.z, enemy.xp, enemy.shooter ? "shooter" : "normal");
+    dropGem(enemy.x, enemy.z, enemy.xp, enemy.bomber ? "bomber" : enemy.shooter ? "shooter" : "normal");
     const owner = state.players.find((p) => p.id === enemy.lastHitBy) || localPlayer();
     if (owner) {
       owner.hp = Math.min(owner.maxHp, owner.hp + owner.lifeSteal);
@@ -2271,7 +2272,8 @@ function makeBulletMesh() {
 }
 
 function makeGemMesh(gem = {}) {
-  const mesh = new THREE.Mesh(new THREE.OctahedronGeometry(0.34), gem.kind === "shooter" ? materials.shooterGem : materials.gem);
+  const material = gem.kind === "bomber" ? materials.bomberGem : gem.kind === "shooter" ? materials.shooterGem : materials.gem;
+  const mesh = new THREE.Mesh(new THREE.OctahedronGeometry(0.34), material);
   mesh.castShadow = true;
   return mesh;
 }
