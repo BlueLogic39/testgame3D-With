@@ -339,6 +339,21 @@ canvas {
   font-size: 13px;
 }
 
+.online-badge {
+  position: absolute;
+  right: 154px;
+  bottom: 13px;
+  z-index: 6;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 7px;
+  color: #f3f0e8;
+  background: rgba(18, 24, 28, 0.82);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 .settings-corner {
   position: absolute;
   right: 10px;

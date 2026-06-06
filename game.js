@@ -50,6 +50,7 @@ const ui = {
   skillBannerName: document.getElementById("skillBannerName"),
   skillBannerPlayer: document.getElementById("skillBannerPlayer"),
   radialMenu: document.getElementById("radialMenu"),
+  onlineBadge: document.getElementById("onlineBadge"),
   updateButton: document.getElementById("updateButton"),
   updateInfo: document.getElementById("updateInfo"),
   closeUpdateButton: document.getElementById("closeUpdateButton"),
@@ -143,6 +144,8 @@ let lobbyHeartbeatTimer = 0;
 let codexViewer = null;
 let audio = {
   bgm: null,
+  bgmTimer: 0,
+  bgmLoopGap: 0,
   sounds: {},
   loaded: false,
   enabled: true,
@@ -167,6 +170,9 @@ const AUDIO_FILES = {
   heal: "kaihuku.mp3",
   thunderA: "kaminari1.mp3",
   thunderB: "kaminari2.mp3",
+  bomber: "bomber.mp3",
+  rockA: "rock1.mp3",
+  rockB: "rock2.mp3",
 };
 
 const SUPABASE_URL = "https://oeizknymvzmokzxksidg.supabase.co";
@@ -463,7 +469,7 @@ function newState(playerInfos, options = {}) {
     spawnTimer: 0,
     bossSpawned: false,
     heartTimer: 8 + Math.random() * 12,
-    rockfallTimer: 2.8 + Math.random() * 2.4,
+    rockfallTimer: 30,
     pauseReason: null,
     pendingLevel: null,
     players,
@@ -1629,7 +1635,7 @@ function addEnemy(boss, shooter, bomber = false) {
     hp: boss ? 980 : shooter ? 46 * scale : bomber ? 34 * scale : 28 * scale,
     maxHp: boss ? 980 : shooter ? 46 * scale : bomber ? 34 * scale : 28 * scale,
     speed: boss ? 2.4 : shooter ? 2.1 + state.elapsed * 0.006 : bomber ? 4.5 + state.elapsed * 0.008 : 2.8 + Math.random() * 1.7 + state.elapsed * 0.01,
-    damage: boss ? 22 : shooter ? 12 : bomber ? 26 : 9,
+    damage: boss ? 22 : shooter ? 12 : bomber ? 40 : 9,
     touchTimer: 0,
     shotTimer: shooter ? (1.2 + Math.random() * 1.4) * 1.5 : 0,
     xp: boss ? 90 : shooter ? redXp * 3 : bomber ? Math.ceil(redXp * 4.5) : redXp,
@@ -1692,6 +1698,7 @@ function updateEnemies(dt) {
 function explodeBomber(enemy) {
   if (enemy.hp <= 0) return;
   enemy.hp = 0;
+  sfx("bomber", { broadcast: net.mode === "host" });
   const radius = 3.1;
   addRing(enemy.x, enemy.z, radius, 0xe85d9e);
   addRing(enemy.x, enemy.z, radius * 0.55, 0xffd166);
@@ -1904,10 +1911,9 @@ function updateStageHazards(dt) {
   }
   state.rockfallTimer -= dt;
   if (state.rockfallTimer <= 0) {
-    const count = Math.min(8, 1 + Math.floor(state.elapsed / 30));
+    const count = Math.min(8, Math.max(1, Math.floor(state.elapsed / 30)));
     for (let i = 0; i < count; i += 1) spawnRockfall(i);
-    const pressure = Math.min(1, state.elapsed / 240);
-    state.rockfallTimer = 5.2 - pressure * 1.6 + Math.random() * 2.2;
+    state.rockfallTimer = 30;
   }
   updateRockfalls(dt, true);
 }
@@ -1944,6 +1950,7 @@ function updateRockfalls(dt, applyDamage) {
     updateRockfallMesh(rockfall, elapsed);
     if (!applyDamage || rockfall.impacted || !falling) continue;
     rockfall.impacted = true;
+    sfx("rock", { broadcast: net.mode === "host" });
     addRing(rockfall.x, rockfall.z, rockfall.radius, 0xff7a42);
     for (const player of state.players) {
       if (player.dead || player.hp <= 0) continue;
@@ -2506,20 +2513,38 @@ function startBgm() {
   const bgmFile = state?.stageId === "stage2" ? "stage2.mp3" : "gamebgm.mp3";
   if (!audio.bgm || !audio.bgm.src.endsWith(`/Sounds/${bgmFile}`)) {
     if (audio.bgm) audio.bgm.pause();
+    if (audio.bgmTimer) clearInterval(audio.bgmTimer);
     audio.bgm = new Audio(`./Sounds/${bgmFile}`);
     audio.bgm.addEventListener("error", () => console.warn(`BGM load failed: ${bgmFile}`));
-    audio.bgm.loop = true;
+    audio.bgmLoopGap = bgmFile === "stage2.mp3" ? 0.35 : 0;
+    audio.bgm.loop = audio.bgmLoopGap <= 0;
   }
   if (!audio.bgm) return;
   audio.bgm.volume = effectiveBgmVolume();
   audio.bgm.currentTime = 0;
+  setupSeamlessBgmLoop();
   audio.bgm.play().catch(() => {});
 }
 
 function stopBgm() {
   if (!audio.bgm) return;
+  if (audio.bgmTimer) clearInterval(audio.bgmTimer);
+  audio.bgmTimer = 0;
   audio.bgm.pause();
   audio.bgm.currentTime = 0;
+}
+
+function setupSeamlessBgmLoop() {
+  if (audio.bgmTimer) clearInterval(audio.bgmTimer);
+  audio.bgmTimer = 0;
+  if (!audio.bgm || audio.bgmLoopGap <= 0) return;
+  audio.bgmTimer = window.setInterval(() => {
+    if (!audio.bgm || !audio.bgm.duration || audio.bgm.paused) return;
+    if (audio.bgm.currentTime >= audio.bgm.duration - audio.bgmLoopGap) {
+      audio.bgm.currentTime = 0;
+      audio.bgm.play().catch(() => {});
+    }
+  }, 80);
 }
 
 function sfx(kind, options = {}) {
@@ -2530,6 +2555,7 @@ function playSound(kind, options = {}) {
   initAudio();
   if (kind === "gem") kind = Math.random() < 0.5 ? "gemA" : "gemB";
   if (kind === "thunder") kind = Math.random() < 0.5 ? "thunderA" : "thunderB";
+  if (kind === "rock") kind = Math.random() < 0.5 ? "rockA" : "rockB";
   const base = audio.sounds[kind];
   if (base) {
     const sound = base.cloneNode();
