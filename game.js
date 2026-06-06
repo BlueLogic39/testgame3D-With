@@ -147,6 +147,7 @@ let audio = {
   bgmTimer: 0,
   bgmLoopGap: 0,
   sounds: {},
+  activeSounds: new Set(),
   loaded: false,
   enabled: true,
   masterVolume: 0.3,
@@ -404,17 +405,17 @@ function addMineDecor() {
 }
 
 function addMineRails() {
-  const railMat = new THREE.MeshStandardMaterial({ color: 0x4b5563, roughness: 0.55, metalness: 0.55 });
+  const railMat = new THREE.MeshStandardMaterial({ color: 0x6b7280, roughness: 0.42, metalness: 0.72 });
   const woodMat = new THREE.MeshStandardMaterial({ color: 0x5b3a25, roughness: 0.85 });
-  const railA = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.12, 58), railMat);
+  const railA = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.16, 58), railMat);
   const railB = railA.clone();
-  railA.position.set(-1.05, 0.11, 0);
-  railB.position.set(1.05, 0.11, 0);
+  railA.position.set(-0.92, 0.24, 0);
+  railB.position.set(0.92, 0.24, 0);
   const railGroup = new THREE.Group();
   railGroup.rotation.y = -0.42;
   railGroup.add(railA, railB);
   for (let i = -13; i <= 13; i += 1) {
-    const sleeper = new THREE.Mesh(new THREE.BoxGeometry(3.5, 0.18, 0.34), woodMat);
+    const sleeper = new THREE.Mesh(new THREE.BoxGeometry(2.85, 0.12, 0.38), woodMat);
     sleeper.position.set(0, 0.08, i * 2.1);
     sleeper.receiveShadow = true;
     railGroup.add(sleeper);
@@ -1036,6 +1037,7 @@ function makeNameLabel(name) {
 
 function startGame(mode = "solo") {
   cancelAnimationFrame(animationId);
+  stopEndSounds();
   if (state) resetSceneEntities();
   net.mode = mode;
   net.phase = "playing";
@@ -2485,7 +2487,7 @@ function oldEndGame(won) {
   net.phase = "gameover";
   ui.endTitle.textContent = won ? "Clear!" : "Game Over";
   ui.endText.textContent = endSummaryText(state.elapsed, state.kills, true);
-  ui.restartButton.textContent = net.mode === "solo" ? "もう一度" : "同じメンバーでもう一度";
+  ui.restartButton.textContent = net.mode === "solo" ? "コンティニュー" : "コンティニューに投票";
   ui.disbandButton.textContent = net.mode === "solo" ? "タイトルに戻る" : "解散する";
   ui.disbandButton.classList.remove("hidden");
   ui.gameOver.classList.remove("hidden");
@@ -2516,7 +2518,7 @@ function startBgm() {
     if (audio.bgmTimer) clearInterval(audio.bgmTimer);
     audio.bgm = new Audio(`./Sounds/${bgmFile}`);
     audio.bgm.addEventListener("error", () => console.warn(`BGM load failed: ${bgmFile}`));
-    audio.bgmLoopGap = bgmFile === "stage2.mp3" ? 0.35 : 0;
+    audio.bgmLoopGap = bgmFile === "stage2.mp3" ? 1.25 : 0;
     audio.bgm.loop = audio.bgmLoopGap <= 0;
   }
   if (!audio.bgm) return;
@@ -2561,11 +2563,23 @@ function playSound(kind, options = {}) {
     const sound = base.cloneNode();
     const volumeBoost = 1;
     sound.volume = Math.min(1, effectiveSeVolume() * volumeBoost);
+    if (kind === "victory" || kind === "gameover") {
+      audio.activeSounds.add(sound);
+      sound.addEventListener("ended", () => audio.activeSounds.delete(sound), { once: true });
+    }
     sound.play().catch(() => {});
   }
   if (net.mode === "host" && options.broadcast && !options.remote) {
     broadcast({ type: "sound", kind });
   }
+}
+
+function stopEndSounds() {
+  for (const sound of audio.activeSounds) {
+    sound.pause();
+    sound.currentTime = 0;
+  }
+  audio.activeSounds.clear();
 }
 
 function thunderSfx() {
@@ -3138,12 +3152,12 @@ function handleHostData(data) {
     ui.skillText.closest(".skill-hud")?.classList.add("hidden");
     ui.endTitle.textContent = data.won ? "Clear!" : "Game Over";
     ui.endText.textContent = endSummaryText(data.elapsed, data.kills, false);
-    ui.restartButton.textContent = "もう一度に投票";
+    ui.restartButton.textContent = "コンティニューに投票";
     ui.disbandButton.classList.remove("hidden");
     ui.gameOver.classList.remove("hidden");
   }
   if (data.type === "gameOver") {
-    ui.restartButton.textContent = "もう一度に投票";
+    ui.restartButton.textContent = "コンティニューに投票";
     ui.voteText.textContent = `再戦投票: 0/${data.total || "?"}`;
   }
   if (data.type === "voteStatus") ui.voteText.textContent = `再戦投票: ${data.count}/${data.total}`;
@@ -3706,7 +3720,7 @@ function endGame(won) {
   net.restartVotes = new Set();
   ui.endTitle.textContent = won ? "Clear!" : "Game Over";
   ui.endText.textContent = endSummaryText(state.elapsed, state.kills, true);
-  ui.restartButton.textContent = net.mode === "solo" ? "もう一度" : "もう一度に投票";
+  ui.restartButton.textContent = net.mode === "solo" ? "コンティニュー" : "コンティニューに投票";
   ui.disbandButton.textContent = net.mode === "solo" ? "タイトルに戻る" : "解散する";
   ui.voteText.textContent = net.mode === "solo" ? "" : `再戦投票: 0/${state.players.length}`;
   ui.disbandButton.classList.remove("hidden");
@@ -3934,6 +3948,7 @@ function removeRememberedRoom(code) {
 }
 
 function showTitle() {
+  stopEndSounds();
   stopBgm();
   ui.skillText.closest(".skill-hud")?.classList.add("hidden");
   ui.start.classList.remove("hidden");
