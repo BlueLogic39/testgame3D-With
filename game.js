@@ -143,9 +143,9 @@ let audio = {
 const AUDIO_FILES = {
   archerAttack: "arrowsound.mp3",
   archerSkill: "arrowskillsound.mp3",
-  witchAttack: "wicthmagicsound.mp3",
-  witchSkill: "wicthskillsound.mp3",
-  witchIceSpike: "wicthicespikesound.mp3",
+  witchAttack: "witchmagicsound.mp3",
+  witchSkill: "witchskillsound.mp3",
+  witchIceSpike: "witchicespikesound.mp3",
   saberAttack: "swordsound.mp3",
   saberSkill: "swordskillsound.mp3",
   victory: "victory.mp3",
@@ -2209,6 +2209,8 @@ function initAudio() {
   for (const [key, file] of Object.entries(AUDIO_FILES)) {
     audio.sounds[key] = new Audio(`./Sounds/${file}`);
     audio.sounds[key].preload = "auto";
+    audio.sounds[key].addEventListener("error", () => console.warn(`Sound load failed: ${file}`));
+    audio.sounds[key].load();
   }
   audio.loaded = true;
 }
@@ -2237,7 +2239,7 @@ function playSound(kind, options = {}) {
   const base = audio.sounds[kind];
   if (base) {
     const sound = base.cloneNode();
-    const volumeBoost = kind === "witchIceSpike" ? 1.8 : 1;
+    const volumeBoost = kind === "witchIceSpike" ? 5.5 : 1;
     sound.volume = Math.min(1, effectiveSeVolume() * volumeBoost);
     sound.play().catch(() => {});
   }
