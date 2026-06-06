@@ -470,7 +470,7 @@ function newState(playerInfos, options = {}) {
     spawnTimer: 0,
     bossSpawned: false,
     heartTimer: 8 + Math.random() * 12,
-    rockfallTimer: 30,
+    rockfallTimer: 7,
     pauseReason: null,
     pendingLevel: null,
     players,
@@ -1915,7 +1915,7 @@ function updateStageHazards(dt) {
   if (state.rockfallTimer <= 0) {
     const count = Math.min(8, Math.max(1, Math.floor(state.elapsed / 30)));
     for (let i = 0; i < count; i += 1) spawnRockfall(i);
-    state.rockfallTimer = 30;
+    state.rockfallTimer = 7;
   }
   updateRockfalls(dt, true);
 }
@@ -3014,6 +3014,7 @@ function showLobby(message) {
   ui.lobbyStatus.textContent = message;
   ui.lobbyStartButton.classList.toggle("hidden", net.mode !== "host");
   renderLobbyPlayers();
+  updateOnlineBadge();
   heartbeatPresence().catch((error) => console.warn("Failed to heartbeat presence", error));
   refreshOnlinePresenceCount();
 }
@@ -3514,8 +3515,8 @@ function startPresenceHeartbeat() {
   refreshOnlinePresenceCount();
   presenceHeartbeatTimer = window.setInterval(() => {
     heartbeatPresence().catch((error) => console.warn("Failed to heartbeat presence", error));
-  }, 10000);
-  presenceCountTimer = window.setInterval(refreshOnlinePresenceCount, 10000);
+  }, 5000);
+  presenceCountTimer = window.setInterval(refreshOnlinePresenceCount, 5000);
   presenceCleanupTimer = window.setInterval(() => {
     cleanupOldPresence().catch((error) => console.warn("Failed to cleanup presence", error));
   }, 60000);
@@ -3772,6 +3773,8 @@ function showSkillBanner(playerName, skill) {
 
 function updateOnlineBadge() {
   if (!ui.onlineBadge) return;
+  const hideInGame = net.phase === "playing" || net.phase === "gameover" || !ui.gameOver.classList.contains("hidden");
+  ui.onlineBadge.classList.toggle("hidden", hideInGame);
   const fallback = net.mode === "solo" ? 1 : Math.max(1, net.lobbyPlayers.length || state.players?.length || 1);
   const count = supabaseReady() ? onlinePresenceCount || fallback : fallback;
   ui.onlineBadge.textContent = `オンライン人数: ${count}`;
@@ -3957,6 +3960,7 @@ function showTitle() {
   ui.joinRoomPanel.classList.add("hidden");
   ui.joinPasswordPanel.classList.add("hidden");
   ui.roomStatus.textContent = "部屋作成または参加を選んでください。";
+  updateOnlineBadge();
   heartbeatPresence().catch((error) => console.warn("Failed to heartbeat presence", error));
   refreshOnlinePresenceCount();
 }
@@ -4114,6 +4118,7 @@ ui.startButton.addEventListener("click", () => {
   ui.start.classList.add("hidden");
   ui.stageSelectPanel.classList.remove("hidden");
   updateStageDifficultyButtons();
+  updateOnlineBadge();
   heartbeatPresence().catch((error) => console.warn("Failed to heartbeat presence", error));
 });
 ui.stageStartButton.addEventListener("click", () => startGame("solo"));
@@ -4122,12 +4127,14 @@ ui.openCreateRoomButton.addEventListener("click", () => {
   ui.start.classList.add("hidden");
   ui.createRoomPanel.classList.remove("hidden");
   updateStageDifficultyButtons();
+  updateOnlineBadge();
   heartbeatPresence().catch((error) => console.warn("Failed to heartbeat presence", error));
 });
 ui.openJoinRoomButton.addEventListener("click", () => {
   ui.start.classList.add("hidden");
   ui.joinRoomPanel.classList.remove("hidden");
   ui.joinPasswordPanel.classList.add("hidden");
+  updateOnlineBadge();
   heartbeatPresence().catch((error) => console.warn("Failed to heartbeat presence", error));
   renderRoomList();
 });
