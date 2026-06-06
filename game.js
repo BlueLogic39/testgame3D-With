@@ -2237,7 +2237,8 @@ function playSound(kind, options = {}) {
   const base = audio.sounds[kind];
   if (base) {
     const sound = base.cloneNode();
-    sound.volume = effectiveSeVolume();
+    const volumeBoost = kind === "witchIceSpike" ? 1.8 : 1;
+    sound.volume = Math.min(1, effectiveSeVolume() * volumeBoost);
     sound.play().catch(() => {});
   }
   if (net.mode === "host" && options.broadcast && !options.remote) {
@@ -2961,6 +2962,7 @@ function syncEffects(effects) {
       cache.set(effect.id, mesh);
       if (effect.kind === "slash" && effect.owner && !effect.skill) sfx("saberAttack");
       if (effect.kind === "thunder") thunderSfx();
+      if (effect.kind === "ice") sfx("witchIceSpike");
     }
     const t = 1 - effect.life / effect.start;
     mesh.position.set(effect.x, 0.12, effect.z);
