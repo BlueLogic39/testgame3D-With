@@ -145,7 +145,7 @@ const AUDIO_FILES = {
   archerSkill: "arrowskillsound.mp3",
   witchAttack: "wicthmagicsound.mp3",
   witchSkill: "wicthskillsound.mp3",
-  witchIceSpike: "wwicthicespikesound.mp3",
+  witchIceSpike: "wicthicespikesound.mp3",
   saberAttack: "swordsound.mp3",
   saberSkill: "swordskillsound.mp3",
   victory: "victory.mp3",
