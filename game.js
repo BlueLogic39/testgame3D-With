@@ -257,7 +257,7 @@ upgrades[0].classes = ["archer"];
 upgrades[3].classes = ["archer"];
 upgrades[7].classes = ["archer"];
 upgrades.push(
-  { name: "アイススパイク", desc: "一定間隔で近くの敵の足元から氷柱を出す。取得するたび氷柱+1、スロー時間+0.35秒。", classes: ["witch"], apply: (p) => (p.iceSpike += 1) },
+  { name: "アイススパイク", desc: "一定間隔で近くの敵の足元から氷柱を出す。取得するたび氷柱+1、スロー時間+1秒。", classes: ["witch"], apply: (p) => (p.iceSpike += 1) },
   { name: "サンダーストーム", desc: "自分の周辺に雷の魔法陣を設置し、無数の雷で敵を翻弄する。取得するたび範囲と設置時間が伸びる。", classes: ["witch"], apply: (p) => (p.thunderCircle += 1) },
   { name: "ファイア巨大化", desc: "ファイアが大きくなり、魔力爆発の範囲と威力が伸びる。さらに連鎖爆発が+1される。", classes: ["witch"], apply: (p) => { p.magicRadius += 0.12; p.damage *= 1.08; p.magicSplash += 1; p.chainExplosion += 1; } },
   { name: "剣閃範囲 +10度", desc: "薙ぎ払いの横範囲が10度広がり、奥への届く距離も10%伸びる。", classes: ["saber"], apply: (p) => { p.slashArc += THREE.MathUtils.degToRad(10); p.slashRange *= 1.1; } },
@@ -1213,7 +1213,7 @@ function shootMagic(player) {
       vz: Math.cos(angle) * 18,
       radius: player.magicRadius || 0.34,
       life: 2.1,
-      damage: player.damage,
+      damage: witchSpellDamage(player),
       pierce: 0,
       owner: player.id,
       kind: "magic",
@@ -1228,6 +1228,10 @@ function shootMagic(player) {
     scene.add(magic.mesh);
     state.arrows.push(magic);
   }
+}
+
+function witchSpellDamage(player, scale = 1) {
+  return player.damage * scale;
 }
 
 function swingSaber(player) {
@@ -1429,7 +1433,7 @@ function castArcherSkill(player, baseAngle) {
 
 function castWitchSkill(player) {
   const radius = 9.5;
-  const damage = player.damage * (3.2 + (player.magicSplash || 0) * 0.18);
+  const damage = witchSpellDamage(player, 3.2 + (player.magicSplash || 0) * 0.18);
   addRing(player.x, player.z, radius, 0xff6b2c);
   addRing(player.x, player.z, radius * 0.55, 0xffd166);
   for (const enemy of state.enemies) {
@@ -1742,7 +1746,7 @@ function addMagicCircle(player) {
     tick: 0.15,
     zap: 0.02,
     owner: player.id,
-    damage: player.damage * (0.75 + level * 0.16),
+    damage: witchSpellDamage(player, 0.75 + level * 0.16),
     mesh: makeMagicCircleMesh({ radius }),
   };
   circle.mesh.position.set(circle.x, 0.1, circle.z);
@@ -1781,8 +1785,8 @@ function updateMagicCircles(dt) {
 function castIceSpikes(player) {
   const level = player.iceSpike || 0;
   const count = Math.max(1, level);
-  const slowDuration = 1.15 + level * 0.35;
-  const damage = player.damage * (0.52 + level * 0.08);
+  const slowDuration = 0.5 + level * 1;
+  const damage = witchSpellDamage(player, 0.52 + level * 0.08);
   const radius = 0.72;
   const targets = state.enemies
     .filter((enemy) => enemy.hp > 0 && distance(player, enemy) < 18)
@@ -2239,7 +2243,7 @@ function playSound(kind, options = {}) {
   const base = audio.sounds[kind];
   if (base) {
     const sound = base.cloneNode();
-    const volumeBoost = kind === "witchIceSpike" ? 5.5 : 1;
+    const volumeBoost = 1;
     sound.volume = Math.min(1, effectiveSeVolume() * volumeBoost);
     sound.play().catch(() => {});
   }
@@ -3544,7 +3548,7 @@ function showLevelChoices(player, choiceNames) {
 function upgradeDescForPlayer(up, player) {
   const character = player?.character || "archer";
   if (up.name === "ダメージ +25%") {
-    if (character === "witch") return "ファイアと魔力爆発の威力が増える。硬い敵にも通しやすくなる。";
+    if (character === "witch") return "ファイア、魔力爆発、サンダーストーム、アイススパイク、魔女の大爆発の威力が増える。";
     if (character === "saber") return "薙ぎ払いの威力が増える。近づいた敵をまとめて倒しやすくなる。";
     return "矢の威力が増える。硬い敵に効きやすい。";
   }
