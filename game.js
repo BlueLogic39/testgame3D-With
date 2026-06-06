@@ -470,7 +470,7 @@ function newState(playerInfos, options = {}) {
     spawnTimer: 0,
     bossSpawned: false,
     heartTimer: 8 + Math.random() * 12,
-    rockfallTimer: 7,
+    rockfallTimer: 30,
     pauseReason: null,
     pendingLevel: null,
     players,
@@ -1608,7 +1608,7 @@ function spawnEnemies(dt) {
   const allowBombers = STAGES[state.stageId]?.bomberEnemies;
   for (let i = 0; i < count; i += 1) {
     const shooter = allowShooters && state.elapsed > 18 && Math.random() < Math.min(0.12, 0.03 + state.elapsed / 960);
-    const bomber = !shooter && allowBombers && state.elapsed >= 180 && Math.random() < Math.min(0.16, 0.04 + state.elapsed / 1200);
+    const bomber = !shooter && allowBombers && state.elapsed >= 180 && Math.random() < Math.min(0.106, 0.026 + state.elapsed / 1800);
     if (!shooter && Math.random() > 0.75) continue;
     addEnemy(false, shooter, bomber);
   }
@@ -1636,7 +1636,7 @@ function addEnemy(boss, shooter, bomber = false) {
     radius: boss ? 1.9 : shooter ? 1.05 : bomber ? 0.82 : 0.72 + Math.random() * 0.28,
     hp: boss ? 980 : shooter ? 46 * scale : bomber ? 34 * scale : 28 * scale,
     maxHp: boss ? 980 : shooter ? 46 * scale : bomber ? 34 * scale : 28 * scale,
-    speed: boss ? 2.4 : shooter ? 2.1 + state.elapsed * 0.006 : bomber ? 4.5 + state.elapsed * 0.008 : 2.8 + Math.random() * 1.7 + state.elapsed * 0.01,
+    speed: boss ? 2.4 : shooter ? 2.1 + state.elapsed * 0.006 : bomber ? 4.5 + state.elapsed * 0.008 : 2.8 + Math.random() * 1.7 + state.elapsed * 0.005,
     damage: boss ? 22 : shooter ? 12 : bomber ? 40 : 9,
     touchTimer: 0,
     shotTimer: shooter ? (1.2 + Math.random() * 1.4) * 1.5 : 0,
@@ -1914,19 +1914,15 @@ function updateStageHazards(dt) {
   state.rockfallTimer -= dt;
   if (state.rockfallTimer <= 0) {
     const count = Math.min(8, Math.max(1, Math.floor(state.elapsed / 30)));
-    for (let i = 0; i < count; i += 1) spawnRockfall(i);
+    for (let i = 0; i < count; i += 1) spawnRockfall();
     state.rockfallTimer = 7;
   }
   updateRockfalls(dt, true);
 }
 
-function spawnRockfall(index = 0) {
-  const living = state.players.filter((p) => !p.dead && p.hp > 0);
-  const target = living[Math.floor(Math.random() * living.length)];
-  const nearPlayer = target && Math.random() < 0.66;
-  const spread = 9 + Math.min(12, index * 1.8);
-  const x = nearPlayer ? clamp(target.x + (Math.random() - 0.5) * spread * 2, -WORLD.half + 4, WORLD.half - 4) : randomEdge() * 0.82;
-  const z = nearPlayer ? clamp(target.z + (Math.random() - 0.5) * spread * 2, -WORLD.half + 4, WORLD.half - 4) : randomEdge() * 0.82;
+function spawnRockfall() {
+  const x = randomFieldPoint();
+  const z = randomFieldPoint();
   const rockfall = {
     id: crypto.randomUUID(),
     x,
@@ -1942,6 +1938,10 @@ function spawnRockfall(index = 0) {
   };
   scene.add(rockfall.mesh);
   state.rockfalls.push(rockfall);
+}
+
+function randomFieldPoint() {
+  return -WORLD.half + 4 + Math.random() * (WORLD.half * 2 - 8);
 }
 
 function updateRockfalls(dt, applyDamage) {
@@ -2518,7 +2518,7 @@ function startBgm() {
     if (audio.bgmTimer) clearInterval(audio.bgmTimer);
     audio.bgm = new Audio(`./Sounds/${bgmFile}`);
     audio.bgm.addEventListener("error", () => console.warn(`BGM load failed: ${bgmFile}`));
-    audio.bgmLoopGap = bgmFile === "stage2.mp3" ? 1.25 : 0;
+    audio.bgmLoopGap = bgmFile === "stage2.mp3" ? 4.25 : 0;
     audio.bgm.loop = audio.bgmLoopGap <= 0;
   }
   if (!audio.bgm) return;
