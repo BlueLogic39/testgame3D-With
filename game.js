@@ -283,7 +283,7 @@ function initThree() {
   renderer.shadowMap.enabled = true;
 
   camera = new THREE.PerspectiveCamera(48, 16 / 9, 0.1, 160);
-  camera.position.set(0, 25, 25);
+  camera.position.set(0, 21, 20);
   camera.lookAt(0, 0, 0);
 
   scene.add(new THREE.HemisphereLight(0xdde9ff, 0x1b1713, 1.8));
@@ -1127,7 +1127,7 @@ function updateCamera() {
   const player = cameraTargetPlayer();
   if (!player) return;
   camera.position.x += (player.x - camera.position.x) * 0.08;
-  camera.position.z += (player.z + 25 - camera.position.z) * 0.08;
+  camera.position.z += (player.z + 20 - camera.position.z) * 0.08;
   camera.lookAt(player.x, 0, player.z);
 }
 
@@ -2461,16 +2461,66 @@ function updateUi() {
   ui.skillText.textContent = skillPct >= 1 ? "READY" : `${Math.ceil(skillCooldown - (player.skillCharge || 0))}s`;
   ui.skillText.closest(".skill-hud")?.classList.toggle("ready", skillPct >= 1);
   ui.skillReadyHint?.classList.toggle("hidden", skillPct < 1 || net.phase !== "playing" || !state.running);
-  const recent = player.upgrades.length ? player.upgrades.slice(-5).join(" / ") : "強化なし";
+  const buildSummary = formatBuildSummary(player);
   const room = net.roomCode ? ` / 部屋 ${net.roomCode}` : "";
   const revive = player.dead ? ` / 復活まで${Math.max(0, Math.ceil(player.reviveAt - state.elapsed))}秒` : "";
   const characterName = CHARACTER_TYPES[player.character || "archer"]?.label || "アーチャー";
   const weapon = player.character === "saber"
     ? `薙ぎ払い${Math.round(THREE.MathUtils.radToDeg(player.slashArc || 0))}度`
     : player.character === "witch"
-      ? `ファイア${player.magicBolts || 1}発`
+      ? `元素魔法`
       : `${player.arrows}本 / 後方${player.backShots || 0}本 / 貫通${player.pierce}`;
-  ui.build.textContent = `${characterName} / ${weapon} / 威力${Math.round(player.damage)} / ${recent}${room}${revive}`;
+  ui.build.textContent = `${characterName} / ${weapon} / 威力${Math.round(player.damage)} / ${buildSummary}${room}${revive}`;
+}
+
+function formatBuildSummary(player) {
+  if (!player.upgrades?.length) return "強化なし";
+  const counts = new Map();
+  for (const name of player.upgrades) counts.set(name, (counts.get(name) || 0) + 1);
+  const parts = [];
+  const handled = new Set();
+  const addCount = (name, label = name) => {
+    const count = counts.get(name) || 0;
+    if (count > 0) {
+      parts.push(`${label}:${count}`);
+      handled.add(name);
+    }
+  };
+  const addPercent = (name, label, percent) => {
+    const count = counts.get(name) || 0;
+    if (count > 0) {
+      parts.push(`${label} +${count * percent}%`);
+      handled.add(name);
+    }
+  };
+  const addFlat = (name, label, amount) => {
+    const count = counts.get(name) || 0;
+    if (count > 0) {
+      parts.push(`${label} +${count * amount}`);
+      handled.add(name);
+    }
+  };
+  addPercent("攻撃速度 +18%", "攻撃速度", 18);
+  addPercent("移動速度 +15%", "移動速度", 15);
+  addPercent("ダメージ +25%", "ダメージ", 25);
+  addFlat("最大HP +25", "最大HP", 25);
+  addCount("吸血");
+  addPercent("磁力 +40%", "磁力", 40);
+  addCount("矢の本数 +1", "矢の本数");
+  addCount("貫通 +1", "貫通");
+  addCount("バックショット");
+  addCount("アイススパイク");
+  addCount("サンダーストーム");
+  addCount("ファイア巨大化");
+  addCount("剣閃範囲 +10度", "剣閃範囲");
+  addCount("飛燕斬");
+  addCount("二連斬り");
+  for (const [name, count] of counts) {
+    if (handled.has(name)) continue;
+    if (!upgrades.some((up) => up.name === name)) continue;
+    parts.push(count > 1 ? `${name}:${count}` : name);
+  }
+  return parts.length ? parts.join(" / ") : "強化なし";
 }
 
 function resize() {

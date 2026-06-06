@@ -808,6 +808,8 @@ h2 {
   min-height: 20px;
   color: #cbd3d2;
   font-size: 14px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 @media (max-width: 720px) {
