@@ -144,6 +144,7 @@ let lobbyHeartbeatTimer = 0;
 let codexViewer = null;
 let audio = {
   bgm: null,
+  bgmFile: "",
   bgmTimer: 0,
   bgmLoopGap: 0,
   sounds: {},
@@ -282,8 +283,8 @@ upgrades[0].classes = ["archer"];
 upgrades[3].classes = ["archer"];
 upgrades[7].classes = ["archer"];
 upgrades.push(
-  { name: "アイススパイク", desc: "一定間隔で近くの敵の足元から氷柱を出す。取得するたび氷柱+1、スロー時間+1秒。", classes: ["witch"], apply: (p) => (p.iceSpike += 1) },
-  { name: "サンダーストーム", desc: "自分の周辺に雷の魔法陣を設置し、無数の雷で敵を翻弄する。取得するたび範囲と設置時間が伸びる。", classes: ["witch"], apply: (p) => (p.thunderCircle += 1) },
+  { name: "アイススパイク", desc: "一定間隔で近くの敵の足元から氷柱を出す。取得するたび氷柱+1、スロー時間+1秒、威力が少し伸びる。", classes: ["witch"], apply: (p) => (p.iceSpike += 1) },
+  { name: "サンダーストーム", desc: "自分の周辺に雷の魔法陣を設置し、無数の雷で敵を翻弄する。取得するたび範囲、設置時間、威力が伸びる。攻撃速度で再設置も早くなる。", classes: ["witch"], apply: (p) => (p.thunderCircle += 1) },
   { name: "ファイア巨大化", desc: "ファイアが大きくなり、魔力爆発の範囲と威力が伸びる。さらに連鎖爆発が+1される。", classes: ["witch"], apply: (p) => { p.magicRadius += 0.12; p.damage *= 1.08; p.magicSplash += 1; p.chainExplosion += 1; } },
   { name: "剣閃範囲 +10度", desc: "薙ぎ払いの横範囲が10度広がり、奥への届く距離も10%伸びる。", classes: ["saber"], apply: (p) => { p.slashArc += THREE.MathUtils.degToRad(10); p.slashRange *= 1.1; } },
   { name: "飛燕斬", desc: "通常攻撃と同時に飛ぶ斬撃を放つ。初回は威力67%、貫通0。以後は1回ごとに威力+12%、大きさ+0.08、貫通+2。", classes: ["saber"], apply: (p) => (p.flyingSlash += 1) },
@@ -1160,7 +1161,11 @@ function updatePlayerThunderCircle(player, dt) {
   player.thunderTimer = (player.thunderTimer || 0) - dt;
   if (player.thunderTimer > 0) return;
   addMagicCircle(player);
-  player.thunderTimer = Math.max(4.2, 9.5 - player.thunderCircle * 0.45);
+  player.thunderTimer = Math.max(2.8, (9.5 - player.thunderCircle * 0.45) * attackIntervalMultiplier(player));
+}
+
+function attackIntervalMultiplier(player) {
+  return player.baseFireRate ? player.fireRate / player.baseFireRate : 1;
 }
 
 function updatePlayerFlash(player, dt) {
@@ -2028,7 +2033,7 @@ function addMagicCircle(player) {
     tick: 0.15,
     zap: 0.02,
     owner: player.id,
-    damage: witchSpellDamage(player, 0.75 + level * 0.16),
+    damage: witchSpellDamage(player, 0.75 + level * 0.22),
     mesh: makeMagicCircleMesh({ radius }),
   };
   circle.mesh.position.set(circle.x, 0.1, circle.z);
@@ -2046,11 +2051,11 @@ function updateMagicCircles(dt) {
     circle.mesh.scale.setScalar(pulse);
     if (circle.zap <= 0) {
       circle.zap = 0.09;
-      addThunderStorm(circle, 4);
+      addThunderStorm(circle, 3);
     }
     if (circle.tick <= 0) {
       circle.tick = 0.62;
-      addThunderStorm(circle, 7);
+      addThunderStorm(circle, 5);
       for (const enemy of state.enemies) {
         if (distance(circle, enemy) <= circle.radius + enemy.radius) {
           enemy.hp -= circle.damage;
@@ -2068,7 +2073,7 @@ function castIceSpikes(player) {
   const level = player.iceSpike || 0;
   const count = Math.max(1, level);
   const slowDuration = 0.5 + level * 1;
-  const damage = witchSpellDamage(player, 0.52 + level * 0.08);
+  const damage = witchSpellDamage(player, 0.52 + level * 0.12);
   const radius = 0.72;
   const targets = state.enemies
     .filter((enemy) => enemy.hp > 0 && distance(player, enemy) < 18)
@@ -2513,10 +2518,15 @@ function initAudio() {
 function startBgm() {
   initAudio();
   const bgmFile = state?.stageId === "stage2" ? "stage2.mp3" : "gamebgm.mp3";
-  if (!audio.bgm || !audio.bgm.src.endsWith(`/Sounds/${bgmFile}`)) {
-    if (audio.bgm) audio.bgm.pause();
+  if (!audio.bgm || audio.bgmFile !== bgmFile) {
+    if (audio.bgm) {
+      audio.bgm.pause();
+      audio.bgm.src = "";
+      audio.bgm.load();
+    }
     if (audio.bgmTimer) clearInterval(audio.bgmTimer);
     audio.bgm = new Audio(`./Sounds/${bgmFile}`);
+    audio.bgmFile = bgmFile;
     audio.bgm.addEventListener("error", () => console.warn(`BGM load failed: ${bgmFile}`));
     audio.bgmLoopGap = bgmFile === "stage2.mp3" ? 4.25 : 0;
     audio.bgm.loop = audio.bgmLoopGap <= 0;
@@ -3278,9 +3288,6 @@ function syncSimpleMeshes(cache, items, factory, y) {
       mesh = factory(item);
       scene.add(mesh);
       cache.set(item.id, mesh);
-      if (item.owner && !item.skill) {
-        sfx(item.kind === "magic" ? "witchAttack" : item.kind === "flyingSlash" ? "saberAttack" : "archerAttack");
-      }
     }
     mesh.position.set(item.x, y || item.radius || 0.6, item.z);
     if (typeof item.angle === "number") mesh.rotation.y = item.angle;
