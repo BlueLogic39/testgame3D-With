@@ -3483,6 +3483,14 @@ function chooseUpgrade(playerId, upgradeName) {
 window.addEventListener("keydown", (event) => {
   if (event.code === "Escape") {
     event.preventDefault();
+    if (!ui.updateInfo.classList.contains("hidden")) {
+      ui.updateInfo.classList.add("hidden");
+      return;
+    }
+    if (!ui.characterCodex.classList.contains("hidden")) {
+      closeCharacterCodex();
+      return;
+    }
     togglePause();
     return;
   }
