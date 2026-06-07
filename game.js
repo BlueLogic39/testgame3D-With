@@ -1696,7 +1696,7 @@ function addEnemy(boss, shooter, bomber = false, role = "") {
     damage: boss ? 24 : role === "mid" ? 18 : shooter ? 12 : bomber ? 40 : 9,
     touchTimer: 0,
     shotTimer: shooter ? (1.2 + Math.random() * 1.4) * 1.5 : 0,
-    xp: boss ? 120 : role === "mid" ? 65 : shooter ? redXp * 3 : bomber ? Math.ceil(redXp * 4.5) : redXp,
+    xp: boss ? 120 : role === "mid" ? 65 : shooter ? redXp * 3 : bomber ? redXp * 6 : redXp,
     boss,
     shooter,
     bomber,
@@ -1764,7 +1764,12 @@ function updateBossEnemy(enemy, target, dt) {
   enemy.bossAttackTimer -= dt;
   if (enemy.bossAttackTimer <= 0) {
     if (enemy.bossRole === "crystalGolem") {
-      addBossChargeLine(enemy, target);
+      enemy.bossPattern = ((enemy.bossPattern || 0) + 1) % 2;
+      if (enemy.bossPattern === 0) {
+        spawnRockfallAt(target.x, target.z, { radius: 3.25, damage: 28, enemyDamage: 0, hurtsEnemies: false, crystal: true, life: 2.05, impactAt: 1.05 });
+      } else {
+        addBossChargeLine(enemy, target);
+      }
       enemy.bossAttackTimer = enemy.hp < enemy.maxHp * 0.35 ? 4.0 : 5.2;
     } else if (enemy.bossRole === "crystalMid") {
       spawnRockfallAt(target.x, target.z, { radius: 3.05, damage: 24, enemyDamage: 0, hurtsEnemies: false, crystal: true, life: 2.05, impactAt: 1.05 });
