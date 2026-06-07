@@ -1381,6 +1381,7 @@ function shootMagic(player) {
       mesh: makeProjectileMesh({ kind: "magic" }),
     };
     magic.mesh.scale.setScalar(magic.radius / 0.34);
+    magic.mesh.rotation.y = angle;
     magic.mesh.position.set(magic.x, 1.1, magic.z);
     scene.add(magic.mesh);
     state.arrows.push(magic);
@@ -1689,8 +1690,8 @@ function addEnemy(boss, shooter, bomber = false, role = "") {
     x: pos.x,
     z: pos.z,
     radius: boss ? 2.2 : role === "mid" ? 1.55 : shooter ? 1.05 : bomber ? 0.82 : 0.72 + Math.random() * 0.28,
-    hp: boss ? (state.stageId === "stage2" ? 1450 : 980) : role === "mid" ? 360 * scale : shooter ? 46 * scale : bomber ? 34 * scale : 28 * scale,
-    maxHp: boss ? (state.stageId === "stage2" ? 1450 : 980) : role === "mid" ? 360 * scale : shooter ? 46 * scale : bomber ? 34 * scale : 28 * scale,
+    hp: boss ? (state.stageId === "stage2" ? 2900 : 1960) : role === "mid" ? 720 * scale : shooter ? 46 * scale : bomber ? 34 * scale : 28 * scale,
+    maxHp: boss ? (state.stageId === "stage2" ? 2900 : 1960) : role === "mid" ? 720 * scale : shooter ? 46 * scale : bomber ? 34 * scale : 28 * scale,
     speed: boss ? 2.15 : role === "mid" ? 2.65 : shooter ? 2.1 + state.elapsed * 0.006 : bomber ? 4.5 + state.elapsed * 0.008 : 2.8 + Math.random() * 1.7 + state.elapsed * 0.005,
     damage: boss ? 24 : role === "mid" ? 18 : shooter ? 12 : bomber ? 40 : 9,
     touchTimer: 0,
@@ -1766,7 +1767,7 @@ function updateBossEnemy(enemy, target, dt) {
       addBossChargeLine(enemy, target);
       enemy.bossAttackTimer = enemy.hp < enemy.maxHp * 0.35 ? 4.0 : 5.2;
     } else if (enemy.bossRole === "crystalMid") {
-      spawnRockfallAt(target.x, target.z, { radius: 3.05, damage: 24, enemyDamage: 90, life: 2.05, impactAt: 1.05 });
+      spawnRockfallAt(target.x, target.z, { radius: 3.05, damage: 24, enemyDamage: 0, hurtsEnemies: false, crystal: true, life: 2.05, impactAt: 1.05 });
       enemy.bossAttackTimer = 5.4;
     } else {
       const radius = enemy.boss ? 4.2 : 3.2;
@@ -1827,7 +1828,9 @@ function shootBossRadial(enemy, count = 8) {
       radius: 0.42,
       damage: 14,
       life: 5.2,
-      mesh: makeBulletMesh(),
+      kind: "crystal",
+      colorIndex: i % 2,
+      mesh: makeBulletMesh({ kind: "crystal", colorIndex: i % 2 }),
     };
     bullet.mesh.position.set(bullet.x, 1.05, bullet.z);
     scene.add(bullet.mesh);
@@ -2078,9 +2081,11 @@ function spawnRockfallAt(x, z, options = {}) {
     start: life,
     impactAt: options.impactAt || 1.12,
     damage: options.damage || 34,
-    enemyDamage: options.enemyDamage || 140,
+    enemyDamage: options.enemyDamage ?? 140,
+    hurtsEnemies: options.hurtsEnemies !== false,
+    crystal: Boolean(options.crystal),
     impacted: false,
-    mesh: makeRockfallMesh({ radius }),
+    mesh: makeRockfallMesh({ radius, crystal: Boolean(options.crystal) }),
   };
   scene.add(rockfall.mesh);
   state.rockfalls.push(rockfall);
@@ -2104,12 +2109,14 @@ function updateRockfalls(dt, applyDamage) {
       if (player.dead || player.hp <= 0) continue;
       if (distance(rockfall, player) <= rockfall.radius + player.radius) damagePlayer(player, rockfall.damage);
     }
-    for (const enemy of state.enemies) {
-      if (isGolemEnemy(enemy)) continue;
-      if (distance(rockfall, enemy) > rockfall.radius + enemy.radius) continue;
-      enemy.hp -= rockfall.enemyDamage;
-      const owner = nearestLivingPlayer(enemy);
-      if (owner) enemy.lastHitBy = owner.id;
+    if (rockfall.hurtsEnemies) {
+      for (const enemy of state.enemies) {
+        if (isGolemEnemy(enemy)) continue;
+        if (distance(rockfall, enemy) > rockfall.radius + enemy.radius) continue;
+        enemy.hp -= rockfall.enemyDamage;
+        const owner = nearestLivingPlayer(enemy);
+        if (owner) enemy.lastHitBy = owner.id;
+      }
     }
   }
   removeDead(state.rockfalls, (rockfall) => rockfall.life <= 0);
@@ -2265,7 +2272,7 @@ function makeRockfallMesh(item = {}) {
   ring.rotation.x = -Math.PI / 2;
   ring.position.y = 0.09;
   group.add(ring);
-  const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(1.05, 1), materials.rock.clone());
+  const rock = item.crystal ? makeFallingCrystalMesh(radius) : new THREE.Mesh(new THREE.DodecahedronGeometry(1.05, 1), materials.rock.clone());
   rock.castShadow = true;
   rock.receiveShadow = true;
   rock.position.y = 8.5;
@@ -2275,6 +2282,24 @@ function makeRockfallMesh(item = {}) {
   group.userData.ring = ring;
   group.userData.rock = rock;
   group.position.set(item.x || 0, 0, item.z || 0);
+  return group;
+}
+
+function makeFallingCrystalMesh(radius = 2.65) {
+  const group = new THREE.Group();
+  const core = new THREE.Mesh(new THREE.ConeGeometry(radius * 0.38, radius * 1.75, 6), materials.violetCrystal.clone());
+  core.rotation.x = Math.PI;
+  core.castShadow = true;
+  group.add(core);
+  for (let i = 0; i < 4; i += 1) {
+    const shard = new THREE.Mesh(new THREE.ConeGeometry(radius * 0.16, radius * 1.0, 5), (i % 2 === 0 ? materials.crystal : materials.violetCrystal).clone());
+    const angle = (Math.PI * 2 * i) / 4 + 0.4;
+    shard.position.set(Math.sin(angle) * radius * 0.28, radius * 0.03, Math.cos(angle) * radius * 0.28);
+    shard.rotation.set(Math.PI + 0.25, angle, 0.1);
+    shard.castShadow = true;
+    group.add(shard);
+  }
+  group.scale.setScalar(1.12);
   return group;
 }
 
@@ -2619,10 +2644,28 @@ function makeFlyingSlashMesh(item = {}) {
   return group;
 }
 
-function makeBulletMesh() {
+function makeBulletMesh(item = {}) {
+  if (item.kind === "crystal") return makeCrystalBulletMesh(item.colorIndex || 0);
   const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.26, 12, 8), materials.bullet);
   mesh.castShadow = true;
   return mesh;
+}
+
+function makeCrystalBulletMesh(colorIndex = 0) {
+  const group = new THREE.Group();
+  const mat = (colorIndex % 2 === 0 ? materials.crystal : materials.violetCrystal).clone();
+  const shard = new THREE.Mesh(new THREE.OctahedronGeometry(0.46), mat);
+  shard.scale.set(0.72, 1.35, 0.72);
+  shard.rotation.x = Math.PI / 2;
+  shard.castShadow = true;
+  const glow = new THREE.Mesh(
+    new THREE.OctahedronGeometry(0.58),
+    new THREE.MeshBasicMaterial({ color: colorIndex % 2 === 0 ? 0x7dd3fc : 0xa78bfa, transparent: true, opacity: 0.28, depthWrite: false })
+  );
+  glow.scale.set(0.72, 1.35, 0.72);
+  glow.rotation.x = Math.PI / 2;
+  group.add(shard, glow);
+  return group;
 }
 
 function makeGemMesh(gem = {}) {
@@ -3565,11 +3608,11 @@ function sendHostSnapshot(force = false) {
     })),
     enemies: state.enemies.map((e) => ({ id: e.id, x: e.x, z: e.z, radius: e.radius, boss: e.boss, shooter: e.shooter, bomber: e.bomber, midBoss: e.midBoss, bossRole: e.bossRole })),
     arrows: state.arrows.map((a) => ({ id: a.id, x: a.x, z: a.z, angle: a.angle, kind: a.kind, radius: a.radius, owner: a.owner, skill: a.skill })),
-    bullets: state.enemyBullets.map((b) => ({ id: b.id, x: b.x, z: b.z })),
+    bullets: state.enemyBullets.map((b) => ({ id: b.id, x: b.x, z: b.z, kind: b.kind, colorIndex: b.colorIndex })),
     gems: state.gems.map((g) => ({ id: g.id, x: g.x, z: g.z, kind: g.kind })),
     hearts: state.hearts.map((h) => ({ id: h.id, x: h.x, z: h.z })),
     circles: state.magicCircles.map((c) => ({ id: c.id, x: c.x, z: c.z, radius: c.radius, life: c.life, duration: c.duration })),
-    rockfalls: state.rockfalls.map((r) => ({ id: r.id, x: r.x, z: r.z, radius: r.radius, life: r.life, start: r.start, impactAt: r.impactAt, impacted: r.impacted })),
+    rockfalls: state.rockfalls.map((r) => ({ id: r.id, x: r.x, z: r.z, radius: r.radius, life: r.life, start: r.start, impactAt: r.impactAt, impacted: r.impacted, crystal: r.crystal, hurtsEnemies: r.hurtsEnemies })),
     bossZones: state.bossZones.map((z) => ({
       id: z.id, kind: z.kind, x: z.x, z: z.z, endX: z.endX, endZ: z.endZ, angle: z.angle,
       radius: z.radius, width: z.width, length: z.length, life: z.life, start: z.start,
