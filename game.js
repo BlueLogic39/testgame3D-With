@@ -268,6 +268,8 @@ const materials = {
   violetCrystal: new THREE.MeshStandardMaterial({ color: 0xa78bfa, roughness: 0.25, metalness: 0.08, emissive: 0x312e81 }),
   rock: new THREE.MeshStandardMaterial({ color: 0x6b6259, roughness: 0.92 }),
   bark: new THREE.MeshStandardMaterial({ color: 0x5a3b24, roughness: 0.88 }),
+  mineWood: new THREE.MeshStandardMaterial({ color: 0x4a2f1e, roughness: 0.9 }),
+  darkStone: new THREE.MeshStandardMaterial({ color: 0x222831, roughness: 0.94 }),
   leaves: new THREE.MeshStandardMaterial({ color: 0x2f7d45, roughness: 0.74 }),
   darkLeaves: new THREE.MeshStandardMaterial({ color: 0x1f5b38, roughness: 0.8 }),
   grass: new THREE.MeshStandardMaterial({ color: 0x3f8f4f, roughness: 0.82 }),
@@ -485,9 +487,77 @@ function addMineDecor() {
     group.position.set(x, 0, z);
     stageDecor.add(group);
   }
+  addMineGroundDetail();
+  addMineTimberBorder();
+  addMineSupport(-22, -10, 0.28, 1.0);
+  addMineSupport(16, -23, -0.45, 0.86);
+  addMineSupport(24, 6, 0.62, 0.92);
+  addMineSupport(-10, 22, -0.18, 0.78);
   addMineRails();
   addMineCart(-8, -4, 0.18);
   addMineCart(19, 13, -0.5);
+}
+
+function addMineGroundDetail() {
+  const veinMatA = new THREE.MeshBasicMaterial({ color: 0x7dd3fc, transparent: true, opacity: 0.18, depthWrite: false });
+  const veinMatB = new THREE.MeshBasicMaterial({ color: 0xa78bfa, transparent: true, opacity: 0.2, depthWrite: false });
+  for (let i = 0; i < 18; i += 1) {
+    const length = 3.0 + Math.random() * 5.2;
+    const width = 0.08 + Math.random() * 0.12;
+    const vein = new THREE.Mesh(new THREE.BoxGeometry(width, 0.018, length), i % 2 === 0 ? veinMatA.clone() : veinMatB.clone());
+    vein.position.set(randomFieldPoint(), 0.032, randomFieldPoint());
+    vein.rotation.y = Math.random() * Math.PI;
+    stageDecor.add(vein);
+  }
+  for (let i = 0; i < 34; i += 1) {
+    const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(0.18 + Math.random() * 0.28, 0), i % 5 === 0 ? materials.violetCrystal.clone() : materials.darkStone.clone());
+    rock.position.set(randomFieldPoint(), 0.09, randomFieldPoint());
+    rock.scale.y = 0.38 + Math.random() * 0.22;
+    rock.rotation.y = Math.random() * Math.PI;
+    rock.castShadow = true;
+    rock.receiveShadow = true;
+    stageDecor.add(rock);
+  }
+}
+
+function addMineTimberBorder() {
+  for (let i = 0; i < 32; i += 1) {
+    const side = Math.floor(i / 8);
+    const t = -WORLD.half + 5 + (i % 8) * ((WORLD.half * 2 - 10) / 7);
+    const x = side < 2 ? t : (side === 2 ? -WORLD.half + 1.4 : WORLD.half - 1.4);
+    const z = side < 2 ? (side === 0 ? -WORLD.half + 1.4 : WORLD.half - 1.4) : t;
+    const rotation = side < 2 ? Math.PI / 2 : 0;
+    addMineSupport(x, z, rotation, 0.72 + Math.random() * 0.16);
+  }
+}
+
+function addMineSupport(x, z, rotation = 0, scale = 1) {
+  const group = new THREE.Group();
+  const wood = materials.mineWood.clone();
+  const postGeo = new THREE.CylinderGeometry(0.18 * scale, 0.24 * scale, 3.2 * scale, 8);
+  for (const side of [-1, 1]) {
+    const post = new THREE.Mesh(postGeo, wood.clone());
+    post.position.set(side * 1.05 * scale, 1.6 * scale, 0);
+    post.rotation.z = side * 0.06;
+    post.castShadow = true;
+    group.add(post);
+  }
+  const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.2 * scale, 0.25 * scale, 2.55 * scale, 8), wood.clone());
+  beam.position.y = 3.12 * scale;
+  beam.rotation.z = Math.PI / 2;
+  beam.castShadow = true;
+  group.add(beam);
+  const braceA = new THREE.Mesh(new THREE.CylinderGeometry(0.09 * scale, 0.12 * scale, 2.25 * scale, 7), wood.clone());
+  braceA.position.set(-0.42 * scale, 2.2 * scale, 0);
+  braceA.rotation.z = 0.68;
+  braceA.castShadow = true;
+  const braceB = braceA.clone();
+  braceB.position.x = 0.42 * scale;
+  braceB.rotation.z = -0.68;
+  group.add(braceA, braceB);
+  group.position.set(x, 0, z);
+  group.rotation.y = rotation;
+  stageDecor.add(group);
 }
 
 function addMineRails() {
