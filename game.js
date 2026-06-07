@@ -188,8 +188,8 @@ const CHARACTER_TYPES = {
 };
 
 const STAGES = {
-  stage1: { label: "ステージ1", description: "現在のフィールド", duration: 180, bossTime: 150 },
-  stage2: { label: "黒晶鉱山", description: "落石が敵も味方も巻き込む6分ステージ", duration: 360, bossTime: 330, rockfalls: true, bomberEnemies: true },
+  stage1: { label: "ステージ1", description: "現在のフィールド", duration: 180, bossTime: 150, midBossTimes: [90] },
+  stage2: { label: "黒晶鉱山", description: "落石が敵も味方も巻き込む6分ステージ", duration: 360, bossTime: 330, midBossTimes: [120, 240], rockfalls: true, bomberEnemies: true },
 };
 
 const DIFFICULTIES = {
@@ -251,6 +251,7 @@ const materials = {
   enemy: new THREE.MeshStandardMaterial({ color: 0xd95f59, roughness: 0.7 }),
   shooter: new THREE.MeshStandardMaterial({ color: 0x3fb7d6, roughness: 0.6, emissive: 0x06232d }),
   bomber: new THREE.MeshStandardMaterial({ color: 0xe85d9e, roughness: 0.55, emissive: 0x3d071f }),
+  midBoss: new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.62, emissive: 0x451a03 }),
   boss: new THREE.MeshStandardMaterial({ color: 0x8b5cf6, roughness: 0.6, emissive: 0x1b0f38 }),
   arrow: new THREE.MeshStandardMaterial({ color: 0xf2c14e, roughness: 0.28, metalness: 0.15 }),
   magic: new THREE.MeshStandardMaterial({ color: 0xff6b2c, roughness: 0.28, emissive: 0x7a1b05 }),
@@ -265,6 +266,7 @@ const materials = {
   violetCrystal: new THREE.MeshStandardMaterial({ color: 0xa78bfa, roughness: 0.25, metalness: 0.08, emissive: 0x312e81 }),
   rock: new THREE.MeshStandardMaterial({ color: 0x6b6259, roughness: 0.92 }),
   rockWarning: new THREE.MeshBasicMaterial({ color: 0xff5f5f, transparent: true, opacity: 0.34, depthWrite: false }),
+  bossWarning: new THREE.MeshBasicMaterial({ color: 0xff3b66, transparent: true, opacity: 0.3, depthWrite: false }),
 };
 
 const upgrades = [
@@ -470,6 +472,7 @@ function newState(playerInfos, options = {}) {
     elapsed: 0,
     spawnTimer: 0,
     bossSpawned: false,
+    midBossSpawned: {},
     heartTimer: 8 + Math.random() * 12,
     rockfallTimer: 30,
     pauseReason: null,
@@ -484,10 +487,11 @@ function newState(playerInfos, options = {}) {
     hearts: [],
     magicCircles: [],
     rockfalls: [],
+    bossZones: [],
     effects: [],
     kills: 0,
     thunderSoundAt: 0,
-    renderCache: { players: new Map(), enemies: new Map(), arrows: new Map(), bullets: new Map(), gems: new Map(), hearts: new Map(), circles: new Map(), rockfalls: new Map(), effects: new Map() },
+    renderCache: { players: new Map(), enemies: new Map(), arrows: new Map(), bullets: new Map(), gems: new Map(), hearts: new Map(), circles: new Map(), rockfalls: new Map(), bossZones: new Map(), effects: new Map() },
   };
 }
 
@@ -1074,7 +1078,7 @@ function startGame(mode = "solo") {
 
 function resetSceneEntities() {
   for (const player of state.players) scene.remove(player.mesh);
-  for (const group of [state.enemies, state.arrows, state.enemyBullets, state.gems, state.hearts, state.magicCircles, state.rockfalls, state.effects]) {
+  for (const group of [state.enemies, state.arrows, state.enemyBullets, state.gems, state.hearts, state.magicCircles, state.rockfalls, state.bossZones, state.effects]) {
     for (const item of group) scene.remove(item.mesh);
   }
   for (const cache of Object.values(state.renderCache || {})) {
@@ -1110,6 +1114,7 @@ function update(dt) {
   updateEnemyBullets(dt);
   updateMagicCircles(dt);
   updateStageHazards(dt);
+  updateBossZones(dt);
   updateGems(dt);
   updateHearts(dt);
   updateRevives();
@@ -1617,14 +1622,24 @@ function spawnEnemies(dt) {
     if (!shooter && Math.random() > 0.75) continue;
     addEnemy(false, shooter, bomber);
   }
+  spawnStageMidBosses();
   const bossTime = STAGES[state.stageId]?.bossTime ?? 150;
   if (state.elapsed > bossTime && !state.bossSpawned) {
     state.bossSpawned = true;
-    addEnemy(true, false, false);
+    addEnemy(true, false, false, "boss");
   }
 }
 
-function addEnemy(boss, shooter, bomber = false) {
+function spawnStageMidBosses() {
+  const times = STAGES[state.stageId]?.midBossTimes || [];
+  for (const time of times) {
+    if (state.elapsed < time || state.midBossSpawned[time]) continue;
+    state.midBossSpawned[time] = true;
+    addEnemy(false, false, false, "mid");
+  }
+}
+
+function addEnemy(boss, shooter, bomber = false, role = "") {
   const edge = Math.floor(Math.random() * 4);
   const pos = [
     { x: -WORLD.half, z: randomEdge() },
@@ -1638,17 +1653,21 @@ function addEnemy(boss, shooter, bomber = false) {
     id: crypto.randomUUID(),
     x: pos.x,
     z: pos.z,
-    radius: boss ? 1.9 : shooter ? 1.05 : bomber ? 0.82 : 0.72 + Math.random() * 0.28,
-    hp: boss ? 980 : shooter ? 46 * scale : bomber ? 34 * scale : 28 * scale,
-    maxHp: boss ? 980 : shooter ? 46 * scale : bomber ? 34 * scale : 28 * scale,
-    speed: boss ? 2.4 : shooter ? 2.1 + state.elapsed * 0.006 : bomber ? 4.5 + state.elapsed * 0.008 : 2.8 + Math.random() * 1.7 + state.elapsed * 0.005,
-    damage: boss ? 22 : shooter ? 12 : bomber ? 40 : 9,
+    radius: boss ? 2.2 : role === "mid" ? 1.55 : shooter ? 1.05 : bomber ? 0.82 : 0.72 + Math.random() * 0.28,
+    hp: boss ? (state.stageId === "stage2" ? 1450 : 980) : role === "mid" ? 360 * scale : shooter ? 46 * scale : bomber ? 34 * scale : 28 * scale,
+    maxHp: boss ? (state.stageId === "stage2" ? 1450 : 980) : role === "mid" ? 360 * scale : shooter ? 46 * scale : bomber ? 34 * scale : 28 * scale,
+    speed: boss ? 2.15 : role === "mid" ? 2.65 : shooter ? 2.1 + state.elapsed * 0.006 : bomber ? 4.5 + state.elapsed * 0.008 : 2.8 + Math.random() * 1.7 + state.elapsed * 0.005,
+    damage: boss ? 24 : role === "mid" ? 18 : shooter ? 12 : bomber ? 40 : 9,
     touchTimer: 0,
     shotTimer: shooter ? (1.2 + Math.random() * 1.4) * 1.5 : 0,
-    xp: boss ? 90 : shooter ? redXp * 3 : bomber ? Math.ceil(redXp * 4.5) : redXp,
+    xp: boss ? 120 : role === "mid" ? 65 : shooter ? redXp * 3 : bomber ? Math.ceil(redXp * 4.5) : redXp,
     boss,
     shooter,
     bomber,
+    midBoss: role === "mid",
+    bossRole: boss ? (state.stageId === "stage2" ? "crystalGolem" : "forestBeast") : role,
+    bossAttackTimer: role === "mid" ? 2.4 : boss ? 2.8 : 0,
+    bossShotTimer: boss && state.stageId === "stage2" ? 3.6 : 0,
   };
   enemy.mesh = makeEnemyMesh(enemy);
   scene.add(enemy.mesh);
@@ -1668,6 +1687,8 @@ function updateEnemies(dt) {
     enemy.touchTimer -= dt;
     enemy.mesh.position.set(enemy.x, enemy.radius, enemy.z);
     enemy.mesh.rotation.y += dt * (enemy.boss ? 1.2 : 2.6);
+
+    if (enemy.boss || enemy.midBoss) updateBossEnemy(enemy, target, dt);
 
     if (enemy.shooter) {
       enemy.shotTimer -= dt * slow;
@@ -1697,9 +1718,47 @@ function updateEnemies(dt) {
     if (owner) {
       owner.hp = Math.min(owner.maxHp, owner.hp + owner.lifeSteal);
     }
+    if (enemy.midBoss) spawnHeartAt(enemy.x, enemy.z);
     addRing(enemy.x, enemy.z, enemy.boss ? 3.2 : enemy.bomber ? 2.2 : 1.4, enemy.bomber ? 0xe85d9e : enemy.shooter ? 0x3fb7d6 : enemy.boss ? 0x57c4a7 : 0xf2c14e);
   }
   removeDead(state.enemies, (enemy) => enemy.hp <= 0);
+}
+
+function updateBossEnemy(enemy, target, dt) {
+  enemy.bossAttackTimer -= dt;
+  if (enemy.bossAttackTimer <= 0) {
+    const radius = enemy.boss ? 4.2 : 3.2;
+    const damage = enemy.boss ? 32 : 22;
+    addBossZone(target.x, target.z, radius, damage, enemy.id, enemy.bossRole);
+    enemy.bossAttackTimer = enemy.boss ? 4.8 : 5.6;
+  }
+  if (enemy.bossRole === "crystalGolem") {
+    enemy.bossShotTimer -= dt;
+    if (enemy.bossShotTimer <= 0) {
+      shootBossRadial(enemy, 10);
+      enemy.bossShotTimer = enemy.hp < enemy.maxHp * 0.35 ? 2.5 : 3.8;
+    }
+  }
+}
+
+function shootBossRadial(enemy, count = 8) {
+  for (let i = 0; i < count; i += 1) {
+    const angle = (Math.PI * 2 * i) / count + state.elapsed * 0.18;
+    const bullet = {
+      id: crypto.randomUUID(),
+      x: enemy.x + Math.sin(angle) * 1.3,
+      z: enemy.z + Math.cos(angle) * 1.3,
+      vx: Math.sin(angle) * 8.5,
+      vz: Math.cos(angle) * 8.5,
+      radius: 0.42,
+      damage: 14,
+      life: 5.2,
+      mesh: makeBulletMesh(),
+    };
+    bullet.mesh.position.set(bullet.x, 1.05, bullet.z);
+    scene.add(bullet.mesh);
+    state.enemyBullets.push(bullet);
+  }
 }
 
 function explodeBomber(enemy) {
@@ -1874,10 +1933,14 @@ function updateGems(dt) {
 }
 
 function spawnHeart() {
+  spawnHeartAt(randomEdge() * 0.88, randomEdge() * 0.88);
+}
+
+function spawnHeartAt(x, z) {
   const heart = {
     id: crypto.randomUUID(),
-    x: randomEdge() * 0.88,
-    z: randomEdge() * 0.88,
+    x: clamp(x, -WORLD.half + 2, WORLD.half - 2),
+    z: clamp(z, -WORLD.half + 2, WORLD.half - 2),
     heal: 60,
     radius: 0.62,
     wobble: Math.random() * Math.PI * 2,
@@ -1971,6 +2034,75 @@ function updateRockfalls(dt, applyDamage) {
     }
   }
   removeDead(state.rockfalls, (rockfall) => rockfall.life <= 0);
+}
+
+function addBossZone(x, z, radius, damage, owner = "", role = "") {
+  const zone = {
+    id: crypto.randomUUID(),
+    x: clamp(x, -WORLD.half + radius, WORLD.half - radius),
+    z: clamp(z, -WORLD.half + radius, WORLD.half - radius),
+    radius,
+    damage,
+    owner,
+    role,
+    life: 1.65,
+    start: 1.65,
+    impactAt: 1.0,
+    impacted: false,
+    mesh: makeBossZoneMesh({ radius, role }),
+  };
+  scene.add(zone.mesh);
+  state.bossZones.push(zone);
+}
+
+function updateBossZones(dt) {
+  for (const zone of state.bossZones) {
+    zone.life -= dt;
+    const elapsed = zone.start - zone.life;
+    updateBossZoneMesh(zone, elapsed);
+    if (zone.impacted || elapsed < zone.impactAt) continue;
+    zone.impacted = true;
+    addRing(zone.x, zone.z, zone.radius, zone.role === "crystalGolem" ? 0xa78bfa : 0xff5f5f);
+    for (const player of state.players) {
+      if (player.dead || player.hp <= 0) continue;
+      if (distance(zone, player) <= zone.radius + player.radius) damagePlayer(player, zone.damage);
+    }
+  }
+  removeDead(state.bossZones, (zone) => zone.life <= 0);
+}
+
+function makeBossZoneMesh(zone = {}) {
+  const radius = zone.radius || 3.2;
+  const color = zone.role === "crystalGolem" ? 0xa78bfa : 0xff3b66;
+  const group = new THREE.Group();
+  const warning = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, 0.045, 48), materials.bossWarning.clone());
+  warning.material.color.setHex(color);
+  warning.position.y = 0.065;
+  const ring = new THREE.Mesh(new THREE.RingGeometry(radius * 0.72, radius, 48), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.72, side: THREE.DoubleSide }));
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.y = 0.1;
+  group.add(warning, ring);
+  group.userData.warning = warning;
+  group.userData.ring = ring;
+  group.position.set(zone.x || 0, 0, zone.z || 0);
+  return group;
+}
+
+function updateBossZoneMesh(zone, elapsed) {
+  const mesh = zone.mesh;
+  if (!mesh) return;
+  mesh.position.set(zone.x, 0, zone.z);
+  const pulse = 0.9 + Math.sin(state.elapsed * 16) * 0.08;
+  const fade = zone.life < 0.35 ? zone.life / 0.35 : 1;
+  const danger = elapsed / zone.impactAt;
+  if (mesh.userData.warning) {
+    mesh.userData.warning.scale.setScalar(zone.impacted ? 0.18 : pulse + danger * 0.12);
+    mesh.userData.warning.material.opacity = (zone.impacted ? 0.12 : 0.28 + danger * 0.18) * fade;
+  }
+  if (mesh.userData.ring) {
+    mesh.userData.ring.rotation.z += 0.08;
+    mesh.userData.ring.material.opacity = (zone.impacted ? 0.2 : 0.72) * fade;
+  }
 }
 
 function makeRockfallMesh(item = {}) {
@@ -2204,6 +2336,8 @@ function oldChooseUpgrade(playerId, upgradeName) {
 }
 
 function makeEnemyMesh(enemy) {
+  if (enemy.bossRole === "crystalGolem") return makeCrystalGolemMesh(enemy);
+  if (enemy.midBoss) return makeMidBossMesh(enemy);
   if (enemy.bomber) {
     const group = new THREE.Group();
     const body = new THREE.Mesh(new THREE.IcosahedronGeometry(enemy.radius, 1), materials.bomber);
@@ -2221,6 +2355,54 @@ function makeEnemyMesh(enemy) {
   mesh.position.set(enemy.x, enemy.radius, enemy.z);
   mesh.castShadow = true;
   return mesh;
+}
+
+function makeMidBossMesh(enemy) {
+  const group = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.SphereGeometry(enemy.radius, 18, 12), materials.midBoss);
+  body.castShadow = true;
+  const crown = new THREE.Mesh(new THREE.ConeGeometry(enemy.radius * 0.42, enemy.radius * 0.9, 6), materials.rock);
+  crown.position.y = enemy.radius * 0.95;
+  crown.rotation.y = Math.PI / 6;
+  crown.castShadow = true;
+  group.add(body, crown);
+  group.position.set(enemy.x, enemy.radius, enemy.z);
+  return group;
+}
+
+function makeCrystalGolemMesh(enemy) {
+  const group = new THREE.Group();
+  const rockMat = materials.rock.clone();
+  rockMat.color.setHex(0x3f3f46);
+  const coreMat = materials.violetCrystal.clone();
+  const body = new THREE.Mesh(new THREE.DodecahedronGeometry(enemy.radius * 0.95, 1), rockMat);
+  body.position.y = enemy.radius * 0.2;
+  body.scale.set(1.15, 1.25, 0.95);
+  body.castShadow = true;
+  const head = new THREE.Mesh(new THREE.DodecahedronGeometry(enemy.radius * 0.48, 0), rockMat.clone());
+  head.position.y = enemy.radius * 1.15;
+  head.castShadow = true;
+  const core = new THREE.Mesh(new THREE.OctahedronGeometry(enemy.radius * 0.34), coreMat);
+  core.position.set(0, enemy.radius * 0.28, enemy.radius * 0.72);
+  core.castShadow = true;
+  group.add(body, head, core);
+  for (let i = 0; i < 5; i += 1) {
+    const crystal = new THREE.Mesh(new THREE.ConeGeometry(enemy.radius * 0.16, enemy.radius * 0.95, 6), coreMat.clone());
+    const angle = -0.9 + i * 0.45;
+    crystal.position.set(Math.sin(angle) * enemy.radius * 0.75, enemy.radius * 1.1, Math.cos(angle) * enemy.radius * 0.34);
+    crystal.rotation.z = -angle * 0.3;
+    crystal.castShadow = true;
+    group.add(crystal);
+  }
+  for (const side of [-1, 1]) {
+    const arm = new THREE.Mesh(new THREE.DodecahedronGeometry(enemy.radius * 0.38, 0), rockMat.clone());
+    arm.position.set(side * enemy.radius * 1.0, enemy.radius * 0.28, 0);
+    arm.scale.set(0.8, 1.35, 0.75);
+    arm.castShadow = true;
+    group.add(arm);
+  }
+  group.position.set(enemy.x, enemy.radius * 0.72, enemy.z);
+  return group;
 }
 
 function makeArrowMesh() {
@@ -3188,6 +3370,7 @@ function applySnapshot(data) {
   syncSimpleMeshes(state.renderCache.hearts, data.hearts || [], makeHeartMesh, 0.7);
   syncSimpleMeshes(state.renderCache.circles, data.circles || [], makeMagicCircleMesh, 0.1);
   syncRockfalls(data.rockfalls || []);
+  syncBossZones(data.bossZones || []);
   syncEffects(data.effects || []);
   if (net.pausedBy) applyPause(net.pausedBy);
   else if (net.waitingFor && net.waitingFor !== localPlayerId) showStatus("他のプレイヤーの選択を待っています", `${playerNameById(net.waitingFor)} が強化を選んでいます。`);
@@ -3227,13 +3410,14 @@ function sendHostSnapshot(force = false) {
       magicSplash: p.magicSplash, magicRadius: p.magicRadius, chainExplosion: p.chainExplosion, iceSpike: p.iceSpike, thunderCircle: p.thunderCircle,
       rerolls: p.rerolls, upgrades: p.upgrades,
     })),
-    enemies: state.enemies.map((e) => ({ id: e.id, x: e.x, z: e.z, radius: e.radius, boss: e.boss, shooter: e.shooter, bomber: e.bomber })),
+    enemies: state.enemies.map((e) => ({ id: e.id, x: e.x, z: e.z, radius: e.radius, boss: e.boss, shooter: e.shooter, bomber: e.bomber, midBoss: e.midBoss, bossRole: e.bossRole })),
     arrows: state.arrows.map((a) => ({ id: a.id, x: a.x, z: a.z, angle: a.angle, kind: a.kind, radius: a.radius, owner: a.owner, skill: a.skill })),
     bullets: state.enemyBullets.map((b) => ({ id: b.id, x: b.x, z: b.z })),
     gems: state.gems.map((g) => ({ id: g.id, x: g.x, z: g.z, kind: g.kind })),
     hearts: state.hearts.map((h) => ({ id: h.id, x: h.x, z: h.z })),
     circles: state.magicCircles.map((c) => ({ id: c.id, x: c.x, z: c.z, radius: c.radius, life: c.life, duration: c.duration })),
     rockfalls: state.rockfalls.map((r) => ({ id: r.id, x: r.x, z: r.z, radius: r.radius, life: r.life, start: r.start, impactAt: r.impactAt, impacted: r.impacted })),
+    bossZones: state.bossZones.map((z) => ({ id: z.id, x: z.x, z: z.z, radius: z.radius, life: z.life, start: z.start, impactAt: z.impactAt, impacted: z.impacted, role: z.role })),
     effects: state.effects.map((fx) => ({ id: fx.id, kind: fx.kind, owner: fx.owner, skill: fx.skill, x: fx.x, z: fx.z, radius: fx.radius, arc: fx.arc, angle: fx.angle, color: fx.color, life: fx.life, start: fx.start })),
   });
 }
@@ -3314,6 +3498,28 @@ function syncRockfalls(rockfalls) {
     const rockfall = { ...item, mesh };
     updateRockfallMesh(rockfall, rockfall.start - rockfall.life);
     return rockfall;
+  });
+}
+
+function syncBossZones(zones) {
+  const cache = state.renderCache.bossZones;
+  const ids = new Set(zones.map((item) => item.id));
+  for (const [id, mesh] of cache) {
+    if (!ids.has(id)) {
+      scene.remove(mesh);
+      cache.delete(id);
+    }
+  }
+  state.bossZones = zones.map((item) => {
+    let mesh = cache.get(item.id);
+    if (!mesh) {
+      mesh = makeBossZoneMesh(item);
+      scene.add(mesh);
+      cache.set(item.id, mesh);
+    }
+    const zone = { ...item, mesh };
+    updateBossZoneMesh(zone, zone.start - zone.life);
+    return zone;
   });
 }
 
