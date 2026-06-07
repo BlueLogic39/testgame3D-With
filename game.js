@@ -1258,16 +1258,21 @@ function attackIntervalMultiplier(player) {
 
 function updatePlayerFlash(player, dt) {
   player.hitFlash = Math.max(0, (player.hitFlash || 0) - dt);
-  const invincible = state.elapsed < (player.invincibleUntil || 0);
-  const flashing = player.hitFlash > 0 || invincible;
-  const pulse = Math.sin(state.elapsed * 38) > 0;
-  setPlayerFlash(player.mesh, flashing && pulse);
+  setPlayerFlash(player.mesh, playerFlashMode(player));
 }
 
-function setPlayerFlash(mesh, active) {
+function playerFlashMode(player) {
+  const invincible = state.elapsed < (player.invincibleUntil || 0);
+  if (invincible && Math.sin(state.elapsed * 24) > 0) return "invincible";
+  if ((player.hitFlash || 0) > 0 && Math.sin(state.elapsed * 42) > 0) return "damage";
+  return "";
+}
+
+function setPlayerFlash(mesh, mode = "") {
+  const color = mode === "damage" ? 0xff2b2b : mode === "invincible" ? 0x7dd3fc : 0x000000;
   mesh.traverse((child) => {
     if (!child.material || !child.material.emissive) return;
-    child.material.emissive.setHex(active ? 0xff2b2b : 0x000000);
+    child.material.emissive.setHex(color);
   });
 }
 
@@ -1848,16 +1853,16 @@ function updateBossEnemy(enemy, target, dt) {
     if (enemy.bossRole === "crystalGolem") {
       enemy.bossPattern = ((enemy.bossPattern || 0) + 1) % 2;
       if (enemy.bossPattern === 0) {
-        spawnRockfallAt(target.x, target.z, { radius: 3.25, damage: 40, enemyDamage: 0, hurtsEnemies: false, crystal: true, life: 2.05, impactAt: 1.05 });
+        spawnCrystalDropsForPlayers({ radius: 3.25, damage: 40 });
       } else {
         addBossChargeLine(enemy, target);
       }
       enemy.bossAttackTimer = enemy.hp < enemy.maxHp * 0.35 ? 4.0 : 5.2;
     } else if (enemy.bossRole === "crystalMid") {
-      spawnRockfallAt(target.x, target.z, { radius: 3.05, damage: 40, enemyDamage: 0, hurtsEnemies: false, crystal: true, life: 2.05, impactAt: 1.05 });
+      spawnCrystalDropsForPlayers({ radius: 3.05, damage: 40 });
       enemy.bossAttackTimer = 5.4;
     } else if (enemy.bossRole === "forestTree" || enemy.bossRole === "forestTreeMid") {
-      addBossZone(target.x, target.z, enemy.boss ? 4.4 : 3.4, enemy.boss ? 30 : 22, enemy.id, enemy.bossRole);
+      addRootZonesForPlayers(enemy);
       enemy.bossAttackTimer = enemy.boss ? 4.6 : 5.3;
     } else {
       const radius = enemy.boss ? 4.2 : 3.2;
@@ -1878,6 +1883,20 @@ function updateBossEnemy(enemy, target, dt) {
       shootForestSeeds(enemy, enemy.hp < enemy.maxHp * 0.35 ? 12 : 8);
       enemy.bossShotTimer = enemy.hp < enemy.maxHp * 0.35 ? 3.1 : 4.4;
     }
+  }
+}
+
+function spawnCrystalDropsForPlayers(options = {}) {
+  for (const player of livingPlayers()) {
+    spawnRockfallAt(player.x, player.z, { radius: options.radius || 3.05, damage: options.damage || 40, enemyDamage: 0, hurtsEnemies: false, crystal: true, life: 2.05, impactAt: 1.05 });
+  }
+}
+
+function addRootZonesForPlayers(enemy) {
+  const radius = enemy.boss ? 4.4 : 3.4;
+  const damage = enemy.boss ? 30 : 22;
+  for (const player of livingPlayers()) {
+    addBossZone(player.x, player.z, radius, damage, enemy.id, enemy.bossRole);
   }
 }
 
@@ -2039,7 +2058,7 @@ function updateRevives() {
       player.dead = false;
       player.hp = Math.ceil(player.maxHp / 2);
       player.invincibleUntil = state.elapsed + 2;
-      player.hitFlash = 2;
+      player.hitFlash = 0;
       player.x = 0;
       player.z = 0;
       setPlayerDeadVisual(player, false);
@@ -3883,7 +3902,7 @@ function syncPlayers(players) {
       existingPlayer.mesh.position.set(p.x, 0, p.z);
       if (typeof p.angle === "number") existingPlayer.mesh.rotation.y = p.angle;
       animateHuman(existingPlayer, isSaberSpinning(existingPlayer) || Math.hypot(p.input?.dx || 0, p.input?.dz || 0) > 0.01, 0.033);
-      setPlayerFlash(existingPlayer.mesh, ((p.hitFlash || 0) > 0 || state.elapsed < (p.invincibleUntil || 0)) && Math.sin(state.elapsed * 38) > 0);
+      setPlayerFlash(existingPlayer.mesh, playerFlashMode(existingPlayer));
       continue;
     }
     let mesh = state.renderCache.players.get(p.id);
@@ -3898,7 +3917,7 @@ function syncPlayers(players) {
     mesh.position.set(p.x, 0, p.z);
     if (typeof p.angle === "number") mesh.rotation.y = p.angle;
     animateHumanMesh(mesh, isSaberSpinning(p) || Math.hypot(p.input?.dx || 0, p.input?.dz || 0) > 0.01, 0.033);
-    setPlayerFlash(mesh, ((p.hitFlash || 0) > 0 || state.elapsed < (p.invincibleUntil || 0)) && Math.sin(state.elapsed * 38) > 0);
+    setPlayerFlash(mesh, playerFlashMode(p));
   }
 }
 
@@ -4260,11 +4279,15 @@ function localPlayer() {
 }
 
 function nearestLivingPlayer(source) {
-  return state.players.filter((p) => !p.dead && p.hp > 0).sort((a, b) => distance(source, a) - distance(source, b))[0];
+  return livingPlayers().sort((a, b) => distance(source, a) - distance(source, b))[0];
 }
 
 function nearestGemPlayer(gem) {
-  return state.players.filter((p) => !p.dead && p.hp > 0).sort((a, b) => distance(gem, a) - distance(gem, b))[0];
+  return livingPlayers().sort((a, b) => distance(gem, a) - distance(gem, b))[0];
+}
+
+function livingPlayers() {
+  return state.players.filter((p) => !p.dead && p.hp > 0);
 }
 
 function playerNameById(id) {

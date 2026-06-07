@@ -181,6 +181,55 @@ canvas {
   text-shadow: 0 2px 14px rgba(0, 0, 0, 0.7);
 }
 
+.update-list {
+  width: min(860px, 100%);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  text-align: left;
+}
+
+.update-card {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 8px;
+  background: rgba(20, 25, 27, 0.82);
+}
+
+.update-card.latest {
+  border-color: rgba(255, 216, 107, 0.45);
+  background: rgba(42, 36, 20, 0.82);
+}
+
+.update-card h3 {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+  color: #f3f0e8;
+  font-size: 17px;
+  line-height: 1.25;
+}
+
+.update-card h3 span {
+  flex: 0 0 auto;
+  color: #ffd86b;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.update-card ul {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 18px;
+  color: #dce4e1;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
 #characterCodex {
   place-items: center;
   align-content: start;
@@ -856,9 +905,16 @@ h2 {
   }
 
   .character-select,
+  .update-list,
   .codex-cards,
   .codex-layout {
     grid-template-columns: 1fr;
+  }
+
+  .update-card h3 {
+    align-items: start;
+    flex-direction: column;
+    gap: 3px;
   }
 
   .codex-view,
