@@ -261,6 +261,7 @@ const materials = {
   gem: new THREE.MeshStandardMaterial({ color: 0x58d5b7, roughness: 0.2, emissive: 0x0d4739 }),
   shooterGem: new THREE.MeshStandardMaterial({ color: 0x4aa3ff, roughness: 0.2, emissive: 0x082c62 }),
   bomberGem: new THREE.MeshStandardMaterial({ color: 0xffd84a, roughness: 0.18, emissive: 0x6b4b00 }),
+  bossGem: new THREE.MeshStandardMaterial({ color: 0xff3b3b, roughness: 0.18, emissive: 0x6d0505 }),
   heart: new THREE.MeshStandardMaterial({ color: 0xff4f7b, roughness: 0.35, emissive: 0x4a0618 }),
   ring: new THREE.MeshBasicMaterial({ color: 0xf2c14e, transparent: true, opacity: 0.75 }),
   crystal: new THREE.MeshStandardMaterial({ color: 0x7dd3fc, roughness: 0.25, metalness: 0.08, emissive: 0x164e63 }),
@@ -1699,7 +1700,7 @@ function addEnemy(boss, shooter, bomber = false, role = "") {
     shooter,
     bomber,
     midBoss: role === "mid",
-    bossRole: boss ? (state.stageId === "stage2" ? "crystalGolem" : "forestBeast") : role,
+    bossRole: boss ? (state.stageId === "stage2" ? "crystalGolem" : "forestBeast") : role === "mid" && state.stageId === "stage2" ? "crystalMid" : role,
     bossAttackTimer: role === "mid" ? 2.4 : boss ? 2.8 : 0,
     bossShotTimer: boss && state.stageId === "stage2" ? 3.6 : 0,
   };
@@ -1747,8 +1748,8 @@ function updateEnemies(dt) {
   const dead = state.enemies.filter((enemy) => enemy.hp <= 0);
   for (const enemy of dead) {
     state.kills += 1;
-    dropGem(enemy.x, enemy.z, enemy.xp, enemy.bomber ? "bomber" : enemy.shooter ? "shooter" : "normal");
     const owner = state.players.find((p) => p.id === enemy.lastHitBy) || localPlayer();
+    dropGem(enemy.x, enemy.z, enemy.xp, enemy.boss || enemy.midBoss ? "boss" : enemy.bomber ? "bomber" : enemy.shooter ? "shooter" : "normal");
     if (owner) {
       owner.hp = Math.min(owner.maxHp, owner.hp + owner.lifeSteal);
     }
@@ -1798,9 +1799,12 @@ function addBossChargeLine(enemy, target) {
     damage: 38,
     owner: enemy.id,
     role: enemy.bossRole,
-    life: 1.7,
-    start: 1.7,
+    life: 2.05,
+    start: 2.05,
     impactAt: 1.05,
+    chargeDuration: 0.92,
+    startX: enemy.x,
+    startZ: enemy.z,
     impacted: false,
     mesh: makeBossZoneMesh({ kind: "charge", width: 2.6, length: Math.hypot(endX - enemy.x, endZ - enemy.z), role: enemy.bossRole }),
   };
@@ -1983,7 +1987,7 @@ function updateGems(dt) {
     gem.mesh.rotation.y += dt * 2.8;
     gem.mesh.rotation.x += dt * 1.4;
     if (d < player.radius + gem.radius) {
-      player.xp += gem.value;
+      player.xp += gem.kind === "boss" ? player.xpNext : gem.value;
       gem.collected = true;
       if (player.local || net.mode === "host") sfx("gem", { broadcast: net.mode === "host" });
       while (player.xp >= player.xpNext) {
@@ -2127,10 +2131,12 @@ function updateBossZones(dt) {
     zone.life -= dt;
     const elapsed = zone.start - zone.life;
     updateBossZoneMesh(zone, elapsed);
+    if (zone.kind === "charge" && zone.impacted) updateBossChargeMotion(zone, elapsed);
     if (zone.impacted || elapsed < zone.impactAt) continue;
     zone.impacted = true;
     if (zone.kind === "charge") {
-      resolveBossCharge(zone);
+      resolveBossChargeDamage(zone);
+      updateBossChargeMotion(zone, elapsed);
       continue;
     }
     addRing(zone.x, zone.z, zone.radius, zone.role === "crystalGolem" ? 0xa78bfa : 0xff5f5f);
@@ -2142,13 +2148,7 @@ function updateBossZones(dt) {
   removeDead(state.bossZones, (zone) => zone.life <= 0);
 }
 
-function resolveBossCharge(zone) {
-  const boss = state.enemies.find((enemy) => enemy.id === zone.owner);
-  if (boss) {
-    boss.x = zone.endX;
-    boss.z = zone.endZ;
-    boss.mesh.position.set(boss.x, boss.radius, boss.z);
-  }
+function resolveBossChargeDamage(zone) {
   addRing(zone.endX, zone.endZ, 2.6, 0xa78bfa);
   for (const player of state.players) {
     if (player.dead || player.hp <= 0) continue;
@@ -2156,6 +2156,17 @@ function resolveBossCharge(zone) {
       damagePlayer(player, zone.damage);
     }
   }
+}
+
+function updateBossChargeMotion(zone, elapsed) {
+  const boss = state.enemies.find((enemy) => enemy.id === zone.owner);
+  if (!boss) return;
+  const t = clamp((elapsed - zone.impactAt) / (zone.chargeDuration || 0.55), 0, 1);
+  const eased = 1 - Math.pow(1 - t, 2);
+  boss.x = THREE.MathUtils.lerp(zone.startX ?? zone.x, zone.endX, eased);
+  boss.z = THREE.MathUtils.lerp(zone.startZ ?? zone.z, zone.endZ, eased);
+  boss.mesh.position.set(boss.x, boss.radius, boss.z);
+  boss.mesh.rotation.y = zone.angle || boss.mesh.rotation.y;
 }
 
 function distancePointToSegment(px, pz, ax, az, bx, bz) {
@@ -2463,7 +2474,7 @@ function oldChooseUpgrade(playerId, upgradeName) {
 }
 
 function makeEnemyMesh(enemy) {
-  if (enemy.bossRole === "crystalGolem") return makeCrystalGolemMesh(enemy);
+  if (enemy.bossRole === "crystalGolem" || enemy.bossRole === "crystalMid") return makeCrystalGolemMesh(enemy);
   if (enemy.midBoss) return makeMidBossMesh(enemy);
   if (enemy.bomber) {
     const group = new THREE.Group();
@@ -2603,8 +2614,8 @@ function makeBulletMesh() {
 }
 
 function makeGemMesh(gem = {}) {
-  const material = gem.kind === "bomber" ? materials.bomberGem : gem.kind === "shooter" ? materials.shooterGem : materials.gem;
-  const mesh = new THREE.Mesh(new THREE.OctahedronGeometry(0.34), material);
+  const material = gem.kind === "boss" ? materials.bossGem : gem.kind === "bomber" ? materials.bomberGem : gem.kind === "shooter" ? materials.shooterGem : materials.gem;
+  const mesh = new THREE.Mesh(new THREE.OctahedronGeometry(gem.kind === "boss" ? 0.52 : 0.34), material);
   mesh.castShadow = true;
   return mesh;
 }
@@ -3550,7 +3561,7 @@ function sendHostSnapshot(force = false) {
     bossZones: state.bossZones.map((z) => ({
       id: z.id, kind: z.kind, x: z.x, z: z.z, endX: z.endX, endZ: z.endZ, angle: z.angle,
       radius: z.radius, width: z.width, length: z.length, life: z.life, start: z.start,
-      impactAt: z.impactAt, impacted: z.impacted, role: z.role,
+      impactAt: z.impactAt, impacted: z.impacted, role: z.role, startX: z.startX, startZ: z.startZ, chargeDuration: z.chargeDuration,
     })),
     effects: state.effects.map((fx) => ({ id: fx.id, kind: fx.kind, owner: fx.owner, skill: fx.skill, x: fx.x, z: fx.z, radius: fx.radius, arc: fx.arc, angle: fx.angle, color: fx.color, life: fx.life, start: fx.start })),
   });
