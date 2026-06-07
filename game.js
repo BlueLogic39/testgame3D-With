@@ -1761,10 +1761,15 @@ function updateEnemies(dt) {
 function updateBossEnemy(enemy, target, dt) {
   enemy.bossAttackTimer -= dt;
   if (enemy.bossAttackTimer <= 0) {
-    const radius = enemy.boss ? 4.2 : 3.2;
-    const damage = enemy.boss ? 32 : 22;
-    addBossZone(target.x, target.z, radius, damage, enemy.id, enemy.bossRole);
-    enemy.bossAttackTimer = enemy.boss ? 4.8 : 5.6;
+    if (enemy.bossRole === "crystalGolem") {
+      addBossChargeLine(enemy, target);
+      enemy.bossAttackTimer = enemy.hp < enemy.maxHp * 0.35 ? 4.0 : 5.2;
+    } else {
+      const radius = enemy.boss ? 4.2 : 3.2;
+      const damage = enemy.boss ? 32 : 22;
+      addBossZone(target.x, target.z, radius, damage, enemy.id, enemy.bossRole);
+      enemy.bossAttackTimer = enemy.boss ? 4.8 : 5.6;
+    }
   }
   if (enemy.bossRole === "crystalGolem") {
     enemy.bossShotTimer -= dt;
@@ -1773,6 +1778,34 @@ function updateBossEnemy(enemy, target, dt) {
       enemy.bossShotTimer = enemy.hp < enemy.maxHp * 0.35 ? 2.5 : 3.8;
     }
   }
+}
+
+function addBossChargeLine(enemy, target) {
+  const angle = Math.atan2(target.x - enemy.x, target.z - enemy.z);
+  const length = 16;
+  const endX = clamp(enemy.x + Math.sin(angle) * length, -WORLD.half + enemy.radius, WORLD.half - enemy.radius);
+  const endZ = clamp(enemy.z + Math.cos(angle) * length, -WORLD.half + enemy.radius, WORLD.half - enemy.radius);
+  const line = {
+    id: crypto.randomUUID(),
+    kind: "charge",
+    x: enemy.x,
+    z: enemy.z,
+    endX,
+    endZ,
+    angle,
+    width: 2.6,
+    length: Math.hypot(endX - enemy.x, endZ - enemy.z),
+    damage: 38,
+    owner: enemy.id,
+    role: enemy.bossRole,
+    life: 1.7,
+    start: 1.7,
+    impactAt: 1.05,
+    impacted: false,
+    mesh: makeBossZoneMesh({ kind: "charge", width: 2.6, length: Math.hypot(endX - enemy.x, endZ - enemy.z), role: enemy.bossRole }),
+  };
+  scene.add(line.mesh);
+  state.bossZones.push(line);
 }
 
 function shootBossRadial(enemy, count = 8) {
@@ -2096,6 +2129,10 @@ function updateBossZones(dt) {
     updateBossZoneMesh(zone, elapsed);
     if (zone.impacted || elapsed < zone.impactAt) continue;
     zone.impacted = true;
+    if (zone.kind === "charge") {
+      resolveBossCharge(zone);
+      continue;
+    }
     addRing(zone.x, zone.z, zone.radius, zone.role === "crystalGolem" ? 0xa78bfa : 0xff5f5f);
     for (const player of state.players) {
       if (player.dead || player.hp <= 0) continue;
@@ -2105,7 +2142,34 @@ function updateBossZones(dt) {
   removeDead(state.bossZones, (zone) => zone.life <= 0);
 }
 
+function resolveBossCharge(zone) {
+  const boss = state.enemies.find((enemy) => enemy.id === zone.owner);
+  if (boss) {
+    boss.x = zone.endX;
+    boss.z = zone.endZ;
+    boss.mesh.position.set(boss.x, boss.radius, boss.z);
+  }
+  addRing(zone.endX, zone.endZ, 2.6, 0xa78bfa);
+  for (const player of state.players) {
+    if (player.dead || player.hp <= 0) continue;
+    if (distancePointToSegment(player.x, player.z, zone.x, zone.z, zone.endX, zone.endZ) <= zone.width * 0.5 + player.radius) {
+      damagePlayer(player, zone.damage);
+    }
+  }
+}
+
+function distancePointToSegment(px, pz, ax, az, bx, bz) {
+  const abx = bx - ax;
+  const abz = bz - az;
+  const lenSq = abx * abx + abz * abz || 1;
+  const t = clamp(((px - ax) * abx + (pz - az) * abz) / lenSq, 0, 1);
+  const x = ax + abx * t;
+  const z = az + abz * t;
+  return Math.hypot(px - x, pz - z);
+}
+
 function makeBossZoneMesh(zone = {}) {
+  if (zone.kind === "charge") return makeBossChargeMesh(zone);
   const radius = zone.radius || 3.2;
   const color = zone.role === "crystalGolem" ? 0xa78bfa : 0xff3b66;
   const group = new THREE.Group();
@@ -2122,9 +2186,38 @@ function makeBossZoneMesh(zone = {}) {
   return group;
 }
 
+function makeBossChargeMesh(zone = {}) {
+  const length = zone.length || 16;
+  const width = zone.width || 2.6;
+  const color = 0xff315f;
+  const group = new THREE.Group();
+  const warning = new THREE.Mesh(new THREE.BoxGeometry(width, 0.045, length), materials.bossWarning.clone());
+  warning.material.color.setHex(color);
+  warning.position.set(0, 0.075, length / 2);
+  const center = new THREE.Mesh(new THREE.BoxGeometry(width * 0.24, 0.055, length), new THREE.MeshBasicMaterial({ color: 0xffd1dc, transparent: true, opacity: 0.72 }));
+  center.position.set(0, 0.105, length / 2);
+  group.add(warning, center);
+  group.userData.warning = warning;
+  group.userData.center = center;
+  return group;
+}
+
 function updateBossZoneMesh(zone, elapsed) {
   const mesh = zone.mesh;
   if (!mesh) return;
+  if (zone.kind === "charge") {
+    mesh.position.set(zone.x, 0, zone.z);
+    mesh.rotation.y = zone.angle || 0;
+    const fade = zone.life < 0.35 ? zone.life / 0.35 : 1;
+    const danger = clamp(elapsed / zone.impactAt, 0, 1);
+    if (mesh.userData.warning) {
+      mesh.userData.warning.material.opacity = (zone.impacted ? 0.12 : 0.24 + danger * 0.22) * fade;
+    }
+    if (mesh.userData.center) {
+      mesh.userData.center.material.opacity = (zone.impacted ? 0.16 : 0.55 + danger * 0.2) * fade;
+    }
+    return;
+  }
   mesh.position.set(zone.x, 0, zone.z);
   const pulse = 0.9 + Math.sin(state.elapsed * 16) * 0.08;
   const fade = zone.life < 0.35 ? zone.life / 0.35 : 1;
@@ -3454,7 +3547,11 @@ function sendHostSnapshot(force = false) {
     hearts: state.hearts.map((h) => ({ id: h.id, x: h.x, z: h.z })),
     circles: state.magicCircles.map((c) => ({ id: c.id, x: c.x, z: c.z, radius: c.radius, life: c.life, duration: c.duration })),
     rockfalls: state.rockfalls.map((r) => ({ id: r.id, x: r.x, z: r.z, radius: r.radius, life: r.life, start: r.start, impactAt: r.impactAt, impacted: r.impacted })),
-    bossZones: state.bossZones.map((z) => ({ id: z.id, x: z.x, z: z.z, radius: z.radius, life: z.life, start: z.start, impactAt: z.impactAt, impacted: z.impacted, role: z.role })),
+    bossZones: state.bossZones.map((z) => ({
+      id: z.id, kind: z.kind, x: z.x, z: z.z, endX: z.endX, endZ: z.endZ, angle: z.angle,
+      radius: z.radius, width: z.width, length: z.length, life: z.life, start: z.start,
+      impactAt: z.impactAt, impacted: z.impacted, role: z.role,
+    })),
     effects: state.effects.map((fx) => ({ id: fx.id, kind: fx.kind, owner: fx.owner, skill: fx.skill, x: fx.x, z: fx.z, radius: fx.radius, arc: fx.arc, angle: fx.angle, color: fx.color, life: fx.life, start: fx.start })),
   });
 }
