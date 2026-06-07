@@ -91,6 +91,7 @@ const ui = {
 const WORLD = { half: 34 };
 const keys = new Set();
 let debugSkillPresses = [];
+let debugBossPresses = { mid: [], boss: [] };
 const aim = new THREE.Vector3(0, 0, -8);
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
@@ -1501,6 +1502,29 @@ function requestDebugSkillFill() {
   fillSkillForDebug(localPlayerId);
 }
 
+function requestDebugBossSpawn(kind) {
+  if (net.phase !== "playing" || !state.running) return;
+  if (net.mode === "client") {
+    sendToHost({ type: "debugBossSpawn", kind });
+    return;
+  }
+  spawnDebugBoss(kind);
+}
+
+function spawnDebugBoss(kind) {
+  if (!state?.running || net.phase !== "playing") return false;
+  if (kind === "boss") {
+    state.bossSpawned = true;
+    addEnemy(true, false, false, "boss");
+    showToast("デバッグ: 大ボス出現");
+  } else {
+    addEnemy(false, false, false, "mid");
+    showToast("デバッグ: 中ボス出現");
+  }
+  if (net.mode === "host") sendHostSnapshot(true);
+  return true;
+}
+
 function trackDebugSkillKey() {
   const now = performance.now();
   debugSkillPresses = debugSkillPresses.filter((time) => now - time <= 2000);
@@ -1508,6 +1532,16 @@ function trackDebugSkillKey() {
   if (debugSkillPresses.length >= 3) {
     debugSkillPresses = [];
     requestDebugSkillFill();
+  }
+}
+
+function trackDebugBossKey(kind) {
+  const now = performance.now();
+  debugBossPresses[kind] = debugBossPresses[kind].filter((time) => now - time <= 2000);
+  debugBossPresses[kind].push(now);
+  if (debugBossPresses[kind].length >= 3) {
+    debugBossPresses[kind] = [];
+    requestDebugBossSpawn(kind);
   }
 }
 
@@ -3267,6 +3301,9 @@ function handleClientData(conn, data) {
   if (data.type === "debugSkillFill") {
     if (fillSkillForDebug(data.id)) sendHostSnapshot(true);
   }
+  if (data.type === "debugBossSpawn") {
+    spawnDebugBoss(data.kind === "boss" ? "boss" : "mid");
+  }
   if (data.type === "skill") {
     const player = state.players.find((p) => p.id === data.id);
     if (player && activateSkill(player)) sendHostSnapshot(true);
@@ -4287,6 +4324,12 @@ window.addEventListener("keydown", (event) => {
   }
   if (event.code === "KeyP" && !event.repeat && net.phase === "playing" && state.running) {
     trackDebugSkillKey();
+  }
+  if (event.code === "KeyM" && !event.repeat && net.phase === "playing" && state.running) {
+    trackDebugBossKey("mid");
+  }
+  if (event.code === "KeyB" && !event.repeat && net.phase === "playing" && state.running) {
+    trackDebugBossKey("boss");
   }
   if (event.code === "Space") {
     event.preventDefault();
