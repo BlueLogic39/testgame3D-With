@@ -189,12 +189,12 @@ const CHARACTER_TYPES = {
 };
 
 const STAGES = {
-  stage1: { label: "ステージ1", description: "現在のフィールド", duration: 180, bossTime: 150, midBossTimes: [90] },
+  stage1: { label: "迷いの森", description: "木々に囲まれた森の3分ステージ", duration: 180, bossTime: 150, midBossTimes: [90] },
   stage2: { label: "黒晶鉱山", description: "落石が敵も味方も巻き込む6分ステージ", duration: 360, bossTime: 330, midBossTimes: [120, 240], rockfalls: true, bomberEnemies: true },
 };
 
 const DIFFICULTIES = {
-  easy: { label: "イージー", description: "青い敵なし", shooterEnemies: false },
+  easy: { label: "イージー", description: "青い敵・中ボスなし", shooterEnemies: false, midBosses: false },
   normal: { label: "ノーマル", description: "通常ルール", shooterEnemies: true },
 };
 
@@ -267,6 +267,10 @@ const materials = {
   crystal: new THREE.MeshStandardMaterial({ color: 0x7dd3fc, roughness: 0.25, metalness: 0.08, emissive: 0x164e63 }),
   violetCrystal: new THREE.MeshStandardMaterial({ color: 0xa78bfa, roughness: 0.25, metalness: 0.08, emissive: 0x312e81 }),
   rock: new THREE.MeshStandardMaterial({ color: 0x6b6259, roughness: 0.92 }),
+  bark: new THREE.MeshStandardMaterial({ color: 0x5a3b24, roughness: 0.88 }),
+  leaves: new THREE.MeshStandardMaterial({ color: 0x2f7d45, roughness: 0.74 }),
+  darkLeaves: new THREE.MeshStandardMaterial({ color: 0x1f5b38, roughness: 0.8 }),
+  grass: new THREE.MeshStandardMaterial({ color: 0x3f8f4f, roughness: 0.82 }),
   rockWarning: new THREE.MeshBasicMaterial({ color: 0xff5f5f, transparent: true, opacity: 0.34, depthWrite: false }),
   bossWarning: new THREE.MeshBasicMaterial({ color: 0xff3b66, transparent: true, opacity: 0.3, depthWrite: false }),
 };
@@ -361,17 +365,94 @@ function initThree() {
 function applyStageTheme(stageId) {
   const stage = STAGES[stageId] || STAGES.stage1;
   const mine = stage.rockfalls;
-  scene.background = new THREE.Color(mine ? 0x0b1016 : 0x101419);
-  scene.fog = new THREE.Fog(mine ? 0x0b1016 : 0x101419, mine ? 30 : 42, mine ? 70 : 86);
-  if (arenaFloor) arenaFloor.material.color.set(mine ? 0x171b20 : 0x20262b);
+  const forest = stageId === "stage1";
+  scene.background = new THREE.Color(mine ? 0x0b1016 : forest ? 0x102017 : 0x101419);
+  scene.fog = new THREE.Fog(mine ? 0x0b1016 : forest ? 0x102017 : 0x101419, mine ? 30 : forest ? 34 : 42, mine ? 70 : forest ? 76 : 86);
+  if (arenaFloor) arenaFloor.material.color.set(mine ? 0x171b20 : forest ? 0x24472b : 0x20262b);
   if (arenaGrid) {
     const mats = Array.isArray(arenaGrid.material) ? arenaGrid.material : [arenaGrid.material];
-    for (const mat of mats) mat.color?.set(mine ? 0x334155 : 0x48606a);
+    for (const mat of mats) mat.color?.set(mine ? 0x334155 : forest ? 0x3f6f44 : 0x48606a);
   }
-  for (const wall of arenaWalls) wall.material.color.set(mine ? 0x2f343b : 0x384049);
+  for (const wall of arenaWalls) wall.material.color.set(mine ? 0x2f343b : forest ? 0x2b4a2f : 0x384049);
   if (!stageDecor) return;
   while (stageDecor.children.length) stageDecor.remove(stageDecor.children[0]);
   if (mine) addMineDecor();
+  else if (forest) addForestDecor();
+}
+
+function addForestDecor() {
+  for (let i = 0; i < 52; i += 1) {
+    const side = Math.floor(i / 13);
+    const t = -WORLD.half + 2 + (i % 13) * ((WORLD.half * 2 - 4) / 12);
+    const jitter = (Math.random() - 0.5) * 2.2;
+    const x = side < 2 ? t + jitter : (side === 2 ? -WORLD.half + 1.2 : WORLD.half - 1.2);
+    const z = side < 2 ? (side === 0 ? -WORLD.half + 1.2 : WORLD.half - 1.2) : t + jitter;
+    stageDecor.add(makeForestTree(x, z, 1.0 + Math.random() * 0.45));
+  }
+  for (const [x, z, r] of [[-18, -7, 0.5], [15, 9, -0.4], [-4, 22, 0.2], [22, -18, 0.8]]) addFallenLog(x, z, r);
+  for (const [x, z] of [[-24, 12], [-10, -19], [7, 18], [20, -4], [2, -26], [-28, -16]]) addForestRock(x, z);
+  for (let i = 0; i < 44; i += 1) addGrassClump(randomFieldPoint(), randomFieldPoint());
+}
+
+function makeForestTree(x, z, scale = 1) {
+  const group = new THREE.Group();
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.34 * scale, 0.5 * scale, 2.8 * scale, 9), materials.bark.clone());
+  trunk.position.y = 1.4 * scale;
+  trunk.castShadow = true;
+  const crownA = new THREE.Mesh(new THREE.IcosahedronGeometry(1.15 * scale, 1), materials.darkLeaves.clone());
+  crownA.position.y = 3.1 * scale;
+  crownA.scale.set(1.15, 0.9, 1.05);
+  crownA.castShadow = true;
+  const crownB = new THREE.Mesh(new THREE.IcosahedronGeometry(0.9 * scale, 1), materials.leaves.clone());
+  crownB.position.set(0.35 * scale, 3.75 * scale, -0.15 * scale);
+  crownB.castShadow = true;
+  group.add(trunk, crownA, crownB);
+  group.position.set(x, 0, z);
+  group.rotation.y = Math.random() * Math.PI * 2;
+  return group;
+}
+
+function addFallenLog(x, z, rotation) {
+  const log = new THREE.Group();
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.45, 4.8, 10), materials.bark.clone());
+  trunk.rotation.z = Math.PI / 2;
+  trunk.castShadow = true;
+  trunk.receiveShadow = true;
+  log.add(trunk);
+  for (const offset of [-1.65, 1.4]) {
+    const nub = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.18, 1.1, 7), materials.bark.clone());
+    nub.position.set(offset, 0.25, 0.12);
+    nub.rotation.set(0.8, 0.2, 0.9);
+    nub.castShadow = true;
+    log.add(nub);
+  }
+  log.position.set(x, 0.45, z);
+  log.rotation.y = rotation;
+  stageDecor.add(log);
+}
+
+function addForestRock(x, z) {
+  const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(0.75 + Math.random() * 0.35, 0), materials.rock.clone());
+  rock.position.set(x, 0.38, z);
+  rock.scale.set(1.25, 0.55, 0.9);
+  rock.rotation.y = Math.random() * Math.PI;
+  rock.castShadow = true;
+  rock.receiveShadow = true;
+  stageDecor.add(rock);
+}
+
+function addGrassClump(x, z) {
+  const clump = new THREE.Group();
+  const count = 3 + Math.floor(Math.random() * 4);
+  for (let i = 0; i < count; i += 1) {
+    const blade = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.55 + Math.random() * 0.35, 5), materials.grass.clone());
+    blade.position.set((Math.random() - 0.5) * 0.7, 0.25, (Math.random() - 0.5) * 0.7);
+    blade.rotation.z = (Math.random() - 0.5) * 0.45;
+    blade.castShadow = true;
+    clump.add(blade);
+  }
+  clump.position.set(x, 0, z);
+  stageDecor.add(clump);
 }
 
 function addMineDecor() {
@@ -1667,6 +1748,7 @@ function spawnEnemies(dt) {
 }
 
 function spawnStageMidBosses() {
+  if (DIFFICULTIES[state.difficultyId]?.midBosses === false) return;
   const times = STAGES[state.stageId]?.midBossTimes || [];
   for (const time of times) {
     if (state.elapsed < time || state.midBossSpawned[time]) continue;
@@ -1701,7 +1783,7 @@ function addEnemy(boss, shooter, bomber = false, role = "") {
     shooter,
     bomber,
     midBoss: role === "mid",
-    bossRole: boss ? (state.stageId === "stage2" ? "crystalGolem" : "forestBeast") : role === "mid" && state.stageId === "stage2" ? "crystalMid" : role,
+    bossRole: boss ? (state.stageId === "stage2" ? "crystalGolem" : "forestTree") : role === "mid" && state.stageId === "stage2" ? "crystalMid" : role === "mid" && state.stageId === "stage1" ? "forestTreeMid" : role,
     bossAttackTimer: role === "mid" ? 2.4 : boss ? 2.8 : 0,
     bossShotTimer: boss && state.stageId === "stage2" ? 3.6 : 0,
   };
@@ -1766,14 +1848,17 @@ function updateBossEnemy(enemy, target, dt) {
     if (enemy.bossRole === "crystalGolem") {
       enemy.bossPattern = ((enemy.bossPattern || 0) + 1) % 2;
       if (enemy.bossPattern === 0) {
-        spawnRockfallAt(target.x, target.z, { radius: 3.25, damage: 28, enemyDamage: 0, hurtsEnemies: false, crystal: true, life: 2.05, impactAt: 1.05 });
+        spawnRockfallAt(target.x, target.z, { radius: 3.25, damage: 40, enemyDamage: 0, hurtsEnemies: false, crystal: true, life: 2.05, impactAt: 1.05 });
       } else {
         addBossChargeLine(enemy, target);
       }
       enemy.bossAttackTimer = enemy.hp < enemy.maxHp * 0.35 ? 4.0 : 5.2;
     } else if (enemy.bossRole === "crystalMid") {
-      spawnRockfallAt(target.x, target.z, { radius: 3.05, damage: 24, enemyDamage: 0, hurtsEnemies: false, crystal: true, life: 2.05, impactAt: 1.05 });
+      spawnRockfallAt(target.x, target.z, { radius: 3.05, damage: 40, enemyDamage: 0, hurtsEnemies: false, crystal: true, life: 2.05, impactAt: 1.05 });
       enemy.bossAttackTimer = 5.4;
+    } else if (enemy.bossRole === "forestTree" || enemy.bossRole === "forestTreeMid") {
+      addBossZone(target.x, target.z, enemy.boss ? 4.4 : 3.4, enemy.boss ? 30 : 22, enemy.id, enemy.bossRole);
+      enemy.bossAttackTimer = enemy.boss ? 4.6 : 5.3;
     } else {
       const radius = enemy.boss ? 4.2 : 3.2;
       const damage = enemy.boss ? 32 : 22;
@@ -1786,6 +1871,12 @@ function updateBossEnemy(enemy, target, dt) {
     if (enemy.bossShotTimer <= 0) {
       shootBossRadial(enemy, 10);
       enemy.bossShotTimer = enemy.hp < enemy.maxHp * 0.35 ? 2.5 : 3.8;
+    }
+  } else if (enemy.bossRole === "forestTree") {
+    enemy.bossShotTimer -= dt;
+    if (enemy.bossShotTimer <= 0) {
+      shootForestSeeds(enemy, enemy.hp < enemy.maxHp * 0.35 ? 12 : 8);
+      enemy.bossShotTimer = enemy.hp < enemy.maxHp * 0.35 ? 3.1 : 4.4;
     }
   }
 }
@@ -1836,6 +1927,27 @@ function shootBossRadial(enemy, count = 8) {
       kind: "crystal",
       colorIndex: i % 2,
       mesh: makeBulletMesh({ kind: "crystal", colorIndex: i % 2 }),
+    };
+    bullet.mesh.position.set(bullet.x, 1.05, bullet.z);
+    scene.add(bullet.mesh);
+    state.enemyBullets.push(bullet);
+  }
+}
+
+function shootForestSeeds(enemy, count = 8) {
+  for (let i = 0; i < count; i += 1) {
+    const angle = (Math.PI * 2 * i) / count - state.elapsed * 0.12;
+    const bullet = {
+      id: crypto.randomUUID(),
+      x: enemy.x + Math.sin(angle) * 1.25,
+      z: enemy.z + Math.cos(angle) * 1.25,
+      vx: Math.sin(angle) * 7.6,
+      vz: Math.cos(angle) * 7.6,
+      radius: 0.4,
+      damage: 13,
+      life: 5,
+      kind: "seed",
+      mesh: makeBulletMesh({ kind: "seed" }),
     };
     bullet.mesh.position.set(bullet.x, 1.05, bullet.z);
     scene.add(bullet.mesh);
@@ -2131,6 +2243,10 @@ function isGolemEnemy(enemy) {
   return enemy.bossRole === "crystalGolem" || enemy.bossRole === "crystalMid";
 }
 
+function isForestBossRole(role) {
+  return role === "forestTree" || role === "forestTreeMid";
+}
+
 function addBossZone(x, z, radius, damage, owner = "", role = "") {
   const zone = {
     id: crypto.randomUUID(),
@@ -2163,7 +2279,7 @@ function updateBossZones(dt) {
       updateBossChargeMotion(zone, elapsed);
       continue;
     }
-    addRing(zone.x, zone.z, zone.radius, zone.role === "crystalGolem" ? 0xa78bfa : 0xff5f5f);
+    addRing(zone.x, zone.z, zone.radius, isForestBossRole(zone.role) ? 0x8bdc65 : zone.role === "crystalGolem" ? 0xa78bfa : 0xff5f5f);
     for (const player of state.players) {
       if (player.dead || player.hp <= 0) continue;
       if (distance(zone, player) <= zone.radius + player.radius) damagePlayer(player, zone.damage);
@@ -2206,7 +2322,7 @@ function distancePointToSegment(px, pz, ax, az, bx, bz) {
 function makeBossZoneMesh(zone = {}) {
   if (zone.kind === "charge") return makeBossChargeMesh(zone);
   const radius = zone.radius || 3.2;
-  const color = zone.role === "crystalGolem" ? 0xa78bfa : 0xff3b66;
+  const color = isForestBossRole(zone.role) ? 0x8bdc65 : zone.role === "crystalGolem" ? 0xa78bfa : 0xff3b66;
   const group = new THREE.Group();
   const warning = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, 0.045, 48), materials.bossWarning.clone());
   warning.material.color.setHex(color);
@@ -2517,6 +2633,7 @@ function oldChooseUpgrade(playerId, upgradeName) {
 
 function makeEnemyMesh(enemy) {
   if (enemy.bossRole === "crystalGolem" || enemy.bossRole === "crystalMid") return makeCrystalGolemMesh(enemy);
+  if (enemy.bossRole === "forestTree" || enemy.bossRole === "forestTreeMid") return makeForestTreeBossMesh(enemy);
   if (enemy.midBoss) return makeMidBossMesh(enemy);
   if (enemy.bomber) {
     const group = new THREE.Group();
@@ -2582,6 +2699,43 @@ function makeCrystalGolemMesh(enemy) {
     group.add(arm);
   }
   group.position.set(enemy.x, enemy.radius * 0.72, enemy.z);
+  return group;
+}
+
+function makeForestTreeBossMesh(enemy) {
+  const group = new THREE.Group();
+  const barkMat = materials.bark.clone();
+  const leafMat = materials.darkLeaves.clone();
+  const glowMat = new THREE.MeshBasicMaterial({ color: 0x9bef7a, transparent: true, opacity: 0.48, depthWrite: false });
+  const r = enemy.radius;
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.48, r * 0.78, r * 2.0, 11), barkMat);
+  body.position.y = 0;
+  body.scale.set(1.05, 1.0, 0.86);
+  body.castShadow = true;
+  const head = new THREE.Mesh(new THREE.IcosahedronGeometry(r * 0.72, 1), leafMat);
+  head.position.y = r * 1.12;
+  head.scale.set(1.25, 0.82, 1.05);
+  head.castShadow = true;
+  const core = new THREE.Mesh(new THREE.SphereGeometry(r * 0.18, 12, 8), glowMat);
+  core.position.set(0, r * 0.18, r * 0.54);
+  group.add(body, head, core);
+  for (const side of [-1, 1]) {
+    const arm = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.12, r * 0.2, r * 1.45, 8), barkMat.clone());
+    arm.position.set(side * r * 0.72, r * 0.32, 0);
+    arm.rotation.z = side * 0.82;
+    arm.rotation.x = 0.18;
+    arm.castShadow = true;
+    group.add(arm);
+  }
+  for (let i = 0; i < 5; i += 1) {
+    const root = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.08, r * 0.14, r * 0.95, 7), barkMat.clone());
+    const angle = (Math.PI * 2 * i) / 5;
+    root.position.set(Math.sin(angle) * r * 0.42, -r * 0.86, Math.cos(angle) * r * 0.42);
+    root.rotation.set(Math.PI / 2, 0, -angle);
+    root.castShadow = true;
+    group.add(root);
+  }
+  group.position.set(enemy.x, 0, enemy.z);
   return group;
 }
 
@@ -2651,9 +2805,22 @@ function makeFlyingSlashMesh(item = {}) {
 
 function makeBulletMesh(item = {}) {
   if (item.kind === "crystal") return makeCrystalBulletMesh(item.colorIndex || 0);
+  if (item.kind === "seed") return makeSeedBulletMesh();
   const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.26, 12, 8), materials.bullet);
   mesh.castShadow = true;
   return mesh;
+}
+
+function makeSeedBulletMesh() {
+  const group = new THREE.Group();
+  const seed = new THREE.Mesh(new THREE.SphereGeometry(0.28, 12, 8), materials.bark.clone());
+  seed.scale.set(1.0, 0.78, 1.18);
+  seed.castShadow = true;
+  const cap = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.34, 8), materials.darkLeaves.clone());
+  cap.position.y = 0.22;
+  cap.castShadow = true;
+  group.add(seed, cap);
+  return group;
 }
 
 function makeCrystalBulletMesh(colorIndex = 0) {
