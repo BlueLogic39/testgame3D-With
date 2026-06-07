@@ -1947,8 +1947,10 @@ function shootForestSeeds(enemy, count = 8) {
       damage: 13,
       life: 5,
       kind: "seed",
+      angle,
       mesh: makeBulletMesh({ kind: "seed" }),
     };
+    bullet.mesh.rotation.y = angle;
     bullet.mesh.position.set(bullet.x, 1.05, bullet.z);
     scene.add(bullet.mesh);
     state.enemyBullets.push(bullet);
@@ -1999,7 +2001,12 @@ function updateEnemyBullets(dt) {
     bullet.z += bullet.vz * dt;
     bullet.life -= dt;
     bullet.mesh.position.set(bullet.x, 1.05, bullet.z);
-    bullet.mesh.rotation.y += dt * 6;
+    if (bullet.kind === "seed") {
+      bullet.mesh.rotation.y = bullet.angle ?? Math.atan2(bullet.vx, bullet.vz);
+      bullet.mesh.rotation.z += dt * 8;
+    } else {
+      bullet.mesh.rotation.y += dt * 6;
+    }
     for (const player of state.players) {
       if (!player.dead && player.hp > 0 && distance(bullet, player) < bullet.radius + player.radius) {
         damagePlayer(player, bullet.damage);
@@ -2321,6 +2328,7 @@ function distancePointToSegment(px, pz, ax, az, bx, bz) {
 
 function makeBossZoneMesh(zone = {}) {
   if (zone.kind === "charge") return makeBossChargeMesh(zone);
+  if (isForestBossRole(zone.role)) return makeForestRootZoneMesh(zone);
   const radius = zone.radius || 3.2;
   const color = isForestBossRole(zone.role) ? 0x8bdc65 : zone.role === "crystalGolem" ? 0xa78bfa : 0xff3b66;
   const group = new THREE.Group();
@@ -2333,6 +2341,50 @@ function makeBossZoneMesh(zone = {}) {
   group.add(warning, ring);
   group.userData.warning = warning;
   group.userData.ring = ring;
+  group.position.set(zone.x || 0, 0, zone.z || 0);
+  return group;
+}
+
+function makeForestRootZoneMesh(zone = {}) {
+  const radius = zone.radius || 3.4;
+  const color = 0x8bdc65;
+  const group = new THREE.Group();
+  const warning = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, 0.04, 48), materials.bossWarning.clone());
+  warning.material.color.setHex(color);
+  warning.position.y = 0.055;
+  const ring = new THREE.Mesh(new THREE.RingGeometry(radius * 0.72, radius, 48), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.6, side: THREE.DoubleSide }));
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.y = 0.09;
+  group.add(warning, ring);
+  const roots = [];
+  const rootMat = materials.bark.clone();
+  rootMat.transparent = true;
+  rootMat.opacity = 0.95;
+  for (let i = 0; i < 8; i += 1) {
+    const angle = (Math.PI * 2 * i) / 8 + (i % 2) * 0.18;
+    const length = radius * (0.62 + (i % 3) * 0.11);
+    const root = new THREE.Group();
+    root.rotation.y = angle;
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.18, length, 7), rootMat.clone());
+    body.rotation.x = Math.PI / 2;
+    body.position.z = length / 2;
+    body.position.y = 0.16;
+    body.castShadow = true;
+    const thorn = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.9, 7), rootMat.clone());
+    thorn.position.set(0, 0.46, length * 0.92);
+    thorn.rotation.x = -0.22;
+    thorn.castShadow = true;
+    root.add(body, thorn);
+    root.scale.z = 0.08;
+    root.scale.y = 0.2;
+    root.userData.body = body;
+    root.userData.thorn = thorn;
+    group.add(root);
+    roots.push(root);
+  }
+  group.userData.warning = warning;
+  group.userData.ring = ring;
+  group.userData.roots = roots;
   group.position.set(zone.x || 0, 0, zone.z || 0);
   return group;
 }
@@ -2380,6 +2432,18 @@ function updateBossZoneMesh(zone, elapsed) {
   if (mesh.userData.ring) {
     mesh.userData.ring.rotation.z += 0.08;
     mesh.userData.ring.material.opacity = (zone.impacted ? 0.2 : 0.72) * fade;
+  }
+  if (mesh.userData.roots) {
+    const warnGrow = clamp(danger, 0, 1) * 0.32;
+    const burstGrow = zone.impacted ? clamp((elapsed - zone.impactAt) / 0.22, 0, 1) : 0;
+    const grow = Math.max(warnGrow, burstGrow);
+    for (const [index, root] of mesh.userData.roots.entries()) {
+      const stagger = clamp(grow * 1.25 - index * 0.035, 0, 1);
+      root.scale.z = 0.08 + stagger * 0.92;
+      root.scale.y = 0.18 + stagger * 0.82;
+      root.position.y = zone.impacted ? Math.sin(stagger * Math.PI) * 0.1 : 0;
+      if (root.userData.thorn) root.userData.thorn.scale.y = 0.2 + stagger * 0.95;
+    }
   }
 }
 
@@ -2813,13 +2877,21 @@ function makeBulletMesh(item = {}) {
 
 function makeSeedBulletMesh() {
   const group = new THREE.Group();
-  const seed = new THREE.Mesh(new THREE.SphereGeometry(0.28, 12, 8), materials.bark.clone());
-  seed.scale.set(1.0, 0.78, 1.18);
-  seed.castShadow = true;
-  const cap = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.34, 8), materials.darkLeaves.clone());
-  cap.position.y = 0.22;
-  cap.castShadow = true;
-  group.add(seed, cap);
+  const branch = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.13, 1.25, 8), materials.bark.clone());
+  branch.rotation.x = Math.PI / 2;
+  branch.castShadow = true;
+  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.34, 8), materials.bark.clone());
+  tip.rotation.x = Math.PI / 2;
+  tip.position.z = -0.72;
+  tip.castShadow = true;
+  const leafA = new THREE.Mesh(new THREE.SphereGeometry(0.18, 10, 6), materials.leaves.clone());
+  leafA.scale.set(1.35, 0.32, 0.72);
+  leafA.position.set(0.18, 0.08, 0.18);
+  leafA.rotation.z = 0.62;
+  const leafB = leafA.clone();
+  leafB.position.set(-0.16, 0.08, -0.08);
+  leafB.rotation.z = -0.72;
+  group.add(branch, tip, leafA, leafB);
   return group;
 }
 
@@ -3780,7 +3852,7 @@ function sendHostSnapshot(force = false) {
     })),
     enemies: state.enemies.map((e) => ({ id: e.id, x: e.x, z: e.z, radius: e.radius, boss: e.boss, shooter: e.shooter, bomber: e.bomber, midBoss: e.midBoss, bossRole: e.bossRole })),
     arrows: state.arrows.map((a) => ({ id: a.id, x: a.x, z: a.z, angle: a.angle, kind: a.kind, radius: a.radius, owner: a.owner, skill: a.skill })),
-    bullets: state.enemyBullets.map((b) => ({ id: b.id, x: b.x, z: b.z, kind: b.kind, colorIndex: b.colorIndex })),
+    bullets: state.enemyBullets.map((b) => ({ id: b.id, x: b.x, z: b.z, kind: b.kind, colorIndex: b.colorIndex, angle: b.angle })),
     gems: state.gems.map((g) => ({ id: g.id, x: g.x, z: g.z, kind: g.kind })),
     hearts: state.hearts.map((h) => ({ id: h.id, x: h.x, z: h.z })),
     circles: state.magicCircles.map((c) => ({ id: c.id, x: c.x, z: c.z, radius: c.radius, life: c.life, duration: c.duration })),
