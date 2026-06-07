@@ -1765,6 +1765,9 @@ function updateBossEnemy(enemy, target, dt) {
     if (enemy.bossRole === "crystalGolem") {
       addBossChargeLine(enemy, target);
       enemy.bossAttackTimer = enemy.hp < enemy.maxHp * 0.35 ? 4.0 : 5.2;
+    } else if (enemy.bossRole === "crystalMid") {
+      spawnRockfallAt(target.x, target.z, { radius: 3.05, damage: 24, enemyDamage: 90, life: 2.05, impactAt: 1.05 });
+      enemy.bossAttackTimer = 5.4;
     } else {
       const radius = enemy.boss ? 4.2 : 3.2;
       const damage = enemy.boss ? 32 : 22;
@@ -1783,7 +1786,7 @@ function updateBossEnemy(enemy, target, dt) {
 
 function addBossChargeLine(enemy, target) {
   const angle = Math.atan2(target.x - enemy.x, target.z - enemy.z);
-  const length = 16;
+  const length = 24;
   const endX = clamp(enemy.x + Math.sin(angle) * length, -WORLD.half + enemy.radius, WORLD.half - enemy.radius);
   const endZ = clamp(enemy.z + Math.cos(angle) * length, -WORLD.half + enemy.radius, WORLD.half - enemy.radius);
   const line = {
@@ -2060,20 +2063,24 @@ function updateStageHazards(dt) {
 }
 
 function spawnRockfall() {
-  const x = randomFieldPoint();
-  const z = randomFieldPoint();
+  spawnRockfallAt(randomFieldPoint(), randomFieldPoint());
+}
+
+function spawnRockfallAt(x, z, options = {}) {
+  const radius = options.radius || 2.65;
+  const life = options.life || 2.25;
   const rockfall = {
     id: crypto.randomUUID(),
-    x,
-    z,
-    radius: 2.65,
-    life: 2.25,
-    start: 2.25,
-    impactAt: 1.12,
-    damage: 34,
-    enemyDamage: 140,
+    x: clamp(x, -WORLD.half + radius, WORLD.half - radius),
+    z: clamp(z, -WORLD.half + radius, WORLD.half - radius),
+    radius,
+    life,
+    start: life,
+    impactAt: options.impactAt || 1.12,
+    damage: options.damage || 34,
+    enemyDamage: options.enemyDamage || 140,
     impacted: false,
-    mesh: makeRockfallMesh({ radius: 2.65 }),
+    mesh: makeRockfallMesh({ radius }),
   };
   scene.add(rockfall.mesh);
   state.rockfalls.push(rockfall);
@@ -2098,6 +2105,7 @@ function updateRockfalls(dt, applyDamage) {
       if (distance(rockfall, player) <= rockfall.radius + player.radius) damagePlayer(player, rockfall.damage);
     }
     for (const enemy of state.enemies) {
+      if (isGolemEnemy(enemy)) continue;
       if (distance(rockfall, enemy) > rockfall.radius + enemy.radius) continue;
       enemy.hp -= rockfall.enemyDamage;
       const owner = nearestLivingPlayer(enemy);
@@ -2105,6 +2113,10 @@ function updateRockfalls(dt, applyDamage) {
     }
   }
   removeDead(state.rockfalls, (rockfall) => rockfall.life <= 0);
+}
+
+function isGolemEnemy(enemy) {
+  return enemy.bossRole === "crystalGolem" || enemy.bossRole === "crystalMid";
 }
 
 function addBossZone(x, z, radius, damage, owner = "", role = "") {
