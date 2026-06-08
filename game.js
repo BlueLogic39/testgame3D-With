@@ -2824,13 +2824,19 @@ function healthPhase(hp, maxHp) {
 function applyHealthAura(mesh, phase = "", radius = 1.5) {
   if (!mesh.userData.healthAura) {
     const aura = new THREE.Group();
-    const ringA = makeAuraRing(1, 0.75);
-    const ringB = makeAuraRing(0.78, 0.38);
-    ringB.rotation.z = Math.PI / 7;
-    aura.add(ringA, ringB);
-    aura.userData.ringA = ringA;
-    aura.userData.ringB = ringB;
-    aura.position.y = 0.08;
+    const puffs = [];
+    for (let i = 0; i < 16; i += 1) {
+      const puff = new THREE.Mesh(
+        new THREE.SphereGeometry(0.16 + (i % 4) * 0.035, 10, 8),
+        new THREE.MeshBasicMaterial({ color: 0xff8a22, transparent: true, opacity: 0.45, depthWrite: false, blending: THREE.AdditiveBlending })
+      );
+      puff.userData.seed = Math.random() * Math.PI * 2;
+      puff.userData.angle = (Math.PI * 2 * i) / 16 + Math.random() * 0.35;
+      puff.userData.height = 0.35 + Math.random() * 1.4;
+      aura.add(puff);
+      puffs.push(puff);
+    }
+    aura.userData.puffs = puffs;
     mesh.add(aura);
     mesh.userData.healthAura = aura;
   }
@@ -2838,22 +2844,18 @@ function applyHealthAura(mesh, phase = "", radius = 1.5) {
   aura.visible = Boolean(phase);
   if (!phase) return;
   const color = phase === "red" ? 0xff2b2b : 0xff8a22;
-  const pulse = 1 + Math.sin(state.elapsed * (phase === "red" ? 9 : 6)) * 0.06;
-  aura.scale.setScalar(radius * (phase === "red" ? 1.55 : 1.42) * pulse);
-  aura.rotation.y += phase === "red" ? 0.055 : 0.035;
-  for (const ring of [aura.userData.ringA, aura.userData.ringB]) {
-    ring.material.color.setHex(color);
-    ring.material.opacity = phase === "red" ? 0.62 : 0.5;
+  const angry = phase === "red";
+  for (const [index, puff] of aura.userData.puffs.entries()) {
+    const speed = angry ? 2.7 : 1.8;
+    const t = (state.elapsed * speed + puff.userData.seed + index * 0.17) % 1;
+    const swirl = puff.userData.angle + state.elapsed * (angry ? 1.15 : 0.72) + Math.sin(state.elapsed * 2 + index) * 0.12;
+    const distanceFromBoss = radius * (1.08 + Math.sin(index * 1.7) * 0.12);
+    puff.position.set(Math.sin(swirl) * distanceFromBoss, radius * (0.12 + puff.userData.height * t), Math.cos(swirl) * distanceFromBoss);
+    const scale = (angry ? 1.25 : 1.0) * (0.65 + t * 0.85);
+    puff.scale.setScalar(scale);
+    puff.material.color.setHex(color);
+    puff.material.opacity = (angry ? 0.58 : 0.42) * (1 - t);
   }
-}
-
-function makeAuraRing(scale = 1, opacity = 0.6) {
-  const ring = new THREE.Mesh(
-    new THREE.TorusGeometry(scale, 0.035, 8, 72),
-    new THREE.MeshBasicMaterial({ color: 0xff8a22, transparent: true, opacity, depthWrite: false, blending: THREE.AdditiveBlending })
-  );
-  ring.rotation.x = Math.PI / 2;
-  return ring;
 }
 
 function makeMidBossMesh(enemy) {
