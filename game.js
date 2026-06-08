@@ -1882,6 +1882,7 @@ function updateEnemies(dt) {
     enemy.mesh.rotation.y += dt * (enemy.boss ? 1.2 : 2.6);
 
     if (enemy.boss || enemy.midBoss) updateBossEnemy(enemy, target, dt);
+    updateBossHealthVisual(enemy);
 
     if (enemy.shooter) {
       enemy.shotTimer -= dt * slow;
@@ -2805,6 +2806,47 @@ function makeEnemyMesh(enemy) {
   mesh.position.set(enemy.x, enemy.radius, enemy.z);
   mesh.castShadow = true;
   return mesh;
+}
+
+function updateBossHealthVisual(enemy) {
+  if (!enemy?.mesh || (!enemy.boss && !enemy.midBoss) || !enemy.maxHp) return;
+  applyHealthPhaseToMesh(enemy.mesh, healthPhase(enemy.hp, enemy.maxHp));
+}
+
+function healthPhase(hp, maxHp) {
+  if (!maxHp) return "";
+  const ratio = clamp(hp / maxHp, 0, 1);
+  if (ratio <= 0.25) return "red";
+  if (ratio <= 0.5) return "orange";
+  return "";
+}
+
+function applyHealthPhaseToMesh(mesh, phase = "") {
+  const tint = phase === "red" ? 0xff2b2b : phase === "orange" ? 0xff8a22 : 0x000000;
+  const mix = phase === "red" ? 0.42 : phase === "orange" ? 0.28 : 0;
+  mesh.traverse((child) => {
+    if (!child.material) return;
+    const materialsToEdit = Array.isArray(child.material) ? child.material : [child.material];
+    const cloned = materialsToEdit.map((material) => {
+      if (!material.userData.healthVisualClone) {
+        const clone = material.clone();
+        clone.userData.healthVisualClone = true;
+        clone.userData.baseColor = material.color?.clone?.() || null;
+        clone.userData.baseEmissive = material.emissive?.clone?.() || null;
+        return clone;
+      }
+      return material;
+    });
+    if (!Array.isArray(child.material) && cloned[0] !== child.material) child.material = cloned[0];
+    else if (Array.isArray(child.material) && cloned.some((mat, index) => mat !== child.material[index])) child.material = cloned;
+    for (const material of Array.isArray(child.material) ? child.material : [child.material]) {
+      if (material.emissive) material.emissive.setHex(tint || material.userData.baseEmissive?.getHex?.() || 0x000000);
+      if (material.color && material.userData.baseColor) {
+        material.color.copy(material.userData.baseColor);
+        if (phase) material.color.lerp(new THREE.Color(tint), mix);
+      }
+    }
+  });
 }
 
 function makeMidBossMesh(enemy) {
@@ -3939,7 +3981,7 @@ function sendHostSnapshot(force = false) {
       magicSplash: p.magicSplash, magicRadius: p.magicRadius, chainExplosion: p.chainExplosion, iceSpike: p.iceSpike, thunderCircle: p.thunderCircle,
       rerolls: p.rerolls, upgrades: p.upgrades,
     })),
-    enemies: state.enemies.map((e) => ({ id: e.id, x: e.x, z: e.z, radius: e.radius, boss: e.boss, shooter: e.shooter, bomber: e.bomber, midBoss: e.midBoss, bossRole: e.bossRole })),
+    enemies: state.enemies.map((e) => ({ id: e.id, x: e.x, z: e.z, radius: e.radius, hp: e.hp, maxHp: e.maxHp, boss: e.boss, shooter: e.shooter, bomber: e.bomber, midBoss: e.midBoss, bossRole: e.bossRole })),
     arrows: state.arrows.map((a) => ({ id: a.id, x: a.x, z: a.z, angle: a.angle, kind: a.kind, radius: a.radius, owner: a.owner, skill: a.skill })),
     bullets: state.enemyBullets.map((b) => ({ id: b.id, x: b.x, z: b.z, kind: b.kind, colorIndex: b.colorIndex, angle: b.angle })),
     gems: state.gems.map((g) => ({ id: g.id, x: g.x, z: g.z, kind: g.kind })),
@@ -4009,6 +4051,7 @@ function syncSimpleMeshes(cache, items, factory, y) {
     mesh.position.set(item.x, y || item.radius || 0.6, item.z);
     if (typeof item.angle === "number") mesh.rotation.y = item.angle;
     if (item.kind === "magic") mesh.scale.setScalar((item.radius || 0.34) / 0.34);
+    if (item.boss || item.midBoss) applyHealthPhaseToMesh(mesh, healthPhase(item.hp, item.maxHp));
   }
 }
 
