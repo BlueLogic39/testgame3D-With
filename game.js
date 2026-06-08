@@ -1928,33 +1928,45 @@ function updateBossEnemy(enemy, target, dt) {
       } else {
         addBossChargeLine(enemy, target);
       }
-      enemy.bossAttackTimer = enemy.hp < enemy.maxHp * 0.35 ? 4.0 : 5.2;
+      enemy.bossAttackTimer = bossAttackCooldown(enemy, 5.2);
     } else if (enemy.bossRole === "crystalMid") {
       spawnCrystalDropsForPlayers({ radius: 3.05, damage: 40 });
-      enemy.bossAttackTimer = 5.4;
+      enemy.bossAttackTimer = bossAttackCooldown(enemy, 5.4);
     } else if (enemy.bossRole === "forestTree" || enemy.bossRole === "forestTreeMid") {
       addRootZonesForPlayers(enemy);
-      enemy.bossAttackTimer = enemy.boss ? 4.6 : 5.3;
+      enemy.bossAttackTimer = bossAttackCooldown(enemy, enemy.boss ? 4.6 : 5.3);
     } else {
       const radius = enemy.boss ? 4.2 : 3.2;
       const damage = enemy.boss ? 32 : 22;
       addBossZone(target.x, target.z, radius, damage, enemy.id, enemy.bossRole);
-      enemy.bossAttackTimer = enemy.boss ? 4.8 : 5.6;
+      enemy.bossAttackTimer = bossAttackCooldown(enemy, enemy.boss ? 4.8 : 5.6);
     }
   }
   if (enemy.bossRole === "crystalGolem") {
     enemy.bossShotTimer -= dt;
     if (enemy.bossShotTimer <= 0) {
       shootBossRadial(enemy, 10);
-      enemy.bossShotTimer = enemy.hp < enemy.maxHp * 0.35 ? 2.5 : 3.8;
+      enemy.bossShotTimer = bossAttackCooldown(enemy, 3.8);
     }
   } else if (enemy.bossRole === "forestTree") {
     enemy.bossShotTimer -= dt;
     if (enemy.bossShotTimer <= 0) {
       shootForestSeeds(enemy, enemy.hp < enemy.maxHp * 0.35 ? 12 : 8);
-      enemy.bossShotTimer = enemy.hp < enemy.maxHp * 0.35 ? 3.1 : 4.4;
+      enemy.bossShotTimer = bossAttackCooldown(enemy, 4.4);
     }
   }
+}
+
+function bossAttackCooldown(enemy, baseSeconds) {
+  return baseSeconds / bossAttackSpeedMultiplier(enemy);
+}
+
+function bossAttackSpeedMultiplier(enemy) {
+  if (!enemy?.maxHp) return 1;
+  const ratio = enemy.hp / enemy.maxHp;
+  if (ratio <= 0.25) return 1.5;
+  if (ratio <= 0.5) return 1.25;
+  return 1;
 }
 
 function spawnCrystalDropsForPlayers(options = {}) {
