@@ -191,7 +191,7 @@ const CHARACTER_TYPES = {
 const STAGES = {
   stage1: { label: "迷いの森", description: "木々に囲まれた森の3分ステージ", duration: 180, bossTime: 150, midBossTimes: [90] },
   stage2: { label: "黒晶鉱山", description: "落石が敵も味方も巻き込む6分ステージ", duration: 360, bossTime: 330, midBossTimes: [120, 240], rockfalls: true, bomberEnemies: true },
-  stage3: { label: "王城", description: "城壁に囲まれた10分ステージ", duration: 600, bossTime: 570, midBossTimes: [150, 300, 450], castle: true },
+  stage3: { label: "冥冠城塞", description: "城壁に囲まれた10分ステージ", duration: 600, bossTime: 570, midBossTimes: [150, 300, 450], castle: true },
 };
 
 const DIFFICULTIES = {
@@ -215,8 +215,8 @@ const FBX_ASSETS = {
   staff: { path: "./model_FBX/WoodenStaff.fbx", size: 1.62, position: [0.58, 0.9, 0.08], rotation: [0, 0, -0.24], scale: [1, 1, 1] },
   sword: { path: "./model_FBX/Sword.fbx", size: 1.45, position: [0.56, 0.76, 0.02], rotation: [0, 0, -0.62], scale: [1, 1, 1] },
   heart: { path: "./model_FBX/Heart.fbx", size: 0.92, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
-  castleWall: { path: "./model_FBX/Castle/TallWall.fbx", size: 8.2, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1.55, 1.06, 1], groundOffset: -0.42 },
-  castleWallBricks: { path: "./model_FBX/Castle/TallWallBricks.fbx", size: 8.2, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1.55, 1.06, 1], groundOffset: -0.42 },
+  castleWall: { path: "./model_FBX/Castle/TallWall.fbx", size: 8.2, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1.4, 1.06, 1], groundOffset: -0.42 },
+  castleWallBricks: { path: "./model_FBX/Castle/TallWallBricks.fbx", size: 8.2, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1.4, 1.06, 1], groundOffset: -0.42 },
   castleWallEntrance: { path: "./model_FBX/Castle/TallWallEntrance.fbx", size: 8.8, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1.18, 1.04, 1], groundOffset: -0.42 },
   castleTower: { path: "./model_FBX/Castle/Tower.fbx", size: 8.5, position: [0, 4.25, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
   castlePointyTower: { path: "./model_FBX/Castle/PointyTower.fbx", size: 9.4, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], groundOffset: -0.12 },
@@ -638,18 +638,18 @@ function addCastleDecor() {
 function addCastleWalls() {
   const wallHalf = WORLD.half + 1.15;
   const towerHalf = WORLD.half + 2.15;
-  const spacing = 6.9;
+  const spacing = 7.25;
   const southWall = { opacity: 0.38 };
   for (let i = -4; i <= 4; i += 1) {
     if (i !== 0) {
-      addCastleProp(i % 2 ? "castleWall" : "castleWallBricks", i * spacing, -wallHalf, 0, 1.05, makeOldCastleWall, southWall);
-      addCastleProp(i % 2 ? "castleWallBricks" : "castleWall", i * spacing, wallHalf, Math.PI, 1.05, makeOldCastleWall);
+      addCastleProp(i % 2 ? "castleWall" : "castleWallBricks", i * spacing, -wallHalf, 0, 1.05, makeOldCastleWall);
+      addCastleProp(i % 2 ? "castleWallBricks" : "castleWall", i * spacing, wallHalf, Math.PI, 1.05, makeOldCastleWall, southWall);
     }
     addCastleProp(i % 2 ? "castleWall" : "castleWallBricks", -wallHalf, i * spacing, Math.PI / 2, 1.05, makeOldCastleWall);
     addCastleProp(i % 2 ? "castleWallBricks" : "castleWall", wallHalf, i * spacing, -Math.PI / 2, 1.05, makeOldCastleWall);
   }
-  addCastleProp("castleWallEntrance", 0, -wallHalf, 0, 1.08, makeOldCastleGate, southWall);
-  addCastleProp("castleWallEntrance", 0, wallHalf, Math.PI, 1.08, makeOldCastleGate);
+  addCastleProp("castleWallEntrance", 0, -wallHalf, 0, 1.08, makeOldCastleGate);
+  addCastleProp("castleWallEntrance", 0, wallHalf, Math.PI, 1.08, makeOldCastleGate, southWall);
   for (const [x, z, key, rot] of [
     [-towerHalf, -towerHalf, "castlePointyTower", 0],
     [towerHalf, -towerHalf, "castlePointyTower", 0],
