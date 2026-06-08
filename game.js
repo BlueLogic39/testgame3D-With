@@ -637,7 +637,7 @@ function addCastleDecor() {
 
 function addCastleWalls() {
   const wallHalf = WORLD.half + 1.15;
-  const towerHalf = WORLD.half + 2.15;
+  const towerHalf = wallHalf;
   const spacing = 7.25;
   const southWall = { opacity: 0.38 };
   for (let i = -4; i <= 4; i += 1) {
