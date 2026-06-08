@@ -1898,7 +1898,7 @@ function updateEnemies(dt) {
     }
 
     if (distance(enemy, target) < enemy.radius + target.radius && enemy.touchTimer <= 0) {
-      damagePlayer(target, enemy.damage);
+      damagePlayer(target, bossScaledDamage(enemy, enemy.damage));
       enemy.touchTimer = 0.55;
       addRing(target.x, target.z, 1.6, 0xd95f59);
     }
@@ -1924,13 +1924,14 @@ function updateBossEnemy(enemy, target, dt) {
     if (enemy.bossRole === "crystalGolem") {
       enemy.bossPattern = ((enemy.bossPattern || 0) + 1) % 2;
       if (enemy.bossPattern === 0) {
-        spawnCrystalDropsForPlayers({ radius: 3.25, damage: 40 });
+        spawnCrystalDropsForPlayers(enemy, { radius: 3.25, damage: 40 });
       } else {
-        addBossChargeLine(enemy, target);
+        const firstCharge = addBossChargeLine(enemy, target);
+        if (bossRagePhase(enemy) !== "normal") addBossChargeLine(enemy, target, firstCharge.start + 0.18, { x: firstCharge.endX, z: firstCharge.endZ });
       }
       enemy.bossAttackTimer = bossAttackCooldown(enemy, 5.2);
     } else if (enemy.bossRole === "crystalMid") {
-      spawnCrystalDropsForPlayers({ radius: 3.05, damage: 40 });
+      spawnCrystalDropsForPlayers(enemy, { radius: 3.05, damage: 40 });
       enemy.bossAttackTimer = bossAttackCooldown(enemy, 5.4);
     } else if (enemy.bossRole === "forestTree" || enemy.bossRole === "forestTreeMid") {
       addRootZonesForPlayers(enemy);
@@ -1938,20 +1939,20 @@ function updateBossEnemy(enemy, target, dt) {
     } else {
       const radius = enemy.boss ? 4.2 : 3.2;
       const damage = enemy.boss ? 32 : 22;
-      addBossZone(target.x, target.z, radius, damage, enemy.id, enemy.bossRole);
+      addBossZone(target.x, target.z, radius, bossScaledDamage(enemy, damage), enemy.id, enemy.bossRole);
       enemy.bossAttackTimer = bossAttackCooldown(enemy, enemy.boss ? 4.8 : 5.6);
     }
   }
   if (enemy.bossRole === "crystalGolem") {
     enemy.bossShotTimer -= dt;
     if (enemy.bossShotTimer <= 0) {
-      shootBossRadial(enemy, 10);
+      shootBossRadial(enemy, bossProjectileCount(enemy, 10, 15, 20));
       enemy.bossShotTimer = bossAttackCooldown(enemy, 3.8);
     }
   } else if (enemy.bossRole === "forestTree") {
     enemy.bossShotTimer -= dt;
     if (enemy.bossShotTimer <= 0) {
-      shootForestSeeds(enemy, enemy.hp < enemy.maxHp * 0.35 ? 12 : 8);
+      shootForestSeeds(enemy, bossProjectileCount(enemy, 8, 16, 24));
       enemy.bossShotTimer = bossAttackCooldown(enemy, 4.4);
     }
   }
@@ -1962,56 +1963,84 @@ function bossAttackCooldown(enemy, baseSeconds) {
 }
 
 function bossAttackSpeedMultiplier(enemy) {
-  if (!enemy?.maxHp) return 1;
-  const ratio = enemy.hp / enemy.maxHp;
-  if (ratio <= 0.25) return 1.5;
-  if (ratio <= 0.5) return 1.25;
+  const phase = bossRagePhase(enemy);
+  if (phase === "critical") return 1.5;
+  if (phase === "angry") return 1.25;
   return 1;
 }
 
-function spawnCrystalDropsForPlayers(options = {}) {
+function bossProjectileCount(enemy, normal, angry, critical) {
+  const phase = bossRagePhase(enemy);
+  if (phase === "critical") return critical;
+  if (phase === "angry") return angry;
+  return normal;
+}
+
+function bossRagePhase(enemy) {
+  return state.difficultyId === "normal" ? bossAttackPhase(enemy) : "normal";
+}
+
+function bossAttackPhase(enemy) {
+  if (!enemy?.maxHp) return "normal";
+  const ratio = enemy.hp / enemy.maxHp;
+  if (ratio <= 0.25) return "critical";
+  if (ratio <= 0.5) return "angry";
+  return "normal";
+}
+
+function bossScaledDamage(enemy, baseDamage) {
+  return baseDamage * (enemy?.boss || enemy?.midBoss ? bossAttackSpeedMultiplier(enemy) : 1);
+}
+
+function spawnCrystalDropsForPlayers(enemy, options = {}) {
+  const damage = bossScaledDamage(enemy, options.damage || 40);
   for (const player of livingPlayers()) {
-    spawnRockfallAt(player.x, player.z, { radius: options.radius || 3.05, damage: options.damage || 40, enemyDamage: 0, hurtsEnemies: false, crystal: true, life: 2.05, impactAt: 1.05 });
+    spawnRockfallAt(player.x, player.z, { radius: options.radius || 3.05, damage, enemyDamage: 0, hurtsEnemies: false, crystal: true, life: 2.05, impactAt: 1.05 });
   }
 }
 
 function addRootZonesForPlayers(enemy) {
   const radius = enemy.boss ? 4.4 : 3.4;
-  const damage = enemy.boss ? 30 : 22;
+  const damage = bossScaledDamage(enemy, enemy.boss ? 30 : 22);
   for (const player of livingPlayers()) {
     addBossZone(player.x, player.z, radius, damage, enemy.id, enemy.bossRole);
   }
 }
 
-function addBossChargeLine(enemy, target) {
-  const angle = Math.atan2(target.x - enemy.x, target.z - enemy.z);
+function addBossChargeLine(enemy, target, delay = 0, origin = null) {
+  const startX = origin?.x ?? enemy.x;
+  const startZ = origin?.z ?? enemy.z;
+  const angle = Math.atan2(target.x - startX, target.z - startZ);
   const length = 24;
-  const endX = clamp(enemy.x + Math.sin(angle) * length, -WORLD.half + enemy.radius, WORLD.half - enemy.radius);
-  const endZ = clamp(enemy.z + Math.cos(angle) * length, -WORLD.half + enemy.radius, WORLD.half - enemy.radius);
+  const endX = clamp(startX + Math.sin(angle) * length, -WORLD.half + enemy.radius, WORLD.half - enemy.radius);
+  const endZ = clamp(startZ + Math.cos(angle) * length, -WORLD.half + enemy.radius, WORLD.half - enemy.radius);
+  const duration = 2.05;
   const line = {
     id: crypto.randomUUID(),
     kind: "charge",
-    x: enemy.x,
-    z: enemy.z,
+    x: startX,
+    z: startZ,
     endX,
     endZ,
     angle,
     width: 2.6,
-    length: Math.hypot(endX - enemy.x, endZ - enemy.z),
-    damage: 38,
+    length: Math.hypot(endX - startX, endZ - startZ),
+    damage: bossScaledDamage(enemy, 38),
     owner: enemy.id,
     role: enemy.bossRole,
-    life: 2.05,
-    start: 2.05,
+    delay,
+    life: duration + delay,
+    start: duration + delay,
     impactAt: 1.05,
     chargeDuration: 0.92,
-    startX: enemy.x,
-    startZ: enemy.z,
+    startX,
+    startZ,
     impacted: false,
-    mesh: makeBossZoneMesh({ kind: "charge", width: 2.6, length: Math.hypot(endX - enemy.x, endZ - enemy.z), role: enemy.bossRole }),
+    mesh: makeBossZoneMesh({ kind: "charge", width: 2.6, length: Math.hypot(endX - startX, endZ - startZ), role: enemy.bossRole }),
   };
   scene.add(line.mesh);
   state.bossZones.push(line);
+  return line;
 }
 
 function shootBossRadial(enemy, count = 8) {
@@ -2024,7 +2053,7 @@ function shootBossRadial(enemy, count = 8) {
       vx: Math.sin(angle) * 8.5,
       vz: Math.cos(angle) * 8.5,
       radius: 0.42,
-      damage: 14,
+      damage: bossScaledDamage(enemy, 14),
       life: 5.2,
       kind: "crystal",
       colorIndex: i % 2,
@@ -2046,7 +2075,7 @@ function shootForestSeeds(enemy, count = 8) {
       vx: Math.sin(angle) * 7.6,
       vz: Math.cos(angle) * 7.6,
       radius: 0.4,
-      damage: 13,
+      damage: bossScaledDamage(enemy, 13),
       life: 5,
       kind: "seed",
       angle,
@@ -2379,13 +2408,19 @@ function updateBossZones(dt) {
   for (const zone of state.bossZones) {
     zone.life -= dt;
     const elapsed = zone.start - zone.life;
-    updateBossZoneMesh(zone, elapsed);
-    if (zone.kind === "charge" && zone.impacted) updateBossChargeMotion(zone, elapsed);
-    if (zone.impacted || elapsed < zone.impactAt) continue;
+    const zoneElapsed = Math.max(0, elapsed - (zone.delay || 0));
+    if (zone.delay && elapsed < zone.delay) {
+      if (zone.mesh) zone.mesh.visible = false;
+      continue;
+    }
+    if (zone.mesh) zone.mesh.visible = true;
+    updateBossZoneMesh(zone, zoneElapsed);
+    if (zone.kind === "charge" && zone.impacted) updateBossChargeMotion(zone, zoneElapsed);
+    if (zone.impacted || zoneElapsed < zone.impactAt) continue;
     zone.impacted = true;
     if (zone.kind === "charge") {
       resolveBossChargeDamage(zone);
-      updateBossChargeMotion(zone, elapsed);
+      updateBossChargeMotion(zone, zoneElapsed);
       continue;
     }
     addRing(zone.x, zone.z, zone.radius, isForestBossRole(zone.role) ? 0x8bdc65 : zone.role === "crystalGolem" ? 0xa78bfa : 0xff5f5f);
@@ -4012,7 +4047,7 @@ function sendHostSnapshot(force = false) {
     bossZones: state.bossZones.map((z) => ({
       id: z.id, kind: z.kind, x: z.x, z: z.z, endX: z.endX, endZ: z.endZ, angle: z.angle,
       radius: z.radius, width: z.width, length: z.length, life: z.life, start: z.start,
-      impactAt: z.impactAt, impacted: z.impacted, role: z.role, startX: z.startX, startZ: z.startZ, chargeDuration: z.chargeDuration,
+      impactAt: z.impactAt, impacted: z.impacted, role: z.role, delay: z.delay, startX: z.startX, startZ: z.startZ, chargeDuration: z.chargeDuration,
     })),
     effects: state.effects.map((fx) => ({ id: fx.id, kind: fx.kind, owner: fx.owner, skill: fx.skill, x: fx.x, z: fx.z, radius: fx.radius, arc: fx.arc, angle: fx.angle, color: fx.color, life: fx.life, start: fx.start })),
   });
@@ -4115,7 +4150,13 @@ function syncBossZones(zones) {
       cache.set(item.id, mesh);
     }
     const zone = { ...item, mesh };
-    updateBossZoneMesh(zone, zone.start - zone.life);
+    const elapsed = zone.start - zone.life;
+    if (zone.delay && elapsed < zone.delay) {
+      mesh.visible = false;
+    } else {
+      mesh.visible = true;
+      updateBossZoneMesh(zone, Math.max(0, elapsed - (zone.delay || 0)));
+    }
     return zone;
   });
 }
