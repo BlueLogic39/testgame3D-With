@@ -649,10 +649,10 @@ function addCastleWalls() {
   addCastleProp("castleWallEntrance", 0, half, Math.PI, 1.08, makeOldCastleGate);
   for (const [x, z, key, rot] of [
     [-half, -half, "castlePointyTower", 0],
-    [half, -half, "castleTower", 0],
-    [-half, half, "castleWatchtower", 0],
+    [half, -half, "castlePointyTower", 0],
+    [-half, half, "castlePointyTower", 0],
     [half, half, "castlePointyTower", 0],
-  ]) addCastleProp(key, x, z, rot, 1.05, makeOldCastleTower);
+  ]) addCastleProp(key, x, z, rot, 1.18, makeOldCastleTower);
 }
 
 function addCastleFloorDetail() {
@@ -1137,7 +1137,17 @@ function cloneFbxModel(model, key) {
   clone.position.set(...(asset.position || [0, 0, 0]));
   clone.rotation.set(...(asset.rotation || [0, 0, 0]));
   clone.scale.multiply(new THREE.Vector3(...(asset.scale || [1, 1, 1])));
+  if (key.startsWith("castle")) {
+    snapModelBottomToGround(clone, asset.groundOffset || 0);
+    addCastleModelAccent(clone, key);
+  }
   return clone;
+}
+
+function snapModelBottomToGround(model, groundOffset = 0) {
+  const box = new THREE.Box3().setFromObject(model);
+  if (!Number.isFinite(box.min.y)) return;
+  model.position.y += groundOffset - box.min.y;
 }
 
 function styleCastleFbxModel(model, key) {
@@ -1155,25 +1165,25 @@ function styleCastleFbxModel(model, key) {
     for (const material of mats) {
       if (!material.color) continue;
       const name = `${child.name || ""} ${material.name || ""}`.toLowerCase();
-      let color = 0xdad5cb;
-      let roughness = 0.82;
+      let color = 0xe8e3d8;
+      let roughness = 0.8;
       let metalness = 0.04;
       if (lowerKey.includes("bridge") || name.includes("wood") || name.includes("door")) {
-        color = 0x8b5734;
+        color = 0xa66a3f;
         roughness = 0.78;
       } else if (lowerKey.includes("banner")) {
-        color = name.includes("pole") || name.includes("stick") ? 0x8b5734 : 0xd9485b;
+        color = name.includes("pole") || name.includes("stick") ? 0xa66a3f : 0xdb4658;
         roughness = 0.74;
       } else if (lowerKey.includes("target")) {
-        color = name.includes("arrow") ? 0x6b3f24 : 0xf3f0e8;
+        color = name.includes("arrow") ? 0x6b3f24 : 0xf6f1e7;
         roughness = 0.76;
       } else if ((lowerKey.includes("pointy") || lowerKey.includes("roof")) && childCenter.y >= topY) {
-        color = 0xd9485b;
+        color = 0xdb4658;
         roughness = 0.7;
       } else if (lowerKey.includes("bricks") || name.includes("brick")) {
-        color = 0xc9c6bd;
+        color = 0xd5d1c7;
       } else if (lowerKey.includes("well")) {
-        color = childCenter.y > fullBox.min.y + fullSize.y * 0.62 ? 0xd9485b : 0xcfcac0;
+        color = childCenter.y > fullBox.min.y + fullSize.y * 0.62 ? 0xdb4658 : 0xd9d3c8;
       }
       material.color.set(color);
       if ("roughness" in material) material.roughness = roughness;
@@ -1181,6 +1191,24 @@ function styleCastleFbxModel(model, key) {
       material.needsUpdate = true;
     }
   });
+}
+
+function addCastleModelAccent(model, key) {
+  const lowerKey = key.toLowerCase();
+  if (!lowerKey.includes("pointytower")) return;
+  const box = new THREE.Box3().setFromObject(model);
+  const size = new THREE.Vector3();
+  box.getSize(size);
+  const radius = Math.max(size.x, size.z) * 0.43;
+  const height = Math.max(1.4, size.y * 0.2);
+  const roof = new THREE.Mesh(
+    new THREE.ConeGeometry(radius, height, 8),
+    new THREE.MeshStandardMaterial({ color: 0xdb4658, roughness: 0.68, metalness: 0.02 })
+  );
+  roof.position.set(0, box.max.y - model.position.y - height * 0.34, 0);
+  roof.castShadow = true;
+  roof.receiveShadow = true;
+  model.add(roof);
 }
 
 function loadCharacterGltf(path) {
