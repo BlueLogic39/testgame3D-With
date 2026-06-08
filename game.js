@@ -262,7 +262,7 @@ const materials = {
   saberBlade: new THREE.MeshStandardMaterial({ color: 0xdfe8f3, roughness: 0.24, metalness: 0.55 }),
   enemy: new THREE.MeshStandardMaterial({ color: 0xd95f59, roughness: 0.7 }),
   shooter: new THREE.MeshStandardMaterial({ color: 0x3fb7d6, roughness: 0.6, emissive: 0x06232d }),
-  bomber: new THREE.MeshStandardMaterial({ color: 0xe85d9e, roughness: 0.55, emissive: 0x3d071f }),
+  bomber: new THREE.MeshStandardMaterial({ color: 0xffd84a, roughness: 0.58, emissive: 0x4f3900 }),
   midBoss: new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.62, emissive: 0x451a03 }),
   boss: new THREE.MeshStandardMaterial({ color: 0x8b5cf6, roughness: 0.6, emissive: 0x1b0f38 }),
   arrow: new THREE.MeshStandardMaterial({ color: 0xf2c14e, roughness: 0.28, metalness: 0.15 }),
@@ -1440,6 +1440,7 @@ function makeNameLabel(name) {
 function startGame(mode = "solo") {
   cancelAnimationFrame(animationId);
   stopEndSounds();
+  setMenuBackdrop(false);
   if (state) resetSceneEntities();
   net.mode = mode;
   net.phase = "playing";
@@ -2157,7 +2158,7 @@ function updateEnemies(dt) {
       owner.hp = Math.min(owner.maxHp, owner.hp + owner.lifeSteal);
     }
     if (enemy.midBoss) spawnHeartAt(enemy.x, enemy.z);
-    addRing(enemy.x, enemy.z, enemy.boss ? 3.2 : enemy.bomber ? 2.2 : 1.4, enemy.bomber ? 0xe85d9e : enemy.shooter ? 0x3fb7d6 : enemy.boss ? 0x57c4a7 : 0xf2c14e);
+    addRing(enemy.x, enemy.z, enemy.boss ? 3.2 : enemy.bomber ? 2.2 : 1.4, enemy.bomber ? 0xffd84a : enemy.shooter ? 0x3fb7d6 : enemy.boss ? 0x57c4a7 : 0xf2c14e);
   }
   removeDead(state.enemies, (enemy) => enemy.hp <= 0);
 }
@@ -2356,7 +2357,7 @@ function explodeBomber(enemy) {
   enemy.hp = 0;
   sfx("bomber", { broadcast: net.mode === "host" });
   const radius = 3.1;
-  addRing(enemy.x, enemy.z, radius, 0xe85d9e);
+  addRing(enemy.x, enemy.z, radius, 0xffd84a);
   addRing(enemy.x, enemy.z, radius * 0.55, 0xffd166);
   for (const player of state.players) {
     if (player.dead || player.hp <= 0) continue;
@@ -3138,11 +3139,23 @@ function makeEnemyMesh(enemy) {
   if (enemy.midBoss) return makeMidBossMesh(enemy);
   if (enemy.bomber) {
     const group = new THREE.Group();
-    const body = new THREE.Mesh(new THREE.IcosahedronGeometry(enemy.radius, 1), materials.bomber);
+    const body = new THREE.Mesh(new THREE.IcosahedronGeometry(enemy.radius, 1), materials.bomber.clone());
     body.castShadow = true;
-    const core = new THREE.Mesh(new THREE.SphereGeometry(enemy.radius * 0.42, 12, 8), new THREE.MeshBasicMaterial({ color: 0xffb3d1, transparent: true, opacity: 0.8 }));
-    core.position.y = enemy.radius * 0.18;
-    group.add(body, core);
+    const belly = new THREE.Mesh(new THREE.SphereGeometry(enemy.radius * 0.36, 12, 8), new THREE.MeshBasicMaterial({ color: 0xfff2a8, transparent: true, opacity: 0.78 }));
+    belly.position.y = enemy.radius * 0.12;
+    const bomb = new THREE.Mesh(new THREE.SphereGeometry(enemy.radius * 0.34, 14, 10), new THREE.MeshStandardMaterial({ color: 0x111318, roughness: 0.62, metalness: 0.08 }));
+    bomb.position.set(0, enemy.radius * 0.92, 0);
+    bomb.castShadow = true;
+    const cap = new THREE.Mesh(new THREE.CylinderGeometry(enemy.radius * 0.08, enemy.radius * 0.11, enemy.radius * 0.18, 8), new THREE.MeshStandardMaterial({ color: 0x5b3a25, roughness: 0.8 }));
+    cap.position.set(0, enemy.radius * 1.25, 0);
+    cap.castShadow = true;
+    const fuse = new THREE.Mesh(new THREE.CylinderGeometry(enemy.radius * 0.025, enemy.radius * 0.025, enemy.radius * 0.5, 6), new THREE.MeshStandardMaterial({ color: 0x3a2a1d, roughness: 0.88 }));
+    fuse.position.set(enemy.radius * 0.12, enemy.radius * 1.48, 0);
+    fuse.rotation.z = -0.55;
+    fuse.castShadow = true;
+    const spark = new THREE.Mesh(new THREE.SphereGeometry(enemy.radius * 0.09, 8, 6), new THREE.MeshBasicMaterial({ color: 0xff6b2c }));
+    spark.position.set(enemy.radius * 0.28, enemy.radius * 1.7, 0);
+    group.add(body, belly, bomb, cap, fuse, spark);
     group.position.set(enemy.x, enemy.radius, enemy.z);
     return group;
   }
@@ -4145,6 +4158,7 @@ function oldJoinRoom() {
 
 function showLobby(message) {
   cancelAnimationFrame(animationId);
+  setMenuBackdrop(true);
   if (state) state.running = false;
   stopBgm();
   ui.skillText.closest(".skill-hud")?.classList.add("hidden");
@@ -4243,6 +4257,7 @@ function handleHostData(data) {
   }
   if (data.type === "start") {
     net.phase = "playing";
+    setMenuBackdrop(false);
     net.stageId = data.stageId || net.stageId || "stage1";
     net.difficultyId = data.difficultyId || net.difficultyId || "normal";
     net.restartVotes = new Set();
@@ -5142,6 +5157,7 @@ function removeRememberedRoom(code) {
 function showTitle() {
   stopEndSounds();
   stopBgm();
+  setMenuBackdrop(true);
   ui.skillText.closest(".skill-hud")?.classList.add("hidden");
   ui.start.classList.remove("hidden");
   ui.stageSelectPanel.classList.add("hidden");
@@ -5152,6 +5168,10 @@ function showTitle() {
   updateOnlineBadge();
   heartbeatPresence().catch((error) => console.warn("Failed to heartbeat presence", error));
   refreshOnlinePresenceCount();
+}
+
+function setMenuBackdrop(enabled) {
+  document.body.classList.toggle("menu-mode", enabled);
 }
 
 function restartMatch() {

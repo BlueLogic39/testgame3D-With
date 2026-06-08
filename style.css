@@ -141,6 +141,7 @@ input {
 
 .game-wrap {
   position: relative;
+  isolation: isolate;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.13);
   border-radius: 8px;
@@ -156,6 +157,21 @@ canvas {
   image-rendering: auto;
 }
 
+.menu-mode canvas {
+  opacity: 0;
+}
+
+.menu-mode .game-wrap::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    linear-gradient(135deg, rgba(20, 25, 29, 0.96), rgba(9, 11, 14, 0.98)),
+    radial-gradient(circle at 18% 22%, rgba(87, 196, 167, 0.2), transparent 34%),
+    radial-gradient(circle at 82% 76%, rgba(242, 193, 78, 0.16), transparent 34%);
+}
+
 .overlay {
   position: absolute;
   inset: 0;
@@ -167,6 +183,22 @@ canvas {
   padding: 18px 24px;
   text-align: center;
   background: rgba(11, 13, 16, 0.78);
+  z-index: 10;
+}
+
+.toast,
+.skill-banner,
+.skill-hud,
+.update-corner,
+.settings-corner,
+.settings-panel,
+.codex-corner,
+.online-badge,
+.radial,
+.status-overlay,
+.level-up,
+.game-over {
+  z-index: 20;
 }
 
 #updateInfo {
