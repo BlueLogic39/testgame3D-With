@@ -215,8 +215,8 @@ const FBX_ASSETS = {
   staff: { path: "./model_FBX/WoodenStaff.fbx", size: 1.62, position: [0.58, 0.9, 0.08], rotation: [0, 0, -0.24], scale: [1, 1, 1] },
   sword: { path: "./model_FBX/Sword.fbx", size: 1.45, position: [0.56, 0.76, 0.02], rotation: [0, 0, -0.62], scale: [1, 1, 1] },
   heart: { path: "./model_FBX/Heart.fbx", size: 0.92, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
-  castleWall: { path: "./model_FBX/Castle/TallWall.fbx", size: 8.2, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1.36, 1.06, 1], groundOffset: -0.42 },
-  castleWallBricks: { path: "./model_FBX/Castle/TallWallBricks.fbx", size: 8.2, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1.36, 1.06, 1], groundOffset: -0.42 },
+  castleWall: { path: "./model_FBX/Castle/TallWall.fbx", size: 8.2, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1.55, 1.06, 1], groundOffset: -0.42 },
+  castleWallBricks: { path: "./model_FBX/Castle/TallWallBricks.fbx", size: 8.2, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1.55, 1.06, 1], groundOffset: -0.42 },
   castleWallEntrance: { path: "./model_FBX/Castle/TallWallEntrance.fbx", size: 8.8, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1.18, 1.04, 1], groundOffset: -0.42 },
   castleTower: { path: "./model_FBX/Castle/Tower.fbx", size: 8.5, position: [0, 4.25, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
   castlePointyTower: { path: "./model_FBX/Castle/PointyTower.fbx", size: 9.4, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], groundOffset: -0.12 },
@@ -638,23 +638,24 @@ function addCastleDecor() {
 function addCastleWalls() {
   const wallHalf = WORLD.half + 1.15;
   const towerHalf = WORLD.half + 2.15;
-  const spacing = 8.2;
+  const spacing = 6.9;
+  const southWall = { opacity: 0.38 };
   for (let i = -4; i <= 4; i += 1) {
     if (i !== 0) {
-      addCastleProp(i % 2 ? "castleWall" : "castleWallBricks", i * spacing, -wallHalf, 0, 1.05, makeOldCastleWall);
+      addCastleProp(i % 2 ? "castleWall" : "castleWallBricks", i * spacing, -wallHalf, 0, 1.05, makeOldCastleWall, southWall);
       addCastleProp(i % 2 ? "castleWallBricks" : "castleWall", i * spacing, wallHalf, Math.PI, 1.05, makeOldCastleWall);
     }
     addCastleProp(i % 2 ? "castleWall" : "castleWallBricks", -wallHalf, i * spacing, Math.PI / 2, 1.05, makeOldCastleWall);
     addCastleProp(i % 2 ? "castleWallBricks" : "castleWall", wallHalf, i * spacing, -Math.PI / 2, 1.05, makeOldCastleWall);
   }
-  addCastleProp("castleWallEntrance", 0, -wallHalf, 0, 1.08, makeOldCastleGate);
+  addCastleProp("castleWallEntrance", 0, -wallHalf, 0, 1.08, makeOldCastleGate, southWall);
   addCastleProp("castleWallEntrance", 0, wallHalf, Math.PI, 1.08, makeOldCastleGate);
   for (const [x, z, key, rot] of [
     [-towerHalf, -towerHalf, "castlePointyTower", 0],
     [towerHalf, -towerHalf, "castlePointyTower", 0],
     [-towerHalf, towerHalf, "castlePointyTower", 0],
     [towerHalf, towerHalf, "castlePointyTower", 0],
-  ]) addCastleProp(key, x, z, rot, 3.0, makeOldCastleTower);
+  ]) addCastleProp(key, x, z, rot, 2.0, makeOldCastleTower);
 }
 
 function addCastleFloorDetail() {
@@ -676,8 +677,8 @@ function addCastleFloorDetail() {
   }
 }
 
-function addCastleProp(key, x, z, rotation = 0, scale = 1, fallbackFactory = null) {
-  const prop = makeFbxMesh(key, fallbackFactory || (() => new THREE.Group()));
+function addCastleProp(key, x, z, rotation = 0, scale = 1, fallbackFactory = null, options = {}) {
+  const prop = makeFbxMesh(key, fallbackFactory || (() => new THREE.Group()), options);
   prop.position.set(x, 0, z);
   prop.rotation.y = rotation;
   prop.scale.setScalar(scale);
@@ -1073,20 +1074,39 @@ function preloadFbxAssets() {
   for (const key of Object.keys(FBX_ASSETS)) loadFbxAsset(key).catch(() => {});
 }
 
-function makeFbxMesh(key, fallbackFactory) {
+function makeFbxMesh(key, fallbackFactory, options = {}) {
   const wrapper = new THREE.Group();
   const fallback = fallbackFactory ? fallbackFactory() : new THREE.Group();
+  applyObjectOpacity(fallback, options.opacity);
   const cached = fbxModelCache.get(key);
   if (cached?.model) {
-    wrapper.add(cloneFbxModel(cached.model, key));
+    const clone = cloneFbxModel(cached.model, key);
+    applyObjectOpacity(clone, options.opacity);
+    wrapper.add(clone);
     return wrapper;
   }
   wrapper.add(fallback);
   loadFbxAsset(key).then((model) => {
+    const clone = cloneFbxModel(model, key);
+    applyObjectOpacity(clone, options.opacity);
     wrapper.clear();
-    wrapper.add(cloneFbxModel(model, key));
+    wrapper.add(clone);
   }).catch((error) => console.warn(`Failed to load FBX asset: ${key}`, error));
   return wrapper;
+}
+
+function applyObjectOpacity(object, opacity) {
+  if (opacity === undefined || opacity === null || opacity >= 1) return;
+  object.traverse((child) => {
+    if (!child.isMesh || !child.material) return;
+    const mats = Array.isArray(child.material) ? child.material : [child.material];
+    for (const material of mats) {
+      material.transparent = true;
+      material.opacity = opacity;
+      material.depthWrite = false;
+      material.needsUpdate = true;
+    }
+  });
 }
 
 function loadFbxAsset(key) {
@@ -1201,8 +1221,8 @@ function addCastleModelAccent(model, key) {
   const box = new THREE.Box3().setFromObject(model);
   const size = new THREE.Vector3();
   box.getSize(size);
-  const radius = Math.max(size.x, size.z) * 0.43;
-  const height = Math.max(1.4, size.y * 0.2);
+  const radius = Math.max(size.x, size.z) * 0.5;
+  const height = Math.max(1.55, size.y * 0.22);
   const roof = new THREE.Mesh(
     new THREE.ConeGeometry(radius, height, 8),
     new THREE.MeshStandardMaterial({ color: 0xdb4658, roughness: 0.68, metalness: 0.02 })
