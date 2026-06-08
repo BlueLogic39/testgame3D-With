@@ -215,16 +215,16 @@ const FBX_ASSETS = {
   staff: { path: "./model_FBX/WoodenStaff.fbx", size: 1.62, position: [0.58, 0.9, 0.08], rotation: [0, 0, -0.24], scale: [1, 1, 1] },
   sword: { path: "./model_FBX/Sword.fbx", size: 1.45, position: [0.56, 0.76, 0.02], rotation: [0, 0, -0.62], scale: [1, 1, 1] },
   heart: { path: "./model_FBX/Heart.fbx", size: 0.92, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
-  castleWall: { path: "./model_FBX/Castle/Wall.fbx", size: 3.4, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
-  castleWallBricks: { path: "./model_FBX/Castle/WallBricks.fbx", size: 3.4, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
-  castleWallEntrance: { path: "./model_FBX/Castle/WallEntrance.fbx", size: 4.2, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
-  castleTower: { path: "./model_FBX/Castle/Tower.fbx", size: 4.4, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
-  castlePointyTower: { path: "./model_FBX/Castle/PointyTower.fbx", size: 5.2, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
-  castleWatchtower: { path: "./model_FBX/Castle/WatchTowerWRoof.fbx", size: 4.0, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
-  castleBridge: { path: "./model_FBX/Castle/Bridge.fbx", size: 3.6, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
-  castleBanner: { path: "./model_FBX/Castle/Banner.fbx", size: 1.8, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
-  castleWell: { path: "./model_FBX/Castle/Well.fbx", size: 2.4, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
-  castleTarget: { path: "./model_FBX/Castle/TargetWithArrows.fbx", size: 1.8, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+  castleWall: { path: "./model_FBX/Castle/TallWall.fbx", size: 8.2, position: [0, 3.95, 0], rotation: [0, 0, 0], scale: [1.36, 1.06, 1] },
+  castleWallBricks: { path: "./model_FBX/Castle/TallWallBricks.fbx", size: 8.2, position: [0, 3.95, 0], rotation: [0, 0, 0], scale: [1.36, 1.06, 1] },
+  castleWallEntrance: { path: "./model_FBX/Castle/TallWallEntrance.fbx", size: 8.8, position: [0, 4.22, 0], rotation: [0, 0, 0], scale: [1.18, 1.04, 1] },
+  castleTower: { path: "./model_FBX/Castle/Tower.fbx", size: 8.5, position: [0, 4.25, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+  castlePointyTower: { path: "./model_FBX/Castle/PointyTower.fbx", size: 9.4, position: [0, 4.7, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+  castleWatchtower: { path: "./model_FBX/Castle/WatchTowerWRoof.fbx", size: 8.2, position: [0, 4.1, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+  castleBridge: { path: "./model_FBX/Castle/Bridge.fbx", size: 5.1, position: [0, 0.34, 0], rotation: [0, 0, 0], scale: [1.15, 1, 1] },
+  castleBanner: { path: "./model_FBX/Castle/Banner.fbx", size: 2.7, position: [0, 1.35, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+  castleWell: { path: "./model_FBX/Castle/Well.fbx", size: 3.4, position: [0, 1.7, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+  castleTarget: { path: "./model_FBX/Castle/TargetWithArrows.fbx", size: 2.4, position: [0, 1.2, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
 };
 
 const CHARACTER_CODEX = [
@@ -382,12 +382,12 @@ function applyStageTheme(stageId) {
   const forest = stageId === "stage1";
   scene.background = new THREE.Color(mine ? 0x0b1016 : castle ? 0x171a21 : forest ? 0x102017 : 0x101419);
   scene.fog = new THREE.Fog(mine ? 0x0b1016 : castle ? 0x171a21 : forest ? 0x102017 : 0x101419, mine ? 30 : castle ? 38 : forest ? 34 : 42, mine ? 70 : castle ? 86 : forest ? 76 : 86);
-  if (arenaFloor) arenaFloor.material.color.set(mine ? 0x171b20 : castle ? 0x30343a : forest ? 0x24472b : 0x20262b);
+  if (arenaFloor) arenaFloor.material.color.set(mine ? 0x171b20 : castle ? 0x3b4047 : forest ? 0x24472b : 0x20262b);
   if (arenaGrid) {
     const mats = Array.isArray(arenaGrid.material) ? arenaGrid.material : [arenaGrid.material];
-    for (const mat of mats) mat.color?.set(mine ? 0x334155 : castle ? 0x525b66 : forest ? 0x3f6f44 : 0x48606a);
+    for (const mat of mats) mat.color?.set(mine ? 0x334155 : castle ? 0x2d333a : forest ? 0x3f6f44 : 0x48606a);
   }
-  for (const wall of arenaWalls) wall.material.color.set(mine ? 0x2f343b : castle ? 0x575d66 : forest ? 0x2b4a2f : 0x384049);
+  for (const wall of arenaWalls) wall.material.color.set(mine ? 0x2f343b : castle ? 0x4f5661 : forest ? 0x2b4a2f : 0x384049);
   if (!stageDecor) return;
   while (stageDecor.children.length) stageDecor.remove(stageDecor.children[0]);
   if (mine) addMineDecor();
@@ -656,10 +656,10 @@ function addCastleWalls() {
 }
 
 function addCastleFloorDetail() {
-  const stoneMat = new THREE.MeshStandardMaterial({ color: 0x4a4f57, roughness: 0.9 });
-  const pathMat = new THREE.MeshStandardMaterial({ color: 0x69707a, roughness: 0.88 });
-  const roadA = new THREE.Mesh(new THREE.BoxGeometry(6.2, 0.025, WORLD.half * 1.62), pathMat);
-  const roadB = new THREE.Mesh(new THREE.BoxGeometry(WORLD.half * 1.62, 0.025, 5.4), pathMat.clone());
+  const stoneMat = new THREE.MeshStandardMaterial({ color: 0x565b63, roughness: 0.9 });
+  const pathMat = new THREE.MeshStandardMaterial({ color: 0x7a8088, roughness: 0.88 });
+  const roadA = new THREE.Mesh(new THREE.BoxGeometry(7.2, 0.025, WORLD.half * 1.68), pathMat);
+  const roadB = new THREE.Mesh(new THREE.BoxGeometry(WORLD.half * 1.68, 0.025, 6.2), pathMat.clone());
   roadA.position.y = 0.035;
   roadB.position.y = 0.036;
   roadA.receiveShadow = true;
@@ -1133,10 +1133,54 @@ function cloneFbxModel(model, key) {
     if (!child.isMesh || !child.material) return;
     child.material = Array.isArray(child.material) ? child.material.map((mat) => mat.clone()) : child.material.clone();
   });
+  if (key.startsWith("castle")) styleCastleFbxModel(clone, key);
   clone.position.set(...(asset.position || [0, 0, 0]));
   clone.rotation.set(...(asset.rotation || [0, 0, 0]));
   clone.scale.multiply(new THREE.Vector3(...(asset.scale || [1, 1, 1])));
   return clone;
+}
+
+function styleCastleFbxModel(model, key) {
+  const lowerKey = key.toLowerCase();
+  const fullBox = new THREE.Box3().setFromObject(model);
+  const fullSize = new THREE.Vector3();
+  fullBox.getSize(fullSize);
+  const topY = fullBox.max.y - fullSize.y * 0.28;
+  model.traverse((child) => {
+    if (!child.isMesh || !child.material) return;
+    const childBox = new THREE.Box3().setFromObject(child);
+    const childCenter = new THREE.Vector3();
+    childBox.getCenter(childCenter);
+    const mats = Array.isArray(child.material) ? child.material : [child.material];
+    for (const material of mats) {
+      if (!material.color) continue;
+      const name = `${child.name || ""} ${material.name || ""}`.toLowerCase();
+      let color = 0xdad5cb;
+      let roughness = 0.82;
+      let metalness = 0.04;
+      if (lowerKey.includes("bridge") || name.includes("wood") || name.includes("door")) {
+        color = 0x8b5734;
+        roughness = 0.78;
+      } else if (lowerKey.includes("banner")) {
+        color = name.includes("pole") || name.includes("stick") ? 0x8b5734 : 0xd9485b;
+        roughness = 0.74;
+      } else if (lowerKey.includes("target")) {
+        color = name.includes("arrow") ? 0x6b3f24 : 0xf3f0e8;
+        roughness = 0.76;
+      } else if ((lowerKey.includes("pointy") || lowerKey.includes("roof")) && childCenter.y >= topY) {
+        color = 0xd9485b;
+        roughness = 0.7;
+      } else if (lowerKey.includes("bricks") || name.includes("brick")) {
+        color = 0xc9c6bd;
+      } else if (lowerKey.includes("well")) {
+        color = childCenter.y > fullBox.min.y + fullSize.y * 0.62 ? 0xd9485b : 0xcfcac0;
+      }
+      material.color.set(color);
+      if ("roughness" in material) material.roughness = roughness;
+      if ("metalness" in material) material.metalness = metalness;
+      material.needsUpdate = true;
+    }
+  });
 }
 
 function loadCharacterGltf(path) {
