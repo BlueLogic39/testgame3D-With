@@ -157,7 +157,7 @@ canvas {
   image-rendering: auto;
 }
 
-.menu-mode canvas {
+.menu-mode #game {
   opacity: 0;
 }
 
