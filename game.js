@@ -2810,7 +2810,7 @@ function makeEnemyMesh(enemy) {
 
 function updateBossHealthVisual(enemy) {
   if (!enemy?.mesh || (!enemy.boss && !enemy.midBoss) || !enemy.maxHp) return;
-  applyHealthPhaseToMesh(enemy.mesh, healthPhase(enemy.hp, enemy.maxHp));
+  applyHealthAura(enemy.mesh, healthPhase(enemy.hp, enemy.maxHp), enemy.radius || 1.5);
 }
 
 function healthPhase(hp, maxHp) {
@@ -2821,32 +2821,39 @@ function healthPhase(hp, maxHp) {
   return "";
 }
 
-function applyHealthPhaseToMesh(mesh, phase = "") {
-  const tint = phase === "red" ? 0xff2b2b : phase === "orange" ? 0xff8a22 : 0x000000;
-  const mix = phase === "red" ? 0.42 : phase === "orange" ? 0.28 : 0;
-  mesh.traverse((child) => {
-    if (!child.material) return;
-    const materialsToEdit = Array.isArray(child.material) ? child.material : [child.material];
-    const cloned = materialsToEdit.map((material) => {
-      if (!material.userData.healthVisualClone) {
-        const clone = material.clone();
-        clone.userData.healthVisualClone = true;
-        clone.userData.baseColor = material.color?.clone?.() || null;
-        clone.userData.baseEmissive = material.emissive?.clone?.() || null;
-        return clone;
-      }
-      return material;
-    });
-    if (!Array.isArray(child.material) && cloned[0] !== child.material) child.material = cloned[0];
-    else if (Array.isArray(child.material) && cloned.some((mat, index) => mat !== child.material[index])) child.material = cloned;
-    for (const material of Array.isArray(child.material) ? child.material : [child.material]) {
-      if (material.emissive) material.emissive.setHex(tint || material.userData.baseEmissive?.getHex?.() || 0x000000);
-      if (material.color && material.userData.baseColor) {
-        material.color.copy(material.userData.baseColor);
-        if (phase) material.color.lerp(new THREE.Color(tint), mix);
-      }
-    }
-  });
+function applyHealthAura(mesh, phase = "", radius = 1.5) {
+  if (!mesh.userData.healthAura) {
+    const aura = new THREE.Group();
+    const ringA = makeAuraRing(1, 0.75);
+    const ringB = makeAuraRing(0.78, 0.38);
+    ringB.rotation.z = Math.PI / 7;
+    aura.add(ringA, ringB);
+    aura.userData.ringA = ringA;
+    aura.userData.ringB = ringB;
+    aura.position.y = 0.08;
+    mesh.add(aura);
+    mesh.userData.healthAura = aura;
+  }
+  const aura = mesh.userData.healthAura;
+  aura.visible = Boolean(phase);
+  if (!phase) return;
+  const color = phase === "red" ? 0xff2b2b : 0xff8a22;
+  const pulse = 1 + Math.sin(state.elapsed * (phase === "red" ? 9 : 6)) * 0.06;
+  aura.scale.setScalar(radius * (phase === "red" ? 1.55 : 1.42) * pulse);
+  aura.rotation.y += phase === "red" ? 0.055 : 0.035;
+  for (const ring of [aura.userData.ringA, aura.userData.ringB]) {
+    ring.material.color.setHex(color);
+    ring.material.opacity = phase === "red" ? 0.62 : 0.5;
+  }
+}
+
+function makeAuraRing(scale = 1, opacity = 0.6) {
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(scale, 0.035, 8, 72),
+    new THREE.MeshBasicMaterial({ color: 0xff8a22, transparent: true, opacity, depthWrite: false, blending: THREE.AdditiveBlending })
+  );
+  ring.rotation.x = Math.PI / 2;
+  return ring;
 }
 
 function makeMidBossMesh(enemy) {
@@ -4051,7 +4058,7 @@ function syncSimpleMeshes(cache, items, factory, y) {
     mesh.position.set(item.x, y || item.radius || 0.6, item.z);
     if (typeof item.angle === "number") mesh.rotation.y = item.angle;
     if (item.kind === "magic") mesh.scale.setScalar((item.radius || 0.34) / 0.34);
-    if (item.boss || item.midBoss) applyHealthPhaseToMesh(mesh, healthPhase(item.hp, item.maxHp));
+    if (item.boss || item.midBoss) applyHealthAura(mesh, healthPhase(item.hp, item.maxHp), item.radius || 1.5);
   }
 }
 
