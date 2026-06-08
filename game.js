@@ -1927,7 +1927,7 @@ function updateBossEnemy(enemy, target, dt) {
         spawnCrystalDropsForPlayers(enemy, { radius: 3.25, damage: 40 });
       } else {
         const firstCharge = addBossChargeLine(enemy, target);
-        if (bossRagePhase(enemy) !== "normal") addBossChargeLine(enemy, target, firstCharge.start + 0.18, { x: firstCharge.endX, z: firstCharge.endZ });
+        if (bossRagePhase(enemy) !== "normal") addBossChargeLine(enemy, target, firstCharge.start + 0.18, { x: firstCharge.endX, z: firstCharge.endZ }, { retargetOnStart: true });
       }
       enemy.bossAttackTimer = bossAttackCooldown(enemy, 5.2);
     } else if (enemy.bossRole === "crystalMid") {
@@ -2007,7 +2007,7 @@ function addRootZonesForPlayers(enemy) {
   }
 }
 
-function addBossChargeLine(enemy, target, delay = 0, origin = null) {
+function addBossChargeLine(enemy, target, delay = 0, origin = null, options = {}) {
   const startX = origin?.x ?? enemy.x;
   const startZ = origin?.z ?? enemy.z;
   const angle = Math.atan2(target.x - startX, target.z - startZ);
@@ -2035,6 +2035,8 @@ function addBossChargeLine(enemy, target, delay = 0, origin = null) {
     chargeDuration: 0.92,
     startX,
     startZ,
+    retargetOnStart: Boolean(options.retargetOnStart),
+    retargeted: false,
     impacted: false,
     mesh: makeBossZoneMesh({ kind: "charge", width: 2.6, length: Math.hypot(endX - startX, endZ - startZ), role: enemy.bossRole }),
   };
@@ -2414,6 +2416,7 @@ function updateBossZones(dt) {
       continue;
     }
     if (zone.mesh) zone.mesh.visible = true;
+    if (zone.kind === "charge" && zone.retargetOnStart && !zone.retargeted) retargetBossCharge(zone);
     updateBossZoneMesh(zone, zoneElapsed);
     if (zone.kind === "charge" && zone.impacted) updateBossChargeMotion(zone, zoneElapsed);
     if (zone.impacted || zoneElapsed < zone.impactAt) continue;
@@ -2430,6 +2433,35 @@ function updateBossZones(dt) {
     }
   }
   removeDead(state.bossZones, (zone) => zone.life <= 0);
+}
+
+function retargetBossCharge(zone) {
+  const boss = state.enemies.find((enemy) => enemy.id === zone.owner);
+  const target = boss ? nearestLivingPlayer(boss) : null;
+  if (!boss || !target) {
+    zone.retargeted = true;
+    return;
+  }
+  const startX = boss.x;
+  const startZ = boss.z;
+  const angle = Math.atan2(target.x - startX, target.z - startZ);
+  const length = 24;
+  const endX = clamp(startX + Math.sin(angle) * length, -WORLD.half + boss.radius, WORLD.half - boss.radius);
+  const endZ = clamp(startZ + Math.cos(angle) * length, -WORLD.half + boss.radius, WORLD.half - boss.radius);
+  zone.x = startX;
+  zone.z = startZ;
+  zone.startX = startX;
+  zone.startZ = startZ;
+  zone.endX = endX;
+  zone.endZ = endZ;
+  zone.angle = angle;
+  zone.length = Math.hypot(endX - startX, endZ - startZ);
+  zone.retargeted = true;
+  if (zone.mesh) {
+    scene.remove(zone.mesh);
+    zone.mesh = makeBossZoneMesh({ kind: "charge", width: zone.width, length: zone.length, role: zone.role });
+    scene.add(zone.mesh);
+  }
 }
 
 function resolveBossChargeDamage(zone) {
@@ -2539,6 +2571,8 @@ function makeBossChargeMesh(zone = {}) {
   group.add(warning, center);
   group.userData.warning = warning;
   group.userData.center = center;
+  group.userData.syncLength = length;
+  group.userData.syncWidth = width;
   return group;
 }
 
@@ -4047,7 +4081,7 @@ function sendHostSnapshot(force = false) {
     bossZones: state.bossZones.map((z) => ({
       id: z.id, kind: z.kind, x: z.x, z: z.z, endX: z.endX, endZ: z.endZ, angle: z.angle,
       radius: z.radius, width: z.width, length: z.length, life: z.life, start: z.start,
-      impactAt: z.impactAt, impacted: z.impacted, role: z.role, delay: z.delay, startX: z.startX, startZ: z.startZ, chargeDuration: z.chargeDuration,
+      impactAt: z.impactAt, impacted: z.impacted, role: z.role, delay: z.delay, startX: z.startX, startZ: z.startZ, chargeDuration: z.chargeDuration, retargetOnStart: z.retargetOnStart, retargeted: z.retargeted,
     })),
     effects: state.effects.map((fx) => ({ id: fx.id, kind: fx.kind, owner: fx.owner, skill: fx.skill, x: fx.x, z: fx.z, radius: fx.radius, arc: fx.arc, angle: fx.angle, color: fx.color, life: fx.life, start: fx.start })),
   });
@@ -4144,6 +4178,11 @@ function syncBossZones(zones) {
   }
   state.bossZones = zones.map((item) => {
     let mesh = cache.get(item.id);
+    if (mesh && item.kind === "charge" && Math.abs((mesh.userData.syncLength || 0) - (item.length || 0)) > 0.05) {
+      scene.remove(mesh);
+      cache.delete(item.id);
+      mesh = null;
+    }
     if (!mesh) {
       mesh = makeBossZoneMesh(item);
       scene.add(mesh);
