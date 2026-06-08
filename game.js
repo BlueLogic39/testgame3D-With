@@ -191,6 +191,7 @@ const CHARACTER_TYPES = {
 const STAGES = {
   stage1: { label: "迷いの森", description: "木々に囲まれた森の3分ステージ", duration: 180, bossTime: 150, midBossTimes: [90] },
   stage2: { label: "黒晶鉱山", description: "落石が敵も味方も巻き込む6分ステージ", duration: 360, bossTime: 330, midBossTimes: [120, 240], rockfalls: true, bomberEnemies: true },
+  stage3: { label: "王城", description: "城壁に囲まれた10分ステージ", duration: 600, bossTime: 570, midBossTimes: [150, 300, 450], castle: true },
 };
 
 const DIFFICULTIES = {
@@ -214,6 +215,16 @@ const FBX_ASSETS = {
   staff: { path: "./model_FBX/WoodenStaff.fbx", size: 1.62, position: [0.58, 0.9, 0.08], rotation: [0, 0, -0.24], scale: [1, 1, 1] },
   sword: { path: "./model_FBX/Sword.fbx", size: 1.45, position: [0.56, 0.76, 0.02], rotation: [0, 0, -0.62], scale: [1, 1, 1] },
   heart: { path: "./model_FBX/Heart.fbx", size: 0.92, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+  castleWall: { path: "./model_FBX/Castle/Wall.fbx", size: 3.4, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+  castleWallBricks: { path: "./model_FBX/Castle/WallBricks.fbx", size: 3.4, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+  castleWallEntrance: { path: "./model_FBX/Castle/WallEntrance.fbx", size: 4.2, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+  castleTower: { path: "./model_FBX/Castle/Tower.fbx", size: 4.4, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+  castlePointyTower: { path: "./model_FBX/Castle/PointyTower.fbx", size: 5.2, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+  castleWatchtower: { path: "./model_FBX/Castle/WatchTowerWRoof.fbx", size: 4.0, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+  castleBridge: { path: "./model_FBX/Castle/Bridge.fbx", size: 3.6, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+  castleBanner: { path: "./model_FBX/Castle/Banner.fbx", size: 1.8, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+  castleWell: { path: "./model_FBX/Castle/Well.fbx", size: 2.4, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+  castleTarget: { path: "./model_FBX/Castle/TargetWithArrows.fbx", size: 1.8, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
 };
 
 const CHARACTER_CODEX = [
@@ -367,18 +378,20 @@ function initThree() {
 function applyStageTheme(stageId) {
   const stage = STAGES[stageId] || STAGES.stage1;
   const mine = stage.rockfalls;
+  const castle = stage.castle;
   const forest = stageId === "stage1";
-  scene.background = new THREE.Color(mine ? 0x0b1016 : forest ? 0x102017 : 0x101419);
-  scene.fog = new THREE.Fog(mine ? 0x0b1016 : forest ? 0x102017 : 0x101419, mine ? 30 : forest ? 34 : 42, mine ? 70 : forest ? 76 : 86);
-  if (arenaFloor) arenaFloor.material.color.set(mine ? 0x171b20 : forest ? 0x24472b : 0x20262b);
+  scene.background = new THREE.Color(mine ? 0x0b1016 : castle ? 0x171a21 : forest ? 0x102017 : 0x101419);
+  scene.fog = new THREE.Fog(mine ? 0x0b1016 : castle ? 0x171a21 : forest ? 0x102017 : 0x101419, mine ? 30 : castle ? 38 : forest ? 34 : 42, mine ? 70 : castle ? 86 : forest ? 76 : 86);
+  if (arenaFloor) arenaFloor.material.color.set(mine ? 0x171b20 : castle ? 0x30343a : forest ? 0x24472b : 0x20262b);
   if (arenaGrid) {
     const mats = Array.isArray(arenaGrid.material) ? arenaGrid.material : [arenaGrid.material];
-    for (const mat of mats) mat.color?.set(mine ? 0x334155 : forest ? 0x3f6f44 : 0x48606a);
+    for (const mat of mats) mat.color?.set(mine ? 0x334155 : castle ? 0x525b66 : forest ? 0x3f6f44 : 0x48606a);
   }
-  for (const wall of arenaWalls) wall.material.color.set(mine ? 0x2f343b : forest ? 0x2b4a2f : 0x384049);
+  for (const wall of arenaWalls) wall.material.color.set(mine ? 0x2f343b : castle ? 0x575d66 : forest ? 0x2b4a2f : 0x384049);
   if (!stageDecor) return;
   while (stageDecor.children.length) stageDecor.remove(stageDecor.children[0]);
   if (mine) addMineDecor();
+  else if (castle) addCastleDecor();
   else if (forest) addForestDecor();
 }
 
@@ -608,6 +621,165 @@ function addMineCart(x, z, rotation) {
   cart.position.set(x, 0, z);
   cart.rotation.y = rotation;
   stageDecor.add(cart);
+}
+
+function addCastleDecor() {
+  addCastleFloorDetail();
+  addCastleWalls();
+  addCastleProp("castleWell", 0, 14, 0, 0.9, makeOldCastleWell);
+  addCastleProp("castleTarget", -17, -11, 0.55, 0.9, makeOldCastleTarget);
+  addCastleProp("castleTarget", -13, -16, 0.2, 0.85, makeOldCastleTarget);
+  addCastleProp("castleBanner", 21, -8, -0.35, 1.1, makeOldCastleBanner);
+  addCastleProp("castleBanner", -21, 8, 0.35, 1.1, makeOldCastleBanner);
+  addCastleProp("castleBridge", 0, -26.5, 0, 0.9, makeOldCastleBridge);
+  for (const [x, z] of [[-22, 19], [20, 20], [-19, -23], [23, -18], [8, 25], [-7, -24]]) addCastleCrate(x, z);
+}
+
+function addCastleWalls() {
+  const half = WORLD.half - 1.8;
+  for (let i = -4; i <= 4; i += 1) {
+    if (i !== 0) {
+      addCastleProp(i % 2 ? "castleWall" : "castleWallBricks", i * 6.4, -half, 0, 1.05, makeOldCastleWall);
+      addCastleProp(i % 2 ? "castleWallBricks" : "castleWall", i * 6.4, half, Math.PI, 1.05, makeOldCastleWall);
+    }
+    addCastleProp(i % 2 ? "castleWall" : "castleWallBricks", -half, i * 6.4, Math.PI / 2, 1.05, makeOldCastleWall);
+    addCastleProp(i % 2 ? "castleWallBricks" : "castleWall", half, i * 6.4, -Math.PI / 2, 1.05, makeOldCastleWall);
+  }
+  addCastleProp("castleWallEntrance", 0, -half, 0, 1.08, makeOldCastleGate);
+  addCastleProp("castleWallEntrance", 0, half, Math.PI, 1.08, makeOldCastleGate);
+  for (const [x, z, key, rot] of [
+    [-half, -half, "castlePointyTower", 0],
+    [half, -half, "castleTower", 0],
+    [-half, half, "castleWatchtower", 0],
+    [half, half, "castlePointyTower", 0],
+  ]) addCastleProp(key, x, z, rot, 1.05, makeOldCastleTower);
+}
+
+function addCastleFloorDetail() {
+  const stoneMat = new THREE.MeshStandardMaterial({ color: 0x4a4f57, roughness: 0.9 });
+  const pathMat = new THREE.MeshStandardMaterial({ color: 0x69707a, roughness: 0.88 });
+  const roadA = new THREE.Mesh(new THREE.BoxGeometry(6.2, 0.025, WORLD.half * 1.62), pathMat);
+  const roadB = new THREE.Mesh(new THREE.BoxGeometry(WORLD.half * 1.62, 0.025, 5.4), pathMat.clone());
+  roadA.position.y = 0.035;
+  roadB.position.y = 0.036;
+  roadA.receiveShadow = true;
+  roadB.receiveShadow = true;
+  stageDecor.add(roadA, roadB);
+  for (let i = 0; i < 40; i += 1) {
+    const tile = new THREE.Mesh(new THREE.BoxGeometry(0.9 + Math.random() * 1.4, 0.02, 0.45 + Math.random() * 1.0), stoneMat.clone());
+    tile.position.set(randomFieldPoint(), 0.045, randomFieldPoint());
+    tile.rotation.y = Math.random() * Math.PI;
+    tile.receiveShadow = true;
+    stageDecor.add(tile);
+  }
+}
+
+function addCastleProp(key, x, z, rotation = 0, scale = 1, fallbackFactory = null) {
+  const prop = makeFbxMesh(key, fallbackFactory || (() => new THREE.Group()));
+  prop.position.set(x, 0, z);
+  prop.rotation.y = rotation;
+  prop.scale.setScalar(scale);
+  stageDecor.add(prop);
+  return prop;
+}
+
+function addCastleCrate(x, z) {
+  const group = new THREE.Group();
+  const wood = materials.mineWood.clone();
+  const box = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.0, 1.2), wood);
+  box.position.y = 0.5;
+  box.castShadow = true;
+  box.receiveShadow = true;
+  group.add(box);
+  const strap = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.14, 0.12), materials.darkStone.clone());
+  strap.position.y = 0.84;
+  strap.castShadow = true;
+  group.add(strap);
+  group.position.set(x, 0, z);
+  group.rotation.y = Math.random() * Math.PI;
+  stageDecor.add(group);
+}
+
+function makeOldCastleWall() {
+  const group = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({ color: 0xd8d5cc, roughness: 0.72 });
+  const wall = new THREE.Mesh(new THREE.BoxGeometry(5.8, 2.4, 0.55), mat);
+  wall.position.y = 1.2;
+  wall.castShadow = true;
+  wall.receiveShadow = true;
+  group.add(wall);
+  for (let i = -2; i <= 2; i += 1) {
+    const merlon = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.62, 0.62), mat.clone());
+    merlon.position.set(i * 1.15, 2.72, 0);
+    merlon.castShadow = true;
+    group.add(merlon);
+  }
+  return group;
+}
+
+function makeOldCastleGate() {
+  const group = makeOldCastleWall();
+  const arch = new THREE.Mesh(new THREE.BoxGeometry(2.1, 1.65, 0.7), new THREE.MeshStandardMaterial({ color: 0x3a2a21, roughness: 0.9 }));
+  arch.position.y = 0.82;
+  group.add(arch);
+  return group;
+}
+
+function makeOldCastleTower() {
+  const group = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({ color: 0xd8d5cc, roughness: 0.7 });
+  const tower = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.25, 4.5, 10), mat);
+  tower.position.y = 2.25;
+  tower.castShadow = true;
+  group.add(tower);
+  const roof = new THREE.Mesh(new THREE.ConeGeometry(1.45, 1.7, 10), new THREE.MeshStandardMaterial({ color: 0xd94c5d, roughness: 0.6 }));
+  roof.position.y = 5.15;
+  roof.castShadow = true;
+  group.add(roof);
+  return group;
+}
+
+function makeOldCastleWell() {
+  const group = new THREE.Group();
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 0.95, 0.9, 16), materials.rock.clone());
+  base.position.y = 0.45;
+  base.castShadow = true;
+  group.add(base);
+  const roof = new THREE.Mesh(new THREE.ConeGeometry(1.1, 0.8, 4), new THREE.MeshStandardMaterial({ color: 0xd94c5d, roughness: 0.62 }));
+  roof.position.y = 1.55;
+  roof.rotation.y = Math.PI / 4;
+  roof.castShadow = true;
+  group.add(roof);
+  return group;
+}
+
+function makeOldCastleTarget() {
+  const group = new THREE.Group();
+  const stand = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 1.2, 6), materials.bark.clone());
+  stand.position.y = 0.6;
+  const target = new THREE.Mesh(new THREE.TorusGeometry(0.48, 0.08, 8, 24), new THREE.MeshBasicMaterial({ color: 0xef4444 }));
+  target.position.y = 1.25;
+  target.rotation.x = Math.PI / 2;
+  group.add(stand, target);
+  return group;
+}
+
+function makeOldCastleBanner() {
+  const group = new THREE.Group();
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 2.2, 7), materials.bark.clone());
+  pole.position.y = 1.1;
+  const flag = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.5, 0.05), new THREE.MeshStandardMaterial({ color: 0xd94c5d, roughness: 0.5 }));
+  flag.position.set(0.42, 1.65, 0);
+  group.add(pole, flag);
+  return group;
+}
+
+function makeOldCastleBridge() {
+  const bridge = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.28, 2.1), materials.mineWood.clone());
+  bridge.position.y = 0.14;
+  bridge.castShadow = true;
+  bridge.receiveShadow = true;
+  return bridge;
 }
 
 function newState(playerInfos, options = {}) {
@@ -1847,8 +2019,8 @@ function addEnemy(boss, shooter, bomber = false, role = "") {
     x: pos.x,
     z: pos.z,
     radius: boss ? 2.2 : role === "mid" ? 1.55 : shooter ? 1.05 : bomber ? 0.82 : 0.72 + Math.random() * 0.28,
-    hp: boss ? (state.stageId === "stage2" ? 2900 : 1960) : role === "mid" ? 720 * scale : shooter ? 46 * scale : bomber ? 34 * scale : 28 * scale,
-    maxHp: boss ? (state.stageId === "stage2" ? 2900 : 1960) : role === "mid" ? 720 * scale : shooter ? 46 * scale : bomber ? 34 * scale : 28 * scale,
+    hp: boss ? (state.stageId === "stage3" ? 3800 : state.stageId === "stage2" ? 2900 : 1960) : role === "mid" ? (state.stageId === "stage3" ? 980 : 720) * scale : shooter ? 46 * scale : bomber ? 34 * scale : 28 * scale,
+    maxHp: boss ? (state.stageId === "stage3" ? 3800 : state.stageId === "stage2" ? 2900 : 1960) : role === "mid" ? (state.stageId === "stage3" ? 980 : 720) * scale : shooter ? 46 * scale : bomber ? 34 * scale : 28 * scale,
     speed: boss ? 2.15 : role === "mid" ? 2.65 : shooter ? 2.1 + state.elapsed * 0.006 : bomber ? 4.5 + state.elapsed * 0.008 : 2.8 + Math.random() * 1.7 + state.elapsed * 0.005,
     damage: boss ? 24 : role === "mid" ? 18 : shooter ? 12 : bomber ? 40 : 9,
     touchTimer: 0,
@@ -1858,9 +2030,9 @@ function addEnemy(boss, shooter, bomber = false, role = "") {
     shooter,
     bomber,
     midBoss: role === "mid",
-    bossRole: boss ? (state.stageId === "stage2" ? "crystalGolem" : "forestTree") : role === "mid" && state.stageId === "stage2" ? "crystalMid" : role === "mid" && state.stageId === "stage1" ? "forestTreeMid" : role,
+    bossRole: boss ? (state.stageId === "stage3" ? "royalGuard" : state.stageId === "stage2" ? "crystalGolem" : "forestTree") : role === "mid" && state.stageId === "stage3" ? "castleGuard" : role === "mid" && state.stageId === "stage2" ? "crystalMid" : role === "mid" && state.stageId === "stage1" ? "forestTreeMid" : role,
     bossAttackTimer: role === "mid" ? 2.4 : boss ? 2.8 : 0,
-    bossShotTimer: boss && state.stageId === "stage2" ? 3.6 : 0,
+    bossShotTimer: boss && (state.stageId === "stage2" || state.stageId === "stage3") ? 3.6 : 0,
   };
   enemy.mesh = makeEnemyMesh(enemy);
   scene.add(enemy.mesh);
@@ -1936,6 +2108,9 @@ function updateBossEnemy(enemy, target, dt) {
     } else if (enemy.bossRole === "forestTree" || enemy.bossRole === "forestTreeMid") {
       addRootZonesForPlayers(enemy);
       enemy.bossAttackTimer = bossAttackCooldown(enemy, enemy.boss ? 4.6 : 5.3);
+    } else if (enemy.bossRole === "royalGuard" || enemy.bossRole === "castleGuard") {
+      addCastleStrikeZonesForPlayers(enemy);
+      enemy.bossAttackTimer = bossAttackCooldown(enemy, enemy.boss ? 4.5 : 5.2);
     } else {
       const radius = enemy.boss ? 4.2 : 3.2;
       const damage = enemy.boss ? 32 : 22;
@@ -1954,6 +2129,12 @@ function updateBossEnemy(enemy, target, dt) {
     if (enemy.bossShotTimer <= 0) {
       shootForestSeeds(enemy, bossProjectileCount(enemy, 8, 16, 24));
       enemy.bossShotTimer = bossAttackCooldown(enemy, 4.4);
+    }
+  } else if (enemy.bossRole === "royalGuard") {
+    enemy.bossShotTimer -= dt;
+    if (enemy.bossShotTimer <= 0) {
+      shootBossRadial(enemy, bossProjectileCount(enemy, 8, 12, 18));
+      enemy.bossShotTimer = bossAttackCooldown(enemy, 4.0);
     }
   }
 }
@@ -2002,6 +2183,14 @@ function spawnCrystalDropsForPlayers(enemy, options = {}) {
 function addRootZonesForPlayers(enemy) {
   const radius = enemy.boss ? 4.4 : 3.4;
   const damage = bossScaledDamage(enemy, enemy.boss ? 30 : 22);
+  for (const player of livingPlayers()) {
+    addBossZone(player.x, player.z, radius, damage, enemy.id, enemy.bossRole);
+  }
+}
+
+function addCastleStrikeZonesForPlayers(enemy) {
+  const radius = enemy.boss ? 4.6 : 3.5;
+  const damage = bossScaledDamage(enemy, enemy.boss ? 34 : 24);
   for (const player of livingPlayers()) {
     addBossZone(player.x, player.z, radius, damage, enemy.id, enemy.bossRole);
   }
@@ -2387,6 +2576,10 @@ function isForestBossRole(role) {
   return role === "forestTree" || role === "forestTreeMid";
 }
 
+function isCastleBossRole(role) {
+  return role === "royalGuard" || role === "castleGuard";
+}
+
 function addBossZone(x, z, radius, damage, owner = "", role = "") {
   const zone = {
     id: crypto.randomUUID(),
@@ -2426,7 +2619,7 @@ function updateBossZones(dt) {
       updateBossChargeMotion(zone, zoneElapsed);
       continue;
     }
-    addRing(zone.x, zone.z, zone.radius, isForestBossRole(zone.role) ? 0x8bdc65 : zone.role === "crystalGolem" ? 0xa78bfa : 0xff5f5f);
+    addRing(zone.x, zone.z, zone.radius, isCastleBossRole(zone.role) ? 0xfacc15 : isForestBossRole(zone.role) ? 0x8bdc65 : zone.role === "crystalGolem" ? 0xa78bfa : 0xff5f5f);
     for (const player of state.players) {
       if (player.dead || player.hp <= 0) continue;
       if (distance(zone, player) <= zone.radius + player.radius) damagePlayer(player, zone.damage);
@@ -2499,7 +2692,7 @@ function makeBossZoneMesh(zone = {}) {
   if (zone.kind === "charge") return makeBossChargeMesh(zone);
   if (isForestBossRole(zone.role)) return makeForestRootZoneMesh(zone);
   const radius = zone.radius || 3.2;
-  const color = isForestBossRole(zone.role) ? 0x8bdc65 : zone.role === "crystalGolem" ? 0xa78bfa : 0xff3b66;
+  const color = isCastleBossRole(zone.role) ? 0xfacc15 : isForestBossRole(zone.role) ? 0x8bdc65 : zone.role === "crystalGolem" ? 0xa78bfa : 0xff3b66;
   const group = new THREE.Group();
   const warning = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, 0.045, 48), materials.bossWarning.clone());
   warning.material.color.setHex(color);
@@ -2869,6 +3062,7 @@ function oldChooseUpgrade(playerId, upgradeName) {
 function makeEnemyMesh(enemy) {
   if (enemy.bossRole === "crystalGolem" || enemy.bossRole === "crystalMid") return makeCrystalGolemMesh(enemy);
   if (enemy.bossRole === "forestTree" || enemy.bossRole === "forestTreeMid") return makeForestTreeBossMesh(enemy);
+  if (enemy.bossRole === "royalGuard" || enemy.bossRole === "castleGuard") return makeCastleKnightBossMesh(enemy);
   if (enemy.midBoss) return makeMidBossMesh(enemy);
   if (enemy.bomber) {
     const group = new THREE.Group();
@@ -3021,6 +3215,35 @@ function makeForestTreeBossMesh(enemy) {
     group.add(root);
   }
   group.position.set(enemy.x, 0, enemy.z);
+  return group;
+}
+
+function makeCastleKnightBossMesh(enemy) {
+  const group = new THREE.Group();
+  const metal = materials.saberBlade.clone();
+  metal.color.setHex(0xbfc7d5);
+  const gold = new THREE.MeshStandardMaterial({ color: 0xfacc15, roughness: 0.42, metalness: 0.35, emissive: 0x3f2b02 });
+  const red = new THREE.MeshStandardMaterial({ color: 0xd94c5d, roughness: 0.55 });
+  const r = enemy.radius;
+  const body = new THREE.Mesh(new THREE.BoxGeometry(r * 1.05, r * 1.35, r * 0.72), metal);
+  body.position.y = r * 0.1;
+  body.castShadow = true;
+  const head = new THREE.Mesh(new THREE.BoxGeometry(r * 0.58, r * 0.48, r * 0.52), metal.clone());
+  head.position.y = r * 0.98;
+  head.castShadow = true;
+  const crest = new THREE.Mesh(new THREE.BoxGeometry(r * 0.18, r * 0.75, r * 0.14), red);
+  crest.position.y = r * 1.42;
+  crest.castShadow = true;
+  const shield = new THREE.Mesh(new THREE.BoxGeometry(r * 0.16, r * 0.95, r * 0.72), gold);
+  shield.position.set(-r * 0.7, r * 0.1, r * 0.12);
+  shield.rotation.z = -0.1;
+  shield.castShadow = true;
+  const blade = new THREE.Mesh(new THREE.BoxGeometry(r * 0.16, r * 1.9, r * 0.12), materials.saberBlade.clone());
+  blade.position.set(r * 0.78, r * 0.05, r * 0.05);
+  blade.rotation.z = -0.48;
+  blade.castShadow = true;
+  group.add(body, head, crest, shield, blade);
+  group.position.set(enemy.x, enemy.radius, enemy.z);
   return group;
 }
 
