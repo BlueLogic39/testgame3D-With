@@ -2177,6 +2177,7 @@ function addEnemy(boss, shooter, bomber = false, role = "") {
   ][edge];
   const scale = 1 + state.elapsed / 155;
   const redXp = 5 + Math.floor(scale * 2);
+  const enemyType = state.stageId === "stage3" && !boss && !bomber && !role ? (shooter ? "castleArbalest" : "castleSoldier") : "";
   const enemy = {
     id: crypto.randomUUID(),
     x: pos.x,
@@ -2192,6 +2193,7 @@ function addEnemy(boss, shooter, bomber = false, role = "") {
     boss,
     shooter,
     bomber,
+    enemyType,
     midBoss: role === "mid",
     bossRole: boss ? (state.stageId === "stage3" ? "royalGuard" : state.stageId === "stage2" ? "crystalGolem" : "forestTree") : role === "mid" && state.stageId === "stage3" ? "castleGuard" : role === "mid" && state.stageId === "stage2" ? "crystalMid" : role === "mid" && state.stageId === "stage1" ? "forestTreeMid" : role,
     bossAttackTimer: role === "mid" ? 2.4 : boss ? 2.8 : 0,
@@ -2464,16 +2466,19 @@ function explodeBomber(enemy) {
 
 function shootEnemyBullet(enemy, target) {
   const angle = Math.atan2(target.x - enemy.x, target.z - enemy.z);
+  const bolt = enemy.enemyType === "castleArbalest";
   const bullet = {
     id: crypto.randomUUID(),
     x: enemy.x,
     z: enemy.z,
     vx: Math.sin(angle) * 11,
     vz: Math.cos(angle) * 11,
-    radius: 0.34,
+    radius: bolt ? 0.3 : 0.34,
     damage: enemy.damage * 0.5,
     life: 4,
-    mesh: makeBulletMesh(),
+    kind: bolt ? "bolt" : "",
+    angle,
+    mesh: makeBulletMesh({ kind: bolt ? "bolt" : "", angle }),
   };
   bullet.mesh.position.set(bullet.x, 1.05, bullet.z);
   scene.add(bullet.mesh);
@@ -2489,6 +2494,8 @@ function updateEnemyBullets(dt) {
     if (bullet.kind === "seed") {
       bullet.mesh.rotation.y = bullet.angle ?? Math.atan2(bullet.vx, bullet.vz);
       bullet.mesh.rotation.z += dt * 8;
+    } else if (bullet.kind === "bolt") {
+      bullet.mesh.rotation.y = bullet.angle ?? Math.atan2(bullet.vx, bullet.vz);
     } else {
       bullet.mesh.rotation.y += dt * 6;
     }
@@ -3227,6 +3234,8 @@ function makeEnemyMesh(enemy) {
   if (enemy.bossRole === "forestTree" || enemy.bossRole === "forestTreeMid") return makeForestTreeBossMesh(enemy);
   if (enemy.bossRole === "royalGuard" || enemy.bossRole === "castleGuard") return makeCastleKnightBossMesh(enemy);
   if (enemy.midBoss) return makeMidBossMesh(enemy);
+  if (enemy.enemyType === "castleSoldier") return makeCastleSoldierMesh(enemy);
+  if (enemy.enemyType === "castleArbalest") return makeCastleSoldierMesh(enemy, true);
   if (enemy.bomber) {
     const group = new THREE.Group();
     const body = new THREE.Mesh(new THREE.IcosahedronGeometry(enemy.radius, 1), materials.bomber.clone());
@@ -3256,6 +3265,70 @@ function makeEnemyMesh(enemy) {
   mesh.position.set(enemy.x, enemy.radius, enemy.z);
   mesh.castShadow = true;
   return mesh;
+}
+
+function makeCastleSoldierMesh(enemy, arbalest = false) {
+  const group = new THREE.Group();
+  const r = enemy.radius || 0.85;
+  const armorMat = new THREE.MeshStandardMaterial({ color: arbalest ? 0x536170 : 0xb9c1c9, roughness: 0.42, metalness: 0.48 });
+  const darkArmor = new THREE.MeshStandardMaterial({ color: 0x29313a, roughness: 0.52, metalness: 0.35 });
+  const clothMat = new THREE.MeshStandardMaterial({ color: arbalest ? 0x243f73 : 0x8f1d2c, roughness: 0.74 });
+  const goldMat = new THREE.MeshStandardMaterial({ color: 0xd9a441, roughness: 0.42, metalness: 0.2 });
+  const woodMat = materials.mineWood.clone();
+
+  const hips = new THREE.Mesh(new THREE.BoxGeometry(r * 0.95, r * 0.42, r * 0.8), clothMat);
+  hips.position.y = -r * 0.18;
+  hips.castShadow = true;
+  const torso = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.46, r * 0.58, r * 1.22, 8), armorMat);
+  torso.position.y = r * 0.42;
+  torso.castShadow = true;
+  const chest = new THREE.Mesh(new THREE.BoxGeometry(r * 0.82, r * 0.42, r * 0.16), goldMat);
+  chest.position.set(0, r * 0.58, r * 0.48);
+  chest.castShadow = true;
+  const head = new THREE.Mesh(new THREE.SphereGeometry(r * 0.34, 12, 8), new THREE.MeshStandardMaterial({ color: 0xd1b28f, roughness: 0.72 }));
+  head.position.y = r * 1.22;
+  head.castShadow = true;
+  const helm = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.38, r * 0.42, r * 0.28, 10), darkArmor);
+  helm.position.y = r * 1.42;
+  helm.castShadow = true;
+  const crest = new THREE.Mesh(new THREE.BoxGeometry(r * 0.16, r * 0.42, r * 0.08), clothMat.clone());
+  crest.position.y = r * 1.66;
+  crest.castShadow = true;
+  group.add(hips, torso, chest, head, helm, crest);
+
+  for (const x of [-0.32, 0.32]) {
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.12, r * 0.14, r * 0.72, 7), darkArmor.clone());
+    leg.position.set(x * r, -r * 0.72, 0);
+    leg.castShadow = true;
+    group.add(leg);
+  }
+
+  if (arbalest) {
+    const bow = new THREE.Group();
+    const stock = new THREE.Mesh(new THREE.BoxGeometry(r * 1.1, r * 0.12, r * 0.18), woodMat);
+    const arc = new THREE.Mesh(new THREE.TorusGeometry(r * 0.46, r * 0.035, 8, 24, Math.PI), darkArmor.clone());
+    arc.rotation.set(Math.PI / 2, 0, Math.PI / 2);
+    arc.position.z = r * 0.18;
+    const string = new THREE.Mesh(new THREE.BoxGeometry(r * 0.82, r * 0.035, r * 0.035), new THREE.MeshBasicMaterial({ color: 0xd8e4ef }));
+    string.position.z = r * 0.18;
+    bow.add(stock, arc, string);
+    bow.position.set(0, r * 0.42, r * 0.78);
+    bow.castShadow = true;
+    group.add(bow);
+  } else {
+    const shield = new THREE.Mesh(new THREE.BoxGeometry(r * 0.48, r * 0.85, r * 0.12), new THREE.MeshStandardMaterial({ color: 0x8f1d2c, roughness: 0.58, metalness: 0.08 }));
+    shield.position.set(-r * 0.72, r * 0.25, r * 0.28);
+    shield.rotation.z = 0.12;
+    shield.castShadow = true;
+    const sword = new THREE.Mesh(new THREE.BoxGeometry(r * 0.1, r * 1.25, r * 0.08), new THREE.MeshStandardMaterial({ color: 0xe5edf5, roughness: 0.24, metalness: 0.62 }));
+    sword.position.set(r * 0.68, r * 0.34, r * 0.22);
+    sword.rotation.z = -0.55;
+    sword.castShadow = true;
+    group.add(shield, sword);
+  }
+
+  group.position.set(enemy.x, enemy.radius, enemy.z);
+  return group;
 }
 
 function updateBossHealthVisual(enemy) {
@@ -3489,9 +3562,27 @@ function makeFlyingSlashMesh(item = {}) {
 function makeBulletMesh(item = {}) {
   if (item.kind === "crystal") return makeCrystalBulletMesh(item.colorIndex || 0);
   if (item.kind === "seed") return makeSeedBulletMesh();
+  if (item.kind === "bolt") return makeBoltBulletMesh();
   const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.26, 12, 8), materials.bullet);
   mesh.castShadow = true;
   return mesh;
+}
+
+function makeBoltBulletMesh() {
+  const group = new THREE.Group();
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.07, 0.9, 7), new THREE.MeshStandardMaterial({ color: 0x8b5a35, roughness: 0.72 }));
+  shaft.rotation.x = Math.PI / 2;
+  shaft.castShadow = true;
+  const head = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.28, 8), new THREE.MeshStandardMaterial({ color: 0xdfe8f3, roughness: 0.3, metalness: 0.55 }));
+  head.rotation.x = Math.PI / 2;
+  head.position.z = -0.55;
+  head.castShadow = true;
+  const fletchA = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.04, 0.08), new THREE.MeshBasicMaterial({ color: 0x8f1d2c }));
+  fletchA.position.z = 0.46;
+  const fletchB = fletchA.clone();
+  fletchB.rotation.z = Math.PI / 2;
+  group.add(shaft, head, fletchA, fletchB);
+  return group;
 }
 
 function makeSeedBulletMesh() {
@@ -3755,7 +3846,7 @@ function initAudio() {
 
 function startBgm() {
   initAudio();
-  const bgmFile = state?.stageId === "stage2" ? "stage2.mp3" : "gamebgm.mp3";
+  const bgmFile = state?.stageId === "stage3" ? "stage3.mp3" : state?.stageId === "stage2" ? "stage2.mp3" : "gamebgm.mp3";
   if (!audio.bgm || audio.bgmFile !== bgmFile) {
     if (audio.bgm) {
       audio.bgm.pause();
@@ -4471,7 +4562,7 @@ function sendHostSnapshot(force = false) {
       magicSplash: p.magicSplash, magicRadius: p.magicRadius, chainExplosion: p.chainExplosion, iceSpike: p.iceSpike, thunderCircle: p.thunderCircle,
       rerolls: p.rerolls, upgrades: p.upgrades,
     })),
-    enemies: state.enemies.map((e) => ({ id: e.id, x: e.x, z: e.z, radius: e.radius, hp: e.hp, maxHp: e.maxHp, boss: e.boss, shooter: e.shooter, bomber: e.bomber, midBoss: e.midBoss, bossRole: e.bossRole })),
+    enemies: state.enemies.map((e) => ({ id: e.id, x: e.x, z: e.z, radius: e.radius, hp: e.hp, maxHp: e.maxHp, boss: e.boss, shooter: e.shooter, bomber: e.bomber, enemyType: e.enemyType, midBoss: e.midBoss, bossRole: e.bossRole })),
     arrows: state.arrows.map((a) => ({ id: a.id, x: a.x, z: a.z, angle: a.angle, kind: a.kind, radius: a.radius, owner: a.owner, skill: a.skill })),
     bullets: state.enemyBullets.map((b) => ({ id: b.id, x: b.x, z: b.z, kind: b.kind, colorIndex: b.colorIndex, angle: b.angle })),
     gems: state.gems.map((g) => ({ id: g.id, x: g.x, z: g.z, kind: g.kind })),
