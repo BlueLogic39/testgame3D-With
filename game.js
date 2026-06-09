@@ -215,8 +215,8 @@ const FBX_ASSETS = {
   staff: { path: "./model_FBX/WoodenStaff.fbx", size: 1.62, position: [0.58, 0.9, 0.08], rotation: [0, 0, -0.24], scale: [1, 1, 1] },
   sword: { path: "./model_FBX/Sword.fbx", size: 1.45, position: [0.56, 0.76, 0.02], rotation: [0, 0, -0.62], scale: [1, 1, 1] },
   heart: { path: "./model_FBX/Heart.fbx", size: 0.92, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
-  castleWall: { path: "./model_FBX/Castle/TallWall.fbx", size: 8.2, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1.24, 1.06, 1], groundOffset: 0 },
-  castleWallBricks: { path: "./model_FBX/Castle/TallWallBricks.fbx", size: 8.2, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1.24, 1.06, 1], groundOffset: 0 },
+  castleWall: { path: "./model_FBX/Castle/TallWall.fbx", size: 8.2, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1.32, 1.06, 1], groundOffset: 0 },
+  castleWallBricks: { path: "./model_FBX/Castle/TallWallBricks.fbx", size: 8.2, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1.32, 1.06, 1], groundOffset: 0 },
   castleWallEntrance: { path: "./model_FBX/Castle/TallWallEntrance.fbx", size: 8.8, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1.18, 1.04, 1], groundOffset: 0 },
   castleTower: { path: "./model_FBX/Castle/Tower.fbx", size: 8.5, position: [0, 4.25, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
   castlePointyTower: { path: "./model_FBX/Castle/PointyTower.fbx", size: 9.4, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], groundOffset: -0.12 },
@@ -627,7 +627,7 @@ function addCastleDecor() {
   addCastleFloorDetail();
   addCastleCarpet();
   addCastleWalls();
-  addCastleProp("castleWell", 0, 14, 0, 0.9, makeOldCastleWell);
+  addCastleProp("castleWell", 0, 0, 0, 0.9, makeOldCastleWell);
   addCastleProp("castleTarget", -17, -11, 0.55, 0.9, makeOldCastleTarget);
   addCastleProp("castleTarget", -13, -16, 0.2, 0.85, makeOldCastleTarget);
   addCastleProp("castleBanner", 21, -8, -0.35, 1.1, makeOldCastleBanner);
@@ -691,14 +691,14 @@ function addCastleCarpet() {
   const runner = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.035, 46), redMat);
   runner.position.y = 0.06;
   const cross = new THREE.Mesh(new THREE.BoxGeometry(26, 0.034, 2.2), redMat.clone());
-  cross.position.set(0, 0.061, 5);
+  cross.position.set(0, 0.061, 0);
   stageDecor.add(runner, cross);
   for (const x of [-1.55, 1.55]) {
     const trim = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.04, 46), goldMat.clone());
     trim.position.set(x, 0.08, 0);
     stageDecor.add(trim);
   }
-  for (const z of [3.75, 6.25]) {
+  for (const z of [-1.25, 1.25]) {
     const trim = new THREE.Mesh(new THREE.BoxGeometry(26, 0.04, 0.1), goldMat.clone());
     trim.position.set(0, 0.081, z);
     stageDecor.add(trim);
