@@ -215,8 +215,8 @@ const FBX_ASSETS = {
   staff: { path: "./model_FBX/WoodenStaff.fbx", size: 1.62, position: [0.58, 0.9, 0.08], rotation: [0, 0, -0.24], scale: [1, 1, 1] },
   sword: { path: "./model_FBX/Sword.fbx", size: 1.45, position: [0.56, 0.76, 0.02], rotation: [0, 0, -0.62], scale: [1, 1, 1] },
   heart: { path: "./model_FBX/Heart.fbx", size: 0.92, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
-  castleWall: { path: "./model_FBX/Castle/TallWall.fbx", size: 8.2, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1.4, 1.06, 1], groundOffset: 0 },
-  castleWallBricks: { path: "./model_FBX/Castle/TallWallBricks.fbx", size: 8.2, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1.4, 1.06, 1], groundOffset: 0 },
+  castleWall: { path: "./model_FBX/Castle/TallWall.fbx", size: 8.2, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1.24, 1.06, 1], groundOffset: 0 },
+  castleWallBricks: { path: "./model_FBX/Castle/TallWallBricks.fbx", size: 8.2, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1.24, 1.06, 1], groundOffset: 0 },
   castleWallEntrance: { path: "./model_FBX/Castle/TallWallEntrance.fbx", size: 8.8, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1.18, 1.04, 1], groundOffset: 0 },
   castleTower: { path: "./model_FBX/Castle/Tower.fbx", size: 8.5, position: [0, 4.25, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
   castlePointyTower: { path: "./model_FBX/Castle/PointyTower.fbx", size: 9.4, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], groundOffset: -0.12 },
@@ -634,7 +634,7 @@ function addCastleDecor() {
   addCastleProp("castleBanner", -21, 8, 0.35, 1.1, makeOldCastleBanner);
   addCastleProp("castleBanner", 13, 22, -0.15, 0.95, makeOldCastleBanner);
   addCastleProp("castleBanner", -13, 22, 0.15, 0.95, makeOldCastleBanner);
-  addCastleProp("castleBridge", 0, -26.5, 0, 0.9, makeOldCastleBridge);
+  addCastleProp("castleBridge", 0, -(WORLD.half + 0.85), 0, 0.95, makeOldCastleBridge);
   for (const [x, z] of [[-24, -24], [24, -24], [-24, 24], [24, 24], [-10, -18], [10, -18]]) addCastleTorch(x, z);
   for (const [x, z, r] of [[-7, 9, 0.25], [7, 9, -0.25], [-18, 2, 0.55], [18, 2, -0.55]]) addCastleStatue(x, z, r);
   for (const [x, z] of [[-22, 19], [20, 20], [-19, -23], [23, -18], [8, 25], [-7, -24]]) addCastleCrate(x, z);
