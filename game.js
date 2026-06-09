@@ -215,9 +215,9 @@ const FBX_ASSETS = {
   staff: { path: "./model_FBX/WoodenStaff.fbx", size: 1.62, position: [0.58, 0.9, 0.08], rotation: [0, 0, -0.24], scale: [1, 1, 1] },
   sword: { path: "./model_FBX/Sword.fbx", size: 1.45, position: [0.56, 0.76, 0.02], rotation: [0, 0, -0.62], scale: [1, 1, 1] },
   heart: { path: "./model_FBX/Heart.fbx", size: 0.92, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
-  castleWall: { path: "./model_FBX/Castle/TallWall.fbx", size: 8.2, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1.4, 1.06, 1], groundOffset: -0.42 },
-  castleWallBricks: { path: "./model_FBX/Castle/TallWallBricks.fbx", size: 8.2, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1.4, 1.06, 1], groundOffset: -0.42 },
-  castleWallEntrance: { path: "./model_FBX/Castle/TallWallEntrance.fbx", size: 8.8, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1.18, 1.04, 1], groundOffset: -0.42 },
+  castleWall: { path: "./model_FBX/Castle/TallWall.fbx", size: 8.2, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1.4, 1.06, 1], groundOffset: 0 },
+  castleWallBricks: { path: "./model_FBX/Castle/TallWallBricks.fbx", size: 8.2, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1.4, 1.06, 1], groundOffset: 0 },
+  castleWallEntrance: { path: "./model_FBX/Castle/TallWallEntrance.fbx", size: 8.8, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1.18, 1.04, 1], groundOffset: 0 },
   castleTower: { path: "./model_FBX/Castle/Tower.fbx", size: 8.5, position: [0, 4.25, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
   castlePointyTower: { path: "./model_FBX/Castle/PointyTower.fbx", size: 9.4, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], groundOffset: -0.12 },
   castleWatchtower: { path: "./model_FBX/Castle/WatchTowerWRoof.fbx", size: 8.2, position: [0, 4.1, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
@@ -625,19 +625,24 @@ function addMineCart(x, z, rotation) {
 
 function addCastleDecor() {
   addCastleFloorDetail();
+  addCastleCarpet();
   addCastleWalls();
   addCastleProp("castleWell", 0, 14, 0, 0.9, makeOldCastleWell);
   addCastleProp("castleTarget", -17, -11, 0.55, 0.9, makeOldCastleTarget);
   addCastleProp("castleTarget", -13, -16, 0.2, 0.85, makeOldCastleTarget);
   addCastleProp("castleBanner", 21, -8, -0.35, 1.1, makeOldCastleBanner);
   addCastleProp("castleBanner", -21, 8, 0.35, 1.1, makeOldCastleBanner);
+  addCastleProp("castleBanner", 13, 22, -0.15, 0.95, makeOldCastleBanner);
+  addCastleProp("castleBanner", -13, 22, 0.15, 0.95, makeOldCastleBanner);
   addCastleProp("castleBridge", 0, -26.5, 0, 0.9, makeOldCastleBridge);
+  for (const [x, z] of [[-24, -24], [24, -24], [-24, 24], [24, 24], [-10, -18], [10, -18]]) addCastleTorch(x, z);
+  for (const [x, z, r] of [[-7, 9, 0.25], [7, 9, -0.25], [-18, 2, 0.55], [18, 2, -0.55]]) addCastleStatue(x, z, r);
   for (const [x, z] of [[-22, 19], [20, 20], [-19, -23], [23, -18], [8, 25], [-7, -24]]) addCastleCrate(x, z);
 }
 
 function addCastleWalls() {
   const wallHalf = WORLD.half + 1.15;
-  const towerHalf = wallHalf;
+  const towerHalf = wallHalf - 1.05;
   const spacing = 7.25;
   const southWall = { opacity: 0.38 };
   for (let i = -4; i <= 4; i += 1) {
@@ -659,8 +664,10 @@ function addCastleWalls() {
 }
 
 function addCastleFloorDetail() {
-  const stoneMat = new THREE.MeshStandardMaterial({ color: 0x565b63, roughness: 0.9 });
-  const pathMat = new THREE.MeshStandardMaterial({ color: 0x7a8088, roughness: 0.88 });
+  const stoneMat = new THREE.MeshStandardMaterial({ color: 0x5c6068, roughness: 0.9 });
+  const paleStoneMat = new THREE.MeshStandardMaterial({ color: 0x777b82, roughness: 0.88 });
+  const violetStoneMat = new THREE.MeshStandardMaterial({ color: 0x50475f, roughness: 0.9 });
+  const pathMat = new THREE.MeshStandardMaterial({ color: 0x80858d, roughness: 0.88 });
   const roadA = new THREE.Mesh(new THREE.BoxGeometry(7.2, 0.025, WORLD.half * 1.68), pathMat);
   const roadB = new THREE.Mesh(new THREE.BoxGeometry(WORLD.half * 1.68, 0.025, 6.2), pathMat.clone());
   roadA.position.y = 0.035;
@@ -669,12 +676,73 @@ function addCastleFloorDetail() {
   roadB.receiveShadow = true;
   stageDecor.add(roadA, roadB);
   for (let i = 0; i < 40; i += 1) {
-    const tile = new THREE.Mesh(new THREE.BoxGeometry(0.9 + Math.random() * 1.4, 0.02, 0.45 + Math.random() * 1.0), stoneMat.clone());
+    const tileMat = i % 9 === 0 ? violetStoneMat.clone() : i % 4 === 0 ? paleStoneMat.clone() : stoneMat.clone();
+    const tile = new THREE.Mesh(new THREE.BoxGeometry(0.9 + Math.random() * 1.4, 0.02, 0.45 + Math.random() * 1.0), tileMat);
     tile.position.set(randomFieldPoint(), 0.045, randomFieldPoint());
     tile.rotation.y = Math.random() * Math.PI;
     tile.receiveShadow = true;
     stageDecor.add(tile);
   }
+}
+
+function addCastleCarpet() {
+  const redMat = new THREE.MeshStandardMaterial({ color: 0x8f1d2c, roughness: 0.74 });
+  const goldMat = new THREE.MeshStandardMaterial({ color: 0xd9a441, roughness: 0.46, metalness: 0.12 });
+  const runner = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.035, 46), redMat);
+  runner.position.y = 0.06;
+  const cross = new THREE.Mesh(new THREE.BoxGeometry(26, 0.034, 2.2), redMat.clone());
+  cross.position.set(0, 0.061, 5);
+  stageDecor.add(runner, cross);
+  for (const x of [-1.55, 1.55]) {
+    const trim = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.04, 46), goldMat.clone());
+    trim.position.set(x, 0.08, 0);
+    stageDecor.add(trim);
+  }
+  for (const z of [3.75, 6.25]) {
+    const trim = new THREE.Mesh(new THREE.BoxGeometry(26, 0.04, 0.1), goldMat.clone());
+    trim.position.set(0, 0.081, z);
+    stageDecor.add(trim);
+  }
+}
+
+function addCastleTorch(x, z) {
+  const group = new THREE.Group();
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.12, 1.8, 7), materials.mineWood.clone());
+  pole.position.y = 0.9;
+  pole.castShadow = true;
+  const bowl = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.2, 0.26, 10), new THREE.MeshStandardMaterial({ color: 0x2b2520, roughness: 0.62, metalness: 0.18 }));
+  bowl.position.y = 1.86;
+  bowl.castShadow = true;
+  const flameA = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.58, 8), new THREE.MeshBasicMaterial({ color: 0xffb020, transparent: true, opacity: 0.92 }));
+  flameA.position.y = 2.25;
+  const flameB = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.42, 8), new THREE.MeshBasicMaterial({ color: 0xfff0a6, transparent: true, opacity: 0.82 }));
+  flameB.position.y = 2.31;
+  group.add(pole, bowl, flameA, flameB);
+  group.position.set(x, 0, z);
+  stageDecor.add(group);
+}
+
+function addCastleStatue(x, z, rotation = 0) {
+  const group = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({ color: 0xb9b4aa, roughness: 0.86 });
+  const base = new THREE.Mesh(new THREE.BoxGeometry(1.25, 0.45, 1.25), mat);
+  base.position.y = 0.22;
+  base.castShadow = true;
+  base.receiveShadow = true;
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.36, 1.25, 8), mat.clone());
+  body.position.y = 1.05;
+  body.castShadow = true;
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.26, 10, 8), mat.clone());
+  head.position.y = 1.8;
+  head.castShadow = true;
+  const sword = new THREE.Mesh(new THREE.BoxGeometry(0.08, 1.1, 0.08), new THREE.MeshStandardMaterial({ color: 0x8d929b, roughness: 0.38, metalness: 0.38 }));
+  sword.position.set(0.42, 1.1, 0);
+  sword.rotation.z = -0.28;
+  sword.castShadow = true;
+  group.add(base, body, head, sword);
+  group.position.set(x, 0, z);
+  group.rotation.y = rotation;
+  stageDecor.add(group);
 }
 
 function addCastleProp(key, x, z, rotation = 0, scale = 1, fallbackFactory = null, options = {}) {
