@@ -117,6 +117,8 @@ let selectedOnlineRoom = null;
 let selectedCharacterId = "archer";
 let selectedStageId = "stage1";
 let selectedDifficultyId = "normal";
+let stage3DebugUnlocked = false;
+let debugStage3Presses = [];
 let presenceClientId = getPresenceClientId();
 let presenceHeartbeatTimer = 0;
 let presenceCountTimer = 0;
@@ -225,6 +227,10 @@ const FBX_ASSETS = {
   castleBanner: { path: "./model_FBX/Castle/Banner.fbx", size: 2.7, position: [0, 1.35, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
   castleWell: { path: "./model_FBX/Castle/Well.fbx", size: 3.4, position: [0, 1.7, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
   castleTarget: { path: "./model_FBX/Castle/TargetWithArrows.fbx", size: 2.4, position: [0, 1.2, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+  knightBossBody: { path: "./model_FBX/KNIGHT/KnightCharacter.fbx", size: 3.1, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], groundOffset: 0 },
+  knightBossHelmet: { path: "./model_FBX/KNIGHT/Helmet3.fbx", size: 0.78, position: [0, 2.68, 0.03], rotation: [0, 0, 0], scale: [1, 1, 1] },
+  knightBossShoulders: { path: "./model_FBX/KNIGHT/ShoulderPads.fbx", size: 1.15, position: [0, 2.08, 0.02], rotation: [0, 0, 0], scale: [1, 1, 1] },
+  knightBossSword: { path: "./model_FBX/KNIGHT/Sword.fbx", size: 1.35, position: [0.95, 1.2, 0.2], rotation: [0, 0, -0.55], scale: [1, 1, 1] },
 };
 
 const CHARACTER_CODEX = [
@@ -1224,14 +1230,40 @@ function cloneFbxModel(model, key) {
     child.material = Array.isArray(child.material) ? child.material.map((mat) => mat.clone()) : child.material.clone();
   });
   if (key.startsWith("castle")) styleCastleFbxModel(clone, key);
+  if (key.startsWith("knightBoss")) styleKnightBossFbxModel(clone, key);
   clone.position.set(...(asset.position || [0, 0, 0]));
   clone.rotation.set(...(asset.rotation || [0, 0, 0]));
   clone.scale.multiply(new THREE.Vector3(...(asset.scale || [1, 1, 1])));
-  if (key.startsWith("castle")) {
+  if (key.startsWith("castle") || key.startsWith("knightBoss")) {
     snapModelBottomToGround(clone, asset.groundOffset || 0);
-    addCastleModelAccent(clone, key);
+    if (key.startsWith("castle")) addCastleModelAccent(clone, key);
   }
   return clone;
+}
+
+function styleKnightBossFbxModel(model, key) {
+  const lowerKey = key.toLowerCase();
+  model.traverse((child) => {
+    if (!child.isMesh || !child.material) return;
+    const mats = Array.isArray(child.material) ? child.material : [child.material];
+    for (const material of mats) {
+      if (!material.color) continue;
+      let color = 0xbfc7d5;
+      let roughness = 0.38;
+      let metalness = 0.52;
+      if (lowerKey.includes("helmet")) color = 0xd8dee8;
+      if (lowerKey.includes("shoulders")) color = 0x8f1d2c;
+      if (lowerKey.includes("sword")) {
+        color = 0xe7eef7;
+        roughness = 0.24;
+        metalness = 0.68;
+      }
+      material.color.setHex(color);
+      if ("roughness" in material) material.roughness = roughness;
+      if ("metalness" in material) material.metalness = metalness;
+      material.needsUpdate = true;
+    }
+  });
 }
 
 function snapModelBottomToGround(model, groundOffset = 0) {
@@ -3730,6 +3762,7 @@ function makeForestTreeBossMesh(enemy) {
 }
 
 function makeCastleKnightBossMesh(enemy) {
+  if (enemy.bossRole === "castleGuard") return makeFbxCastleGuardMesh(enemy);
   const group = new THREE.Group();
   const metal = materials.saberBlade.clone();
   metal.color.setHex(0xbfc7d5);
@@ -3755,6 +3788,36 @@ function makeCastleKnightBossMesh(enemy) {
   blade.castShadow = true;
   group.add(body, head, crest, shield, blade);
   group.position.set(enemy.x, enemy.radius, enemy.z);
+  return group;
+}
+
+function makeFbxCastleGuardMesh(enemy) {
+  const group = new THREE.Group();
+  group.add(makeFbxMesh("knightBossBody", () => makeOldCastleKnightCore(enemy)));
+  group.add(makeFbxMesh("knightBossHelmet", () => new THREE.Group()));
+  group.add(makeFbxMesh("knightBossShoulders", () => new THREE.Group()));
+  group.add(makeFbxMesh("knightBossSword", () => new THREE.Group()));
+  const aura = new THREE.Mesh(
+    new THREE.RingGeometry(enemy.radius * 0.78, enemy.radius * 1.08, 32),
+    new THREE.MeshBasicMaterial({ color: 0xfacc15, transparent: true, opacity: 0.28, side: THREE.DoubleSide })
+  );
+  aura.rotation.x = -Math.PI / 2;
+  aura.position.y = 0.04;
+  group.add(aura);
+  group.position.set(enemy.x, enemy.radius * 0.05, enemy.z);
+  group.scale.setScalar(1.2);
+  return group;
+}
+
+function makeOldCastleKnightCore(enemy) {
+  const r = enemy.radius;
+  const group = new THREE.Group();
+  const metal = materials.saberBlade.clone();
+  metal.color.setHex(0xbfc7d5);
+  const body = new THREE.Mesh(new THREE.BoxGeometry(r * 1.0, r * 1.35, r * 0.72), metal);
+  body.position.y = r * 0.75;
+  body.castShadow = true;
+  group.add(body);
   return group;
 }
 
@@ -5277,6 +5340,17 @@ function normalizePasswordInput(input) {
   if (input.value !== normalized) input.value = normalized;
 }
 
+function trackDebugStage3Key() {
+  const now = performance.now();
+  debugStage3Presses = debugStage3Presses.filter((time) => now - time <= 2000);
+  debugStage3Presses.push(now);
+  if (debugStage3Presses.length < 3) return;
+  debugStage3Presses = [];
+  stage3DebugUnlocked = true;
+  updateStageDifficultyButtons();
+  showToast("デバッグ解放: ステージ3を選択できます");
+}
+
 function selectedCharacter() {
   return CHARACTER_TYPES[selectedCharacterId] ? selectedCharacterId : "archer";
 }
@@ -5290,6 +5364,12 @@ function selectedDifficulty() {
 }
 
 function selectStage(stageId) {
+  if (stageId === "stage3" && !stage3DebugUnlocked) {
+    selectedStageId = "stage1";
+    showToast("ステージ3はデバッグ中です");
+    updateStageDifficultyButtons();
+    return;
+  }
   selectedStageId = STAGES[stageId] ? stageId : "stage1";
   updateStageDifficultyButtons();
 }
@@ -5302,7 +5382,11 @@ function selectDifficulty(difficultyId) {
 function updateStageDifficultyButtons() {
   for (const root of [ui.stageSelect, ui.roomStageSelect]) {
     for (const button of root?.querySelectorAll("[data-stage]") || []) {
+      const locked = button.dataset.stage === "stage3" && !stage3DebugUnlocked;
       button.classList.toggle("selected", button.dataset.stage === selectedStageId);
+      button.classList.toggle("locked", locked);
+      button.disabled = locked;
+      button.title = locked ? "デバッグ中: 2秒以内に3キーを3回押すと解放" : "";
     }
   }
   for (const root of [ui.difficultySelect, ui.roomDifficultySelect]) {
@@ -5733,6 +5817,9 @@ window.addEventListener("keydown", (event) => {
   }
   if (event.code === "KeyB" && !event.repeat && net.phase === "playing" && state.running) {
     trackDebugBossKey("boss");
+  }
+  if (event.code === "Digit3" && !event.repeat && net.phase !== "playing") {
+    trackDebugStage3Key();
   }
   if (event.code === "Space") {
     event.preventDefault();

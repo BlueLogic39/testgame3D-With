@@ -654,6 +654,22 @@ h2 {
   background: #2d2b20;
 }
 
+.stage-select button.locked,
+.stage-select button:disabled {
+  cursor: not-allowed;
+  color: #8f9ba0;
+  border-color: rgba(255, 255, 255, 0.08);
+  background: #171c20;
+  opacity: 0.55;
+  box-shadow: none;
+}
+
+.stage-select button.locked strong::after {
+  content: " DEBUG";
+  color: #ff8a8a;
+  font-size: 10px;
+}
+
 .stage-select strong,
 .difficulty-select strong {
   color: #ffd86b;
