@@ -2146,8 +2146,9 @@ function spawnEnemies(dt) {
   for (let i = 0; i < count; i += 1) {
     const shooter = allowShooters && state.elapsed > 18 && Math.random() < Math.min(0.12, 0.03 + state.elapsed / 960);
     const bomber = !shooter && allowBombers && state.elapsed >= 180 && Math.random() < Math.min(0.106, 0.026 + state.elapsed / 1800);
+    const castleShield = state.stageId === "stage3" && !shooter && !bomber && state.elapsed > 45 && Math.random() < Math.min(0.16, 0.045 + state.elapsed / 2600);
     if (!shooter && Math.random() > 0.75) continue;
-    addEnemy(false, shooter, bomber);
+    addEnemy(false, shooter, bomber, castleShield ? "castleShield" : "");
   }
   spawnStageMidBosses();
   const bossTime = STAGES[state.stageId]?.bossTime ?? 150;
@@ -2177,19 +2178,21 @@ function addEnemy(boss, shooter, bomber = false, role = "") {
   ][edge];
   const scale = 1 + state.elapsed / 155;
   const redXp = 5 + Math.floor(scale * 2);
-  const enemyType = state.stageId === "stage3" && !boss && !bomber && !role ? (shooter ? "castleArbalest" : "castleSoldier") : "";
+  const castleShield = role === "castleShield";
+  const enemyType = castleShield ? "castleShield" : state.stageId === "stage3" && !boss && !bomber && !role ? (shooter ? "castleArbalest" : "castleSoldier") : "";
   const enemy = {
     id: crypto.randomUUID(),
     x: pos.x,
     z: pos.z,
-    radius: boss ? 2.2 : role === "mid" ? 1.55 : shooter ? 1.05 : bomber ? 0.82 : 0.72 + Math.random() * 0.28,
-    hp: boss ? (state.stageId === "stage3" ? 3800 : state.stageId === "stage2" ? 2900 : 1960) : role === "mid" ? (state.stageId === "stage3" ? 980 : 720) * scale : shooter ? 46 * scale : bomber ? 34 * scale : 28 * scale,
-    maxHp: boss ? (state.stageId === "stage3" ? 3800 : state.stageId === "stage2" ? 2900 : 1960) : role === "mid" ? (state.stageId === "stage3" ? 980 : 720) * scale : shooter ? 46 * scale : bomber ? 34 * scale : 28 * scale,
-    speed: boss ? 2.15 : role === "mid" ? 2.65 : shooter ? 2.1 + state.elapsed * 0.006 : bomber ? 4.5 + state.elapsed * 0.008 : 2.8 + Math.random() * 1.7 + state.elapsed * 0.005,
-    damage: boss ? 24 : role === "mid" ? 18 : shooter ? 12 : bomber ? 40 : 9,
+    radius: boss ? 2.2 : role === "mid" ? 1.55 : castleShield ? 1.12 : shooter ? 1.05 : bomber ? 0.82 : 0.72 + Math.random() * 0.28,
+    hp: boss ? (state.stageId === "stage3" ? 3800 : state.stageId === "stage2" ? 2900 : 1960) : role === "mid" ? (state.stageId === "stage3" ? 980 : 720) * scale : castleShield ? 56 * scale : shooter ? 46 * scale : bomber ? 34 * scale : 28 * scale,
+    maxHp: boss ? (state.stageId === "stage3" ? 3800 : state.stageId === "stage2" ? 2900 : 1960) : role === "mid" ? (state.stageId === "stage3" ? 980 : 720) * scale : castleShield ? 56 * scale : shooter ? 46 * scale : bomber ? 34 * scale : 28 * scale,
+    speed: boss ? 2.15 : role === "mid" ? 2.65 : castleShield ? 2.35 + state.elapsed * 0.004 : shooter ? 2.1 + state.elapsed * 0.006 : bomber ? 4.5 + state.elapsed * 0.008 : 2.8 + Math.random() * 1.7 + state.elapsed * 0.005,
+    damage: boss ? 24 : role === "mid" ? 18 : castleShield ? 12 : shooter ? 12 : bomber ? 40 : 9,
     touchTimer: 0,
     shotTimer: shooter ? (1.2 + Math.random() * 1.4) * 1.5 : 0,
-    xp: boss ? 120 : role === "mid" ? 65 : shooter ? redXp * 3 : bomber ? redXp * 6 : redXp,
+    xp: boss ? 120 : role === "mid" ? 65 : castleShield ? redXp * 2 : shooter ? redXp * 3 : bomber ? redXp * 6 : redXp,
+    walkSeed: Math.random() * Math.PI * 2,
     boss,
     shooter,
     bomber,
@@ -2215,8 +2218,14 @@ function updateEnemies(dt) {
     enemy.x += Math.sin(angle) * enemy.speed * slow * dir * dt;
     enemy.z += Math.cos(angle) * enemy.speed * slow * dir * dt;
     enemy.touchTimer -= dt;
-    enemy.mesh.position.set(enemy.x, enemy.radius, enemy.z);
-    enemy.mesh.rotation.y += dt * (enemy.boss ? 1.2 : 2.6);
+    if (enemy.enemyType?.startsWith("castle")) {
+      const bob = Math.sin(state.elapsed * 8.5 + (enemy.walkSeed || 0)) * 0.08;
+      enemy.mesh.position.set(enemy.x, enemy.radius + bob, enemy.z);
+      enemy.mesh.rotation.y = angle + (keepDistance ? Math.PI : 0);
+    } else {
+      enemy.mesh.position.set(enemy.x, enemy.radius, enemy.z);
+      enemy.mesh.rotation.y += dt * (enemy.boss ? 1.2 : 2.6);
+    }
 
     if (enemy.boss || enemy.midBoss) updateBossEnemy(enemy, target, dt);
     updateBossHealthVisual(enemy);
@@ -3236,6 +3245,7 @@ function makeEnemyMesh(enemy) {
   if (enemy.midBoss) return makeMidBossMesh(enemy);
   if (enemy.enemyType === "castleSoldier") return makeCastleSoldierMesh(enemy);
   if (enemy.enemyType === "castleArbalest") return makeCastleSoldierMesh(enemy, true);
+  if (enemy.enemyType === "castleShield") return makeCastleShieldMesh(enemy);
   if (enemy.bomber) {
     const group = new THREE.Group();
     const body = new THREE.Mesh(new THREE.IcosahedronGeometry(enemy.radius, 1), materials.bomber.clone());
@@ -3328,6 +3338,27 @@ function makeCastleSoldierMesh(enemy, arbalest = false) {
   }
 
   group.position.set(enemy.x, enemy.radius, enemy.z);
+  return group;
+}
+
+function makeCastleShieldMesh(enemy) {
+  const group = makeCastleSoldierMesh(enemy, false);
+  const r = enemy.radius || 1.1;
+  const shieldMat = new THREE.MeshStandardMaterial({ color: 0x27364a, roughness: 0.52, metalness: 0.18 });
+  const rimMat = new THREE.MeshStandardMaterial({ color: 0xd9a441, roughness: 0.38, metalness: 0.24 });
+  const shield = new THREE.Mesh(new THREE.BoxGeometry(r * 0.88, r * 1.28, r * 0.18), shieldMat);
+  shield.position.set(0, r * 0.25, r * 0.74);
+  shield.castShadow = true;
+  const crest = new THREE.Mesh(new THREE.BoxGeometry(r * 0.18, r * 1.1, r * 0.2), rimMat);
+  crest.position.set(0, r * 0.25, r * 0.86);
+  crest.castShadow = true;
+  const topRim = new THREE.Mesh(new THREE.BoxGeometry(r * 0.78, r * 0.12, r * 0.2), rimMat.clone());
+  topRim.position.set(0, r * 0.86, r * 0.86);
+  topRim.castShadow = true;
+  const bottomRim = topRim.clone();
+  bottomRim.position.y = -r * 0.36;
+  group.add(shield, crest, topRim, bottomRim);
+  group.userData.shieldEnemy = true;
   return group;
 }
 
@@ -4562,7 +4593,7 @@ function sendHostSnapshot(force = false) {
       magicSplash: p.magicSplash, magicRadius: p.magicRadius, chainExplosion: p.chainExplosion, iceSpike: p.iceSpike, thunderCircle: p.thunderCircle,
       rerolls: p.rerolls, upgrades: p.upgrades,
     })),
-    enemies: state.enemies.map((e) => ({ id: e.id, x: e.x, z: e.z, radius: e.radius, hp: e.hp, maxHp: e.maxHp, boss: e.boss, shooter: e.shooter, bomber: e.bomber, enemyType: e.enemyType, midBoss: e.midBoss, bossRole: e.bossRole })),
+    enemies: state.enemies.map((e) => ({ id: e.id, x: e.x, z: e.z, radius: e.radius, hp: e.hp, maxHp: e.maxHp, boss: e.boss, shooter: e.shooter, bomber: e.bomber, enemyType: e.enemyType, walkSeed: e.walkSeed, midBoss: e.midBoss, bossRole: e.bossRole })),
     arrows: state.arrows.map((a) => ({ id: a.id, x: a.x, z: a.z, angle: a.angle, kind: a.kind, radius: a.radius, owner: a.owner, skill: a.skill })),
     bullets: state.enemyBullets.map((b) => ({ id: b.id, x: b.x, z: b.z, kind: b.kind, colorIndex: b.colorIndex, angle: b.angle })),
     gems: state.gems.map((g) => ({ id: g.id, x: g.x, z: g.z, kind: g.kind })),
