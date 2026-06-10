@@ -41,6 +41,10 @@
         <div class="codex-corner">
           <button id="codexButton" class="secondary" type="button">キャラクター図鑑</button>
         </div>
+        <div class="money-corner">
+          <span id="moneyBadge">0G</span>
+          <button id="shopButton" class="secondary" type="button">ショップ</button>
+        </div>
         <div id="onlineBadge" class="online-badge">オンライン人数: 1</div>
 
         <div id="radialMenu" class="radial hidden">
@@ -159,6 +163,13 @@
             <button id="restartButton" type="button">コンティニュー</button>
             <button id="disbandButton" class="secondary" type="button">解散する</button>
           </div>
+        </div>
+
+        <div id="shopPanel" class="overlay hidden">
+          <h2>ショップ</h2>
+          <p id="shopMoney" class="shop-money">0G</p>
+          <div id="shopItems" class="shop-grid"></div>
+          <button id="closeShopButton" type="button">閉じる</button>
         </div>
 
         <div id="updateInfo" class="overlay hidden">

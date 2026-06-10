@@ -63,6 +63,12 @@ const ui = {
   bgmVolumeText: document.getElementById("bgmVolumeText"),
   seVolumeText: document.getElementById("seVolumeText"),
   codexButton: document.getElementById("codexButton"),
+  moneyBadge: document.getElementById("moneyBadge"),
+  shopButton: document.getElementById("shopButton"),
+  shopPanel: document.getElementById("shopPanel"),
+  shopMoney: document.getElementById("shopMoney"),
+  shopItems: document.getElementById("shopItems"),
+  closeShopButton: document.getElementById("closeShopButton"),
   characterCodex: document.getElementById("characterCodex"),
   closeCodexButton: document.getElementById("closeCodexButton"),
   codexCanvas: document.getElementById("codexCanvas"),
@@ -125,6 +131,7 @@ let presenceCountTimer = 0;
 let presenceCleanupTimer = 0;
 let onlinePresenceCount = 1;
 let onlineBadgeLoading = false;
+let progress = loadProgress();
 let net = {
   mode: "solo",
   phase: "menu",
@@ -183,6 +190,18 @@ const AUDIO_FILES = {
 const SUPABASE_URL = "https://oeizknymvzmokzxksidg.supabase.co";
 const SUPABASE_KEY = "sb_publishable_dGQHfQBP0GXAv1ILQXn3lA_I_SSPrcz";
 const ONLINE_ROOM_TTL_SECONDS = 45;
+const PROGRESS_KEY = "vansabaProgress";
+const UPGRADE_MAX_LEVEL = 5;
+
+const SHOP_ITEMS = [
+  { id: "power", type: "permanent", name: "筋力訓練", desc: "全キャラの攻撃力がレベルごとに+5%。", baseCost: 120, costStep: 80, max: 5 },
+  { id: "vitality", type: "permanent", name: "体力訓練", desc: "全キャラの最大HPがレベルごとに+10。", baseCost: 110, costStep: 75, max: 5 },
+  { id: "speed", type: "permanent", name: "俊足訓練", desc: "全キャラの移動速度がレベルごとに+3%。", baseCost: 130, costStep: 90, max: 5 },
+  { id: "magnet", type: "permanent", name: "磁力強化", desc: "経験値を吸い寄せる範囲がレベルごとに+8%。", baseCost: 100, costStep: 70, max: 5 },
+  { id: "witch", type: "character", name: "ウィッチ購入", desc: "元素魔法を操るウィッチを使用可能にする。", cost: 300 },
+  { id: "saber", type: "character", name: "セイバー購入", desc: "近距離を薙ぎ払うセイバーを使用可能にする。", cost: 500 },
+  { id: "stage2", type: "stage", name: "黒晶鉱山 解放", desc: "ステージ2を選択可能にする。", cost: 700 },
+];
 
 const CHARACTER_TYPES = {
   archer: { label: "アーチャー", color: 0x57c4a7, remoteColor: 0x5aa7ff },
@@ -332,6 +351,7 @@ applyStageTheme(state.stageId);
 render();
 updateUi();
 updateOnlineBadge();
+updateProgressUi();
 renderRoomList();
 loadAudioSettings();
 startPresenceHeartbeat();
@@ -883,6 +903,7 @@ function newState(playerInfos, options = {}) {
     bossSpawned: false,
     midBossSpawned: {},
     heartTimer: 8 + Math.random() * 12,
+    magnetTimer: 24 + Math.random() * 24,
     rockfallTimer: 30,
     pauseReason: null,
     pendingLevel: null,
@@ -894,13 +915,14 @@ function newState(playerInfos, options = {}) {
     enemyBullets: [],
     gems: [],
     hearts: [],
+    magnets: [],
     magicCircles: [],
     rockfalls: [],
     bossZones: [],
     effects: [],
     kills: 0,
     thunderSoundAt: 0,
-    renderCache: { players: new Map(), enemies: new Map(), arrows: new Map(), bullets: new Map(), gems: new Map(), hearts: new Map(), circles: new Map(), rockfalls: new Map(), bossZones: new Map(), effects: new Map() },
+    renderCache: { players: new Map(), enemies: new Map(), arrows: new Map(), bullets: new Map(), gems: new Map(), hearts: new Map(), magnets: new Map(), circles: new Map(), rockfalls: new Map(), bossZones: new Map(), effects: new Map() },
   };
 }
 
@@ -983,6 +1005,7 @@ function makePlayer(id, name, x, z, local, character = "archer") {
     player.slashArc = THREE.MathUtils.degToRad(74);
     player.slashRange = 3.75;
   }
+  applyPermanentBonuses(player);
   updateFireRate(player);
   return player;
 }
@@ -1632,13 +1655,14 @@ function startGame(mode = "solo") {
   hideStatus();
   updateUi();
   updateOnlineBadge();
+  updateProgressUi();
   animationId = requestAnimationFrame(loop);
   if (mode === "host") broadcast({ type: "start", players: net.lobbyPlayers, stageId: net.stageId, difficultyId: net.difficultyId });
 }
 
 function resetSceneEntities() {
   for (const player of state.players) scene.remove(player.mesh);
-  for (const group of [state.enemies, state.arrows, state.enemyBullets, state.gems, state.hearts, state.magicCircles, state.rockfalls, state.bossZones, state.effects]) {
+  for (const group of [state.enemies, state.arrows, state.enemyBullets, state.gems, state.hearts, state.magnets, state.magicCircles, state.rockfalls, state.bossZones, state.effects]) {
     for (const item of group) scene.remove(item.mesh);
   }
   for (const cache of Object.values(state.renderCache || {})) {
@@ -1677,6 +1701,7 @@ function update(dt) {
   updateBossZones(dt);
   updateGems(dt);
   updateHearts(dt);
+  updateMagnets(dt);
   updateRevives();
   updateEffects(dt);
   checkWin();
@@ -2880,12 +2905,12 @@ function dropGem(x, z, value, kind = "normal") {
 
 function updateGems(dt) {
   for (const gem of state.gems) {
-    const player = nearestGemPlayer(gem);
+    const player = gem.forceTarget ? state.players.find((p) => p.id === gem.forceTarget && !p.dead && p.hp > 0) || nearestGemPlayer(gem) : nearestGemPlayer(gem);
     if (!player) continue;
     const d = distance(gem, player);
-    if (d < player.magnet) {
+    if (gem.forceTarget || d < player.magnet) {
       const angle = Math.atan2(player.x - gem.x, player.z - gem.z);
-      const speed = 7 + (1 - d / player.magnet) * 16;
+      const speed = gem.forceTarget ? 34 : 7 + (1 - d / player.magnet) * 16;
       gem.x += Math.sin(angle) * speed * dt;
       gem.z += Math.cos(angle) * speed * dt;
     }
@@ -2949,6 +2974,44 @@ function updateHearts(dt) {
     }
   }
   removeDead(state.hearts, (heart) => heart.collected);
+}
+
+function spawnMagnet() {
+  const magnet = {
+    id: crypto.randomUUID(),
+    x: clamp(randomEdge() * 0.88, -WORLD.half + 2, WORLD.half - 2),
+    z: clamp(randomEdge() * 0.88, -WORLD.half + 2, WORLD.half - 2),
+    radius: 0.62,
+    wobble: Math.random() * Math.PI * 2,
+    mesh: makeMagnetMesh(),
+  };
+  magnet.mesh.position.set(magnet.x, 0.76, magnet.z);
+  scene.add(magnet.mesh);
+  state.magnets.push(magnet);
+}
+
+function updateMagnets(dt) {
+  state.magnetTimer -= dt;
+  if (state.magnetTimer <= 0) {
+    spawnMagnet();
+    state.magnetTimer = 36 + Math.random() * 54;
+  }
+  for (const magnet of state.magnets) {
+    magnet.mesh.position.set(magnet.x, 0.76 + Math.sin(state.elapsed * 4 + magnet.wobble) * 0.16, magnet.z);
+    magnet.mesh.rotation.y += dt * 1.8;
+    for (const player of state.players) {
+      if (player.dead || player.hp <= 0) continue;
+      if (distance(magnet, player) < magnet.radius + player.radius) {
+        magnet.collected = true;
+        for (const gem of state.gems) gem.forceTarget = player.id;
+        if (player.local || net.mode === "host") sfx("gem", { broadcast: net.mode === "host" });
+        addRing(player.x, player.z, 2.6, 0x5aa7ff);
+        showToast(`${player.name}が磁石を拾いました`);
+        break;
+      }
+    }
+  }
+  removeDead(state.magnets, (magnet) => magnet.collected);
 }
 
 function updateStageHazards(dt) {
@@ -4170,6 +4233,43 @@ function makeOldHeartMesh() {
   return group;
 }
 
+function makeMagnetMesh() {
+  const group = new THREE.Group();
+  const redMat = new THREE.MeshStandardMaterial({ color: 0xe23b3b, roughness: 0.35, metalness: 0.25, emissive: 0x3a0505 });
+  const blueMat = new THREE.MeshStandardMaterial({ color: 0x2563eb, roughness: 0.35, metalness: 0.25, emissive: 0x06163d });
+  const darkMat = new THREE.MeshStandardMaterial({ color: 0x1f2933, roughness: 0.5, metalness: 0.35 });
+  const left = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.95, 0.22), redMat);
+  const right = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.95, 0.22), blueMat);
+  const top = new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.13, 10, 28, Math.PI), darkMat);
+  left.position.set(-0.42, 0.1, 0);
+  right.position.set(0.42, 0.1, 0);
+  top.position.set(0, 0.55, 0);
+  top.rotation.z = Math.PI;
+  const n = makeTinyTextSprite("N", "#ffffff");
+  const s = makeTinyTextSprite("S", "#ffffff");
+  n.position.set(-0.42, -0.28, 0.14);
+  s.position.set(0.42, -0.28, 0.14);
+  group.add(left, right, top, n, s);
+  group.scale.setScalar(1.12);
+  return group;
+}
+
+function makeTinyTextSprite(text, color = "#ffffff") {
+  const labelCanvas = document.createElement("canvas");
+  labelCanvas.width = 64;
+  labelCanvas.height = 64;
+  const ctx = labelCanvas.getContext("2d");
+  ctx.fillStyle = color;
+  ctx.font = "900 42px sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, 32, 34);
+  const texture = new THREE.CanvasTexture(labelCanvas);
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false }));
+  sprite.scale.set(0.38, 0.38, 1);
+  return sprite;
+}
+
 function makeMagicCircleMesh(circle = {}) {
   const group = new THREE.Group();
   const radius = circle.radius || 3.2;
@@ -5043,8 +5143,9 @@ function handleHostData(data) {
     stopBgm();
     sfx(data.won ? "victory" : "gameover");
     ui.skillText.closest(".skill-hud")?.classList.add("hidden");
+    const earnedMoney = awardMoney(data.won, { elapsed: data.elapsed, kills: data.kills, stageId: data.stageId });
     ui.endTitle.textContent = data.won ? "Clear!" : "Game Over";
-    ui.endText.textContent = endSummaryText(data.elapsed, data.kills, false);
+    ui.endText.textContent = `${endSummaryText(data.elapsed, data.kills, false)} / ${earnedMoney}G獲得`;
     ui.restartButton.textContent = "コンティニューに投票";
     ui.disbandButton.classList.remove("hidden");
     ui.gameOver.classList.remove("hidden");
@@ -5068,6 +5169,7 @@ function applySnapshot(data) {
   syncSimpleMeshes(state.renderCache.bullets, data.bullets || [], makeBulletMesh, 1.05);
   syncSimpleMeshes(state.renderCache.gems, data.gems || [], makeGemMesh, 0.55);
   syncSimpleMeshes(state.renderCache.hearts, data.hearts || [], makeHeartMesh, 0.7);
+  syncSimpleMeshes(state.renderCache.magnets, data.magnets || [], makeMagnetMesh, 0.76);
   syncSimpleMeshes(state.renderCache.circles, data.circles || [], makeMagicCircleMesh, 0.1);
   syncRockfalls(data.rockfalls || []);
   syncBossZones(data.bossZones || []);
@@ -5113,8 +5215,9 @@ function sendHostSnapshot(force = false) {
     enemies: state.enemies.map((e) => ({ id: e.id, x: e.x, z: e.z, radius: e.radius, hp: e.hp, maxHp: e.maxHp, boss: e.boss, shooter: e.shooter, bomber: e.bomber, enemyType: e.enemyType, walkSeed: e.walkSeed, midBoss: e.midBoss, bossRole: e.bossRole })),
     arrows: state.arrows.map((a) => ({ id: a.id, x: a.x, z: a.z, angle: a.angle, kind: a.kind, radius: a.radius, owner: a.owner, skill: a.skill })),
     bullets: state.enemyBullets.map((b) => ({ id: b.id, x: b.x, z: b.z, kind: b.kind, colorIndex: b.colorIndex, angle: b.angle })),
-    gems: state.gems.map((g) => ({ id: g.id, x: g.x, z: g.z, kind: g.kind })),
+    gems: state.gems.map((g) => ({ id: g.id, x: g.x, z: g.z, kind: g.kind, forceTarget: g.forceTarget })),
     hearts: state.hearts.map((h) => ({ id: h.id, x: h.x, z: h.z })),
+    magnets: state.magnets.map((m) => ({ id: m.id, x: m.x, z: m.z })),
     circles: state.magicCircles.map((c) => ({ id: c.id, x: c.x, z: c.z, radius: c.radius, life: c.life, duration: c.duration })),
     rockfalls: state.rockfalls.map((r) => ({ id: r.id, x: r.x, z: r.z, radius: r.radius, life: r.life, start: r.start, impactAt: r.impactAt, impacted: r.impacted, crystal: r.crystal, fire: r.fire, hurtsEnemies: r.hurtsEnemies })),
     bossZones: state.bossZones.map((z) => ({
@@ -5551,6 +5654,146 @@ function playerName() {
   return ui.playerName.value.trim().slice(0, 14) || "Player";
 }
 
+function defaultProgress() {
+  return {
+    money: 0,
+    characters: { archer: true, witch: false, saber: false },
+    stages: { stage1: true, stage2: false, stage3: false },
+    permanent: { power: 0, vitality: 0, speed: 0, magnet: 0 },
+  };
+}
+
+function loadProgress() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(PROGRESS_KEY) || "{}");
+    const base = defaultProgress();
+    return {
+      money: Math.max(0, Number(saved.money) || 0),
+      characters: { ...base.characters, ...(saved.characters || {}) },
+      stages: { ...base.stages, ...(saved.stages || {}) },
+      permanent: { ...base.permanent, ...(saved.permanent || {}) },
+    };
+  } catch {
+    return defaultProgress();
+  }
+}
+
+function saveProgress() {
+  localStorage.setItem(PROGRESS_KEY, JSON.stringify(progress));
+}
+
+function progressItemCost(item) {
+  if (item.type !== "permanent") return item.cost || 0;
+  const level = progress.permanent[item.id] || 0;
+  return item.baseCost + item.costStep * level;
+}
+
+function ownsShopItem(item) {
+  if (item.type === "character") return Boolean(progress.characters[item.id]);
+  if (item.type === "stage") return Boolean(progress.stages[item.id]);
+  if (item.type === "permanent") return (progress.permanent[item.id] || 0) >= item.max;
+  return false;
+}
+
+function buyShopItem(itemId) {
+  const item = SHOP_ITEMS.find((entry) => entry.id === itemId);
+  if (!item || ownsShopItem(item)) return;
+  const cost = progressItemCost(item);
+  if (progress.money < cost) {
+    showToast("お金が足りません");
+    return;
+  }
+  progress.money -= cost;
+  if (item.type === "character") progress.characters[item.id] = true;
+  if (item.type === "stage") progress.stages[item.id] = true;
+  if (item.type === "permanent") progress.permanent[item.id] = Math.min(item.max, (progress.permanent[item.id] || 0) + 1);
+  saveProgress();
+  updateProgressUi();
+  showToast(`${item.name}を購入しました`);
+}
+
+function updateProgressUi() {
+  if (ui.moneyBadge) ui.moneyBadge.textContent = `${progress.money}G`;
+  ui.moneyBadge?.parentElement?.classList.toggle("hidden", net.phase === "playing" || net.phase === "gameover");
+  if (ui.shopMoney) ui.shopMoney.textContent = `所持金 ${progress.money}G`;
+  renderShop();
+  updateCharacterLocks();
+  updateStageDifficultyButtons();
+}
+
+function renderShop() {
+  if (!ui.shopItems) return;
+  ui.shopItems.innerHTML = "";
+  for (const item of SHOP_ITEMS) {
+    const owned = ownsShopItem(item);
+    const level = item.type === "permanent" ? progress.permanent[item.id] || 0 : 0;
+    const cost = progressItemCost(item);
+    const card = document.createElement("section");
+    card.className = "shop-card";
+    const status = item.type === "permanent" ? `Lv ${level}/${item.max}` : owned ? "購入済み" : "未購入";
+    card.innerHTML = `<strong>${item.name}</strong><p>${item.desc}</p><small>${status}</small>`;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = owned ? "購入済み" : `${cost}Gで購入`;
+    button.disabled = owned || progress.money < cost;
+    button.addEventListener("click", () => buyShopItem(item.id));
+    card.appendChild(button);
+    ui.shopItems.appendChild(card);
+  }
+}
+
+function isCharacterUnlocked(character) {
+  if (character === "ninja") return true;
+  return Boolean(progress.characters[character]);
+}
+
+function isStageProgressUnlocked(stageId) {
+  if (stageId === "stage3") return stage3DebugUnlocked;
+  return Boolean(progress.stages[stageId]);
+}
+
+function updateCharacterLocks() {
+  if (!ui.characterSelect) return;
+  for (const button of ui.characterSelect.querySelectorAll("[data-character]")) {
+    const character = button.dataset.character || "archer";
+    const locked = !isCharacterUnlocked(character);
+    button.classList.toggle("locked", locked);
+    button.disabled = locked;
+    button.title = locked ? "ショップで購入すると使用できます" : "";
+  }
+  if (!isCharacterUnlocked(selectedCharacterId)) {
+    selectedCharacterId = "archer";
+    for (const item of ui.characterSelect.querySelectorAll("[data-character]")) item.classList.toggle("selected", item.dataset.character === "archer");
+  }
+}
+
+function applyPermanentBonuses(player) {
+  const permanent = progress.permanent || {};
+  const hpBonus = (permanent.vitality || 0) * 10;
+  const damageBonus = 1 + (permanent.power || 0) * 0.05;
+  const speedBonus = 1 + (permanent.speed || 0) * 0.03;
+  const magnetBonus = 1 + (permanent.magnet || 0) * 0.08;
+  player.maxHp += hpBonus;
+  player.hp = player.maxHp;
+  player.damage *= damageBonus;
+  player.speed *= speedBonus;
+  player.magnet *= magnetBonus;
+}
+
+function awardMoney(won, stats = {}) {
+  const player = localPlayer() || state.players[0];
+  if (!player || net.mode === "host" && !player.local) return 0;
+  const stageId = stats.stageId || state.stageId;
+  const kills = stats.kills ?? state.kills;
+  const elapsed = stats.elapsed ?? state.elapsed;
+  const stageBonus = stageId === "stage3" ? 80 : stageId === "stage2" ? 45 : 25;
+  const earned = Math.max(1, Math.floor(kills * 1.2 + (player.level || 1) * 8 + elapsed / 12 + (won ? stageBonus : 0)));
+  progress.money += earned;
+  saveProgress();
+  updateProgressUi();
+  return earned;
+}
+
 function toHalfWidth(text) {
   return text
     .replace(/[！-～]/g, (char) => String.fromCharCode(char.charCodeAt(0) - 0xfee0))
@@ -5593,6 +5836,11 @@ function selectStage(stageId) {
     updateStageDifficultyButtons();
     return;
   }
+  if (!isStageProgressUnlocked(stageId)) {
+    showToast("ショップでステージを解放してください");
+    updateStageDifficultyButtons();
+    return;
+  }
   selectedStageId = STAGES[stageId] ? stageId : "stage1";
   updateStageDifficultyButtons();
 }
@@ -5605,11 +5853,14 @@ function selectDifficulty(difficultyId) {
 function updateStageDifficultyButtons() {
   for (const root of [ui.stageSelect, ui.roomStageSelect]) {
     for (const button of root?.querySelectorAll("[data-stage]") || []) {
-      const locked = button.dataset.stage === "stage3" && !stage3DebugUnlocked;
+      const debugLocked = button.dataset.stage === "stage3" && !stage3DebugUnlocked;
+      const progressLocked = !debugLocked && !isStageProgressUnlocked(button.dataset.stage);
+      const locked = debugLocked || progressLocked;
       button.classList.toggle("selected", button.dataset.stage === selectedStageId);
-      button.classList.toggle("locked", locked);
+      button.classList.toggle("locked", debugLocked);
+      button.classList.toggle("progress-locked", progressLocked);
       button.disabled = locked;
-      button.title = locked ? "デバッグ中: 2秒以内に3キーを3回押すと解放" : "";
+      button.title = debugLocked ? "デバッグ中: 2秒以内に3キーを3回押すと解放" : progressLocked ? "ショップで解放すると選択できます" : "";
     }
   }
   for (const root of [ui.difficultySelect, ui.roomDifficultySelect]) {
@@ -5663,7 +5914,21 @@ function shuffle(items) {
 
 function makeUpgradeChoices(player = localPlayer()) {
   const character = player?.character || "archer";
-  return shuffle(upgrades.filter((up) => !up.classes || up.classes.includes(character))).slice(0, 3).map((up) => up.name);
+  return shuffle(upgrades.filter((up) => canOfferUpgrade(up, player, character))).slice(0, 3).map((up) => up.name);
+}
+
+function upgradeLevel(player, name) {
+  return (player?.upgrades || []).filter((upgradeName) => upgradeName === name).length;
+}
+
+function upgradeMaxLevel(up) {
+  return up.maxLevel || UPGRADE_MAX_LEVEL;
+}
+
+function canOfferUpgrade(up, player, character = player?.character || "archer") {
+  if (!up) return false;
+  if (up.classes && !up.classes.includes(character)) return false;
+  return upgradeLevel(player, up.name) < upgradeMaxLevel(up);
 }
 
 function endGame(won) {
@@ -5674,14 +5939,15 @@ function endGame(won) {
   sfx(won ? "victory" : "gameover");
   ui.skillText.closest(".skill-hud")?.classList.add("hidden");
   net.restartVotes = new Set();
+  const earnedMoney = awardMoney(won);
   ui.endTitle.textContent = won ? "Clear!" : "Game Over";
-  ui.endText.textContent = endSummaryText(state.elapsed, state.kills, true);
+  ui.endText.textContent = `${endSummaryText(state.elapsed, state.kills, true)} / ${earnedMoney}G獲得`;
   ui.restartButton.textContent = net.mode === "solo" ? "コンティニュー" : "コンティニューに投票";
   ui.disbandButton.textContent = net.mode === "solo" ? "タイトルに戻る" : "解散する";
   ui.voteText.textContent = net.mode === "solo" ? "" : `再戦投票: 0/${state.players.length}`;
   ui.disbandButton.classList.remove("hidden");
   ui.gameOver.classList.remove("hidden");
-  if (net.mode === "host") broadcast({ type: "gameOver", won, elapsed: state.elapsed, kills: state.kills, total: state.players.length });
+  if (net.mode === "host") broadcast({ type: "gameOver", won, elapsed: state.elapsed, kills: state.kills, total: state.players.length, stageId: state.stageId });
 }
 
 function voteRestart(playerId = localPlayerId) {
@@ -5914,9 +6180,11 @@ function showTitle() {
   ui.stageSelectPanel.classList.add("hidden");
   ui.createRoomPanel.classList.add("hidden");
   ui.joinRoomPanel.classList.add("hidden");
+  ui.shopPanel?.classList.add("hidden");
   ui.joinPasswordPanel.classList.add("hidden");
   ui.roomStatus.textContent = "部屋作成または参加を選んでください。";
   updateOnlineBadge();
+  updateProgressUi();
   heartbeatPresence().catch((error) => console.warn("Failed to heartbeat presence", error));
   refreshOnlinePresenceCount();
 }
@@ -5935,6 +6203,14 @@ function openLevelUp(player = localPlayer()) {
   state.pendingLevel = player.id;
   net.waitingFor = player.id;
   player.pendingChoices = makeUpgradeChoices(player);
+  if (!player.pendingChoices.length) {
+    state.pendingLevel = null;
+    state.paused = false;
+    net.waitingFor = null;
+    if (player.local) showToast("選べる強化がすべて最大レベルです");
+    if (net.mode === "host") broadcast({ type: "levelDone", playerId: player.id });
+    return;
+  }
   if (net.mode === "host") broadcast({ type: "levelWaiting", playerId: player.id });
   if (!player.local) {
     showStatus("他のプレイヤーの選択を待っています", `${player.name} が強化を選んでいます。`);
@@ -5952,7 +6228,8 @@ function showLevelChoices(player, choiceNames) {
     const button = document.createElement("button");
     button.className = "choice";
     button.type = "button";
-    button.innerHTML = `<strong>${up.name}</strong><span>${upgradeDescForPlayer(up, player)}</span>`;
+    const nextLevel = upgradeLevel(player, up.name) + 1;
+    button.innerHTML = `<strong>${up.name} Lv ${nextLevel}/${upgradeMaxLevel(up)}</strong><span>${upgradeDescForPlayer(up, player)}</span>`;
     button.addEventListener("click", () => chooseUpgrade(player.id, up.name));
     ui.choices.appendChild(button);
   }
@@ -5992,6 +6269,15 @@ function rerollChoices(playerId) {
   if (!player || player.rerolls <= 0) return;
   player.rerolls -= 1;
   player.pendingChoices = makeUpgradeChoices(player);
+  if (!player.pendingChoices.length) {
+    state.pendingLevel = null;
+    state.paused = false;
+    net.waitingFor = null;
+    ui.levelUp.classList.add("hidden");
+    hideStatus();
+    if (net.mode === "host") broadcast({ type: "levelDone", playerId });
+    return;
+  }
   if (player.local) showLevelChoices(player, player.pendingChoices);
   else sendToPlayer(player.id, { type: "levelOffer", playerId: player.id, choices: player.pendingChoices, rerolls: player.rerolls });
 }
@@ -6005,7 +6291,7 @@ function chooseUpgrade(playerId, upgradeName) {
   }
   const player = state.players.find((p) => p.id === playerId);
   const up = upgrades.find((item) => item.name === upgradeName);
-  if (player && up) {
+  if (player && up && canOfferUpgrade(up, player)) {
     up.apply(player);
     player.upgrades.push(up.name);
     player.pendingChoices = [];
@@ -6029,6 +6315,10 @@ window.addEventListener("keydown", (event) => {
     }
     if (!ui.characterCodex.classList.contains("hidden")) {
       closeCharacterCodex();
+      return;
+    }
+    if (!ui.shopPanel.classList.contains("hidden")) {
+      ui.shopPanel.classList.add("hidden");
       return;
     }
     togglePause();
@@ -6142,9 +6432,18 @@ for (const root of [ui.difficultySelect, ui.roomDifficultySelect]) {
 }
 ui.codexButton.addEventListener("click", openCharacterCodex);
 ui.closeCodexButton.addEventListener("click", closeCharacterCodex);
+ui.shopButton?.addEventListener("click", () => {
+  renderShop();
+  ui.shopPanel.classList.remove("hidden");
+});
+ui.closeShopButton?.addEventListener("click", () => ui.shopPanel.classList.add("hidden"));
 if (ui.characterSelect) {
   for (const button of ui.characterSelect.querySelectorAll("[data-character]")) {
     button.addEventListener("click", () => {
+      if (!isCharacterUnlocked(button.dataset.character || "archer")) {
+        showToast("ショップでキャラを購入してください");
+        return;
+      }
       selectedCharacterId = button.dataset.character || "archer";
       for (const item of ui.characterSelect.querySelectorAll("[data-character]")) item.classList.toggle("selected", item === button);
       if (state) resetSceneEntities();
