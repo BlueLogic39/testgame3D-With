@@ -188,6 +188,7 @@ const CHARACTER_TYPES = {
   archer: { label: "アーチャー", color: 0x57c4a7, remoteColor: 0x5aa7ff },
   witch: { label: "ウィッチ", color: 0x8b5cf6, remoteColor: 0xb07cff },
   saber: { label: "セイバー", color: 0xd9dfe8, remoteColor: 0x91c7ff },
+  ninja: { label: "忍者", color: 0x2dd4bf, remoteColor: 0x67e8f9 },
 };
 
 const STAGES = {
@@ -205,6 +206,7 @@ const CHARACTER_MODELS = {
   archer: { path: "./model_glTF/Elf.gltf", scale: 0.72, keepProps: true },
   witch: { path: "./model_glTF/Witch.gltf", scale: 0.68, keepProps: true },
   saber: { path: "./model_glTF/Knight_Male.gltf", scale: 0.78, keepProps: true },
+  ninja: { path: "./model_glTF/Ninja_Male.gltf", scale: 0.78, keepProps: true },
 };
 
 const gltfLoader = new GLTFLoader();
@@ -273,6 +275,8 @@ const materials = {
   boss: new THREE.MeshStandardMaterial({ color: 0x8b5cf6, roughness: 0.6, emissive: 0x1b0f38 }),
   arrow: new THREE.MeshStandardMaterial({ color: 0xf2c14e, roughness: 0.28, metalness: 0.15 }),
   magic: new THREE.MeshStandardMaterial({ color: 0xff6b2c, roughness: 0.28, emissive: 0x7a1b05 }),
+  shuriken: new THREE.MeshStandardMaterial({ color: 0xc8f3ff, roughness: 0.22, metalness: 0.6, emissive: 0x123047 }),
+  ninjaShadow: new THREE.MeshBasicMaterial({ color: 0x2dd4bf, transparent: true, opacity: 0.52, depthWrite: false }),
   ice: new THREE.MeshStandardMaterial({ color: 0x9fe8ff, roughness: 0.18, metalness: 0.05, emissive: 0x124b68, transparent: true, opacity: 0.9 }),
   bullet: new THREE.MeshStandardMaterial({ color: 0xff7a42, roughness: 0.35, emissive: 0x3a1206 }),
   gem: new THREE.MeshStandardMaterial({ color: 0x58d5b7, roughness: 0.2, emissive: 0x0d4739 }),
@@ -315,7 +319,10 @@ upgrades.push(
   { name: "ファイア巨大化", desc: "ファイアが大きくなり、魔力爆発の範囲と威力が伸びる。さらに連鎖爆発が+1される。", classes: ["witch"], apply: (p) => { p.magicRadius += 0.12; p.damage *= 1.08; p.magicSplash += 1; p.chainExplosion += 1; } },
   { name: "剣閃範囲 +10度", desc: "薙ぎ払いの横範囲が10度広がり、奥への届く距離も10%伸びる。", classes: ["saber"], apply: (p) => { p.slashArc += THREE.MathUtils.degToRad(10); p.slashRange *= 1.1; } },
   { name: "飛燕斬", desc: "通常攻撃と同時に飛ぶ斬撃を放つ。初回は威力67%、貫通0。以後は1回ごとに威力+12%、大きさ+0.08、貫通+2。", classes: ["saber"], apply: (p) => (p.flyingSlash += 1) },
-  { name: "二連斬り", desc: "薙ぎ払いの直後に、少しずらした追加の斬撃を放つ。", classes: ["saber"], apply: (p) => (p.doubleSlash += 1) }
+  { name: "二連斬り", desc: "薙ぎ払いの直後に、少しずらした追加の斬撃を放つ。", classes: ["saber"], apply: (p) => (p.doubleSlash += 1) },
+  { name: "風魔手裏剣", desc: "手裏剣が風をまとい、取得するたび威力+15%、大きさ+0.06、飛距離が少し伸びる。", classes: ["ninja"], apply: (p) => (p.fumaShuriken += 1) },
+  { name: "影分身", desc: "通常攻撃時に分身が追加の手裏剣を投げる。取得するたび分身が増える。", classes: ["ninja"], apply: (p) => (p.shadowClone += 1) },
+  { name: "影縫い", desc: "刀と手裏剣に短時間スローを付与する。取得するたびスロー時間が伸びる。", classes: ["ninja"], apply: (p) => (p.shadowBind += 1) }
 );
 
 initThree();
@@ -950,6 +957,9 @@ function makePlayer(id, name, x, z, local, character = "archer") {
     spinSlashAngle: 0,
     spinSlashTick: 0,
     spinSlashVisual: 0,
+    fumaShuriken: 0,
+    shadowClone: 0,
+    shadowBind: 0,
     mesh: makePlayerMesh(name, local, type),
   };
   if (type === "witch") {
@@ -963,6 +973,15 @@ function makePlayer(id, name, x, z, local, character = "archer") {
     player.speed = 9.8;
     player.arrows = 0;
     player.pierce = 0;
+  } else if (type === "ninja") {
+    player.damage = 21;
+    player.baseFireRate = 0.82;
+    player.speed = 9.4 * 1.15;
+    player.skillCooldown = 10;
+    player.arrows = 0;
+    player.pierce = 0;
+    player.slashArc = THREE.MathUtils.degToRad(74);
+    player.slashRange = 3.75;
   }
   updateFireRate(player);
   return player;
@@ -1054,6 +1073,11 @@ function addCharacterProps(group, character, bodyMat, useLegacyModel = false) {
     group.add(sword);
     return [sword];
   }
+  if (character === "ninja") {
+    const weapon = makeNinjaWeaponMesh(bodyMat);
+    group.add(weapon);
+    return [weapon];
+  }
   const bow = useLegacyModel ? makeOldBowMesh() : makeFbxMesh("bow", makeOldBowMesh);
   group.add(bow);
   return [bow];
@@ -1087,6 +1111,22 @@ function makeOldSwordMesh(bodyMat) {
   guard.position.set(0.58, 0.63, 0.12);
   guard.rotation.z = -0.45;
   group.add(blade, guard);
+  return group;
+}
+
+function makeNinjaWeaponMesh(bodyMat) {
+  const group = new THREE.Group();
+  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.95, 0.06), materials.saberBlade.clone());
+  blade.position.set(0.62, 0.92, 0.04);
+  blade.rotation.z = -0.62;
+  blade.castShadow = true;
+  const guard = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.05, 0.1), bodyMat);
+  guard.position.set(0.48, 0.58, 0.1);
+  guard.rotation.z = -0.62;
+  const shuriken = makeShurikenMesh(0.26);
+  shuriken.position.set(-0.45, 1.35, -0.1);
+  shuriken.rotation.set(Math.PI / 2, 0, Math.PI / 4);
+  group.add(blade, guard, shuriken);
   return group;
 }
 
@@ -1832,6 +1872,10 @@ function shoot(player) {
     swingSaber(player);
     return;
   }
+  if (player.character === "ninja") {
+    attackNinja(player);
+    return;
+  }
   shootArrows(player);
 }
 
@@ -1967,6 +2011,96 @@ function applySaberSlash(player, angle) {
   addSlashEffect(player.x, player.z, range, arc, angle, hit ? 0xfff1a6 : 0x91c7ff, player.id);
 }
 
+function attackNinja(player) {
+  const base = Math.atan2(player.input.aimX - player.x, player.input.aimZ - player.z);
+  applyNinjaSlash(player, base);
+  fireNinjaShurikenSpread(player, base, ninjaShurikenCount(player), { damageScale: 1, clone: false });
+  const clones = Math.min(4, player.shadowClone || 0);
+  for (let i = 0; i < clones; i += 1) {
+    const side = i % 2 === 0 ? -1 : 1;
+    const row = Math.floor(i / 2) + 1;
+    const offsetAngle = base + side * (0.32 + row * 0.12);
+    const ox = Math.sin(base + side * Math.PI / 2) * (0.9 + row * 0.25);
+    const oz = Math.cos(base + side * Math.PI / 2) * (0.9 + row * 0.25);
+    addNinjaCloneEffect(player.x + ox, player.z + oz, base);
+    fireNinjaShurikenSpread(player, offsetAngle, 1, { damageScale: 0.56, clone: true, originX: player.x + ox, originZ: player.z + oz });
+  }
+}
+
+function ninjaLevelBonus(player) {
+  return Math.floor(Math.max(0, (player.level || 1) - 1) / 5);
+}
+
+function ninjaShurikenCount(player) {
+  return 1 + ninjaLevelBonus(player);
+}
+
+function ninjaShurikenPierce(player) {
+  return ninjaLevelBonus(player);
+}
+
+function fireNinjaShurikenSpread(player, base, count, options = {}) {
+  const spread = Math.min(0.62, 0.18 * (count - 1));
+  for (let i = 0; i < count; i += 1) {
+    const offset = count === 1 ? 0 : -spread / 2 + (spread * i) / Math.max(1, count - 1);
+    fireNinjaShuriken(player, base + offset, options);
+  }
+}
+
+function fireNinjaShuriken(player, angle, options = {}) {
+  const fuma = player.fumaShuriken || 0;
+  const radius = 0.32 + fuma * 0.06;
+  const speed = 23 + fuma * 1.2;
+  const x = options.originX ?? player.x;
+  const z = options.originZ ?? player.z;
+  const shuriken = {
+    id: crypto.randomUUID(),
+    x: x + Math.sin(angle) * 1.05,
+    z: z + Math.cos(angle) * 1.05,
+    vx: Math.sin(angle) * speed,
+    vz: Math.cos(angle) * speed,
+    radius,
+    life: 1.8 + fuma * 0.08,
+    damage: player.damage * (0.75 + fuma * 0.15) * (options.damageScale || 1),
+    pierce: ninjaShurikenPierce(player),
+    owner: player.id,
+    kind: "shuriken",
+    angle,
+    hit: new Set(),
+    mesh: makeShurikenProjectileMesh({ radius, fuma }),
+  };
+  if (options.skill) shuriken.skill = true;
+  shuriken.mesh.rotation.y = angle;
+  shuriken.mesh.position.set(shuriken.x, 1.05, shuriken.z);
+  scene.add(shuriken.mesh);
+  state.arrows.push(shuriken);
+}
+
+function applyNinjaSlash(player, angle) {
+  const range = player.slashRange || 3.75;
+  const arc = player.slashArc || THREE.MathUtils.degToRad(74);
+  let hit = false;
+  for (const enemy of state.enemies) {
+    const d = distance(player, enemy);
+    if (d > range + enemy.radius) continue;
+    const toEnemy = Math.atan2(enemy.x - player.x, enemy.z - player.z);
+    if (Math.abs(angleDiff(toEnemy, angle)) > arc / 2) continue;
+    enemy.hp -= player.damage * 0.72;
+    enemy.lastHitBy = player.id;
+    applyNinjaShadowBind(player, enemy);
+    hit = true;
+  }
+  addSlashEffect(player.x, player.z, range, arc, angle, hit ? 0x2dd4bf : 0x67e8f9, player.id);
+}
+
+function applyNinjaShadowBind(player, enemy) {
+  const level = player.shadowBind || 0;
+  if (level <= 0 || !enemy) return;
+  const duration = 0.45 + level * 0.35;
+  enemy.slowUntil = Math.max(enemy.slowUntil || 0, state.elapsed + duration);
+  addRing(enemy.x, enemy.z, 0.82 + level * 0.08, 0x2dd4bf);
+}
+
 function isSaberSpinning(player) {
   return player?.character === "saber" && state.elapsed < (player.spinSlashUntil || 0);
 }
@@ -2073,12 +2207,14 @@ function trackDebugBossKey(kind) {
 function attackSoundKey(character) {
   if (character === "witch") return "witchAttack";
   if (character === "saber") return "saberAttack";
+  if (character === "ninja") return "saberAttack";
   return "archerAttack";
 }
 
 function skillSoundKey(character) {
   if (character === "witch") return "witchSkill";
   if (character === "saber") return "saberSkill";
+  if (character === "ninja") return "swordSkill";
   return "archerSkill";
 }
 
@@ -2101,6 +2237,7 @@ function activateSkill(player) {
   const angle = Math.atan2(player.input.aimX - player.x, player.input.aimZ - player.z);
   if (player.character === "witch") castWitchSkill(player);
   else if (player.character === "saber") castSaberSkill(player, angle);
+  else if (player.character === "ninja") castNinjaSkill(player, angle);
   else castArcherSkill(player, angle);
   showSkillBanner(player.name, skillName(player.character));
   if (net.mode === "host") broadcast({ type: "skillBanner", playerName: player.name, skill: skillName(player.character) });
@@ -2110,6 +2247,7 @@ function activateSkill(player) {
 function skillName(character) {
   if (character === "witch") return "魔女の大爆発";
   if (character === "saber") return "回転突進斬り";
+  if (character === "ninja") return "飛影八閃";
   return "アローレイン";
 }
 
@@ -2165,6 +2303,28 @@ function castSaberSkill(player, baseAngle) {
   player.spinSlashVisual = 0;
   player.invincibleUntil = Math.max(player.invincibleUntil || 0, state.elapsed + 2);
   addRing(player.x, player.z, (player.slashRange || 5.2) * 1.1, 0x91c7ff);
+}
+
+function castNinjaSkill(player, baseAngle) {
+  const startX = player.x;
+  const startZ = player.z;
+  const dashDistance = 9.5;
+  player.x = clamp(player.x + Math.sin(baseAngle) * dashDistance, -WORLD.half + 1.2, WORLD.half - 1.2);
+  player.z = clamp(player.z + Math.cos(baseAngle) * dashDistance, -WORLD.half + 1.2, WORLD.half - 1.2);
+  player.mesh.position.set(player.x, 0, player.z);
+  player.invincibleUntil = Math.max(player.invincibleUntil || 0, state.elapsed + 0.55);
+  addRing(startX, startZ, 1.7, 0x2dd4bf);
+  addRing(player.x, player.z, 2.3, 0x67e8f9);
+  addNinjaCloneEffect(startX, startZ, baseAngle);
+  addNinjaCloneEffect(player.x, player.z, baseAngle);
+  const bonusCount = ninjaLevelBonus(player);
+  for (let i = 0; i < 8; i += 1) {
+    const base = (Math.PI * 2 * i) / 8;
+    for (let j = 0; j <= bonusCount; j += 1) {
+      const offset = j === 0 ? 0 : (j % 2 === 0 ? -1 : 1) * (0.08 + Math.floor(j / 2) * 0.05);
+      fireNinjaShuriken(player, base + offset, { skill: true, damageScale: 1.18 });
+    }
+  }
 }
 
 function spawnEnemies(dt) {
@@ -2670,6 +2830,7 @@ function updateArrows(dt) {
     arrow.z += arrow.vz * dt;
     arrow.life -= dt;
     arrow.mesh.position.set(arrow.x, 1.1, arrow.z);
+    if (arrow.kind === "shuriken") arrow.mesh.rotation.z += dt * 18;
     for (const enemy of state.enemies) {
       if (arrow.hit.has(enemy)) continue;
       if (distance(arrow, enemy) < arrow.radius + enemy.radius) {
@@ -2678,8 +2839,12 @@ function updateArrows(dt) {
         enemy.lastHitBy = arrow.owner;
         arrow.hit.add(enemy);
         if (arrow.kind === "magic") sfx("fire", { broadcast: net.mode === "host" });
-        const hitColor = arrow.kind === "magic" ? 0xff6b2c : arrow.kind === "flyingSlash" ? 0x91c7ff : 0xf2c14e;
-        addRing(enemy.x, enemy.z, arrow.kind === "magic" ? 1.0 : arrow.kind === "flyingSlash" ? 1.15 : 0.8, hitColor);
+        const hitColor = arrow.kind === "magic" ? 0xff6b2c : arrow.kind === "flyingSlash" ? 0x91c7ff : arrow.kind === "shuriken" ? 0x2dd4bf : 0xf2c14e;
+        addRing(enemy.x, enemy.z, arrow.kind === "magic" ? 1.0 : arrow.kind === "flyingSlash" ? 1.15 : arrow.kind === "shuriken" ? 0.95 : 0.8, hitColor);
+        if (arrow.kind === "shuriken") {
+          const owner = state.players.find((p) => p.id === arrow.owner);
+          if (owner) applyNinjaShadowBind(owner, enemy);
+        }
         if (arrow.kind === "magic" && arrow.splash > 0) {
           const splashRadius = 1.4 + arrow.splash * 0.42;
           const splashDamage = arrow.damage * (0.35 + arrow.splash * 0.14);
@@ -3866,7 +4031,39 @@ function makeMagicMesh() {
 function makeProjectileMesh(item = {}) {
   if (item.kind === "magic") return makeMagicMesh();
   if (item.kind === "flyingSlash") return makeFlyingSlashMesh(item);
+  if (item.kind === "shuriken") return makeShurikenProjectileMesh(item);
   return makeArrowMesh();
+}
+
+function makeShurikenProjectileMesh(item = {}) {
+  const radius = item.radius || 0.32;
+  const fuma = item.fuma || 0;
+  const group = new THREE.Group();
+  const star = makeShurikenMesh(radius);
+  const glow = new THREE.Mesh(
+    new THREE.RingGeometry(radius * 1.05, radius * (1.28 + fuma * 0.08), 24),
+    new THREE.MeshBasicMaterial({ color: 0x2dd4bf, transparent: true, opacity: 0.35, side: THREE.DoubleSide, depthWrite: false })
+  );
+  glow.rotation.x = Math.PI / 2;
+  group.add(glow, star);
+  return group;
+}
+
+function makeShurikenMesh(radius = 0.32) {
+  const group = new THREE.Group();
+  const mat = materials.shuriken.clone();
+  for (let i = 0; i < 4; i += 1) {
+    const blade = new THREE.Mesh(new THREE.ConeGeometry(radius * 0.34, radius * 0.92, 3), mat);
+    blade.position.set(Math.cos((Math.PI * i) / 2) * radius * 0.34, 0, Math.sin((Math.PI * i) / 2) * radius * 0.34);
+    blade.rotation.set(Math.PI / 2, 0, -(Math.PI * i) / 2);
+    blade.castShadow = true;
+    group.add(blade);
+  }
+  const core = new THREE.Mesh(new THREE.CylinderGeometry(radius * 0.18, radius * 0.18, radius * 0.08, 12), mat.clone());
+  core.rotation.x = Math.PI / 2;
+  core.castShadow = true;
+  group.add(core);
+  return group;
 }
 
 function makeFlyingSlashMesh(item = {}) {
@@ -4032,6 +4229,26 @@ function addSlashEffect(x, z, radius, arc, angle, color, owner = "", skill = fal
   scene.add(mesh);
   const life = skill ? 0.18 : 0.34;
   state.effects.push({ id: crypto.randomUUID(), kind: "slash", owner, skill, x, z, radius, arc, angle, color, mesh, life, start: life });
+}
+
+function addNinjaCloneEffect(x, z, angle = 0) {
+  const mesh = makeNinjaCloneMesh();
+  mesh.position.set(x, 0.05, z);
+  mesh.rotation.y = angle;
+  scene.add(mesh);
+  state.effects.push({ id: crypto.randomUUID(), kind: "ninjaClone", x, z, angle, mesh, life: 0.36, start: 0.36 });
+}
+
+function makeNinjaCloneMesh() {
+  const group = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.36, 0.92, 5, 10), materials.ninjaShadow.clone());
+  body.position.y = 1.16;
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.26, 12, 8), materials.ninjaShadow.clone());
+  head.position.y = 1.92;
+  const slash = makeSlashArcMesh(1.05, THREE.MathUtils.degToRad(90), 0.045, 0x2dd4bf, 0.52);
+  slash.position.y = 0.72;
+  group.add(body, head, slash);
+  return group;
 }
 
 function makeSlashMesh(effect) {
@@ -4471,6 +4688,8 @@ function updateUi() {
     ? `薙ぎ払い${Math.round(THREE.MathUtils.radToDeg(player.slashArc || 0))}度`
     : player.character === "witch"
       ? `元素魔法`
+      : player.character === "ninja"
+        ? `刀 / 手裏剣${ninjaShurikenCount(player)}個 / 貫通${ninjaShurikenPierce(player)}`
       : `${player.arrows}本 / 後方${player.backShots || 0}本 / 貫通${player.pierce}`;
   ui.build.textContent = `${characterName} / ${weapon} / 威力${Math.round(player.damage)} / ${buildSummary}${room}${revive}`;
 }
@@ -4517,6 +4736,9 @@ function formatBuildSummary(player) {
   addCount("剣閃範囲 +10度", "剣閃範囲");
   addCount("飛燕斬");
   addCount("二連斬り");
+  addCount("風魔手裏剣");
+  addCount("影分身");
+  addCount("影縫い");
   for (const [name, count] of counts) {
     if (handled.has(name)) continue;
     if (!upgrades.some((up) => up.name === name)) continue;
@@ -4883,7 +5105,7 @@ function sendHostSnapshot(force = false) {
       skillCharge: p.skillCharge, skillCooldown: p.skillCooldown,
       spinSlashUntil: p.spinSlashUntil, spinSlashAngle: p.spinSlashAngle,
       arrows: p.arrows, backShots: p.backShots, damage: p.damage, pierce: p.pierce,
-      flyingSlash: p.flyingSlash,
+      flyingSlash: p.flyingSlash, fumaShuriken: p.fumaShuriken, shadowClone: p.shadowClone, shadowBind: p.shadowBind,
       baseFireRate: p.baseFireRate, attackSpeedBonus: p.attackSpeedBonus, fireRate: p.fireRate,
       magicSplash: p.magicSplash, magicRadius: p.magicRadius, chainExplosion: p.chainExplosion, iceSpike: p.iceSpike, thunderCircle: p.thunderCircle,
       rerolls: p.rerolls, upgrades: p.upgrades,
@@ -5029,7 +5251,7 @@ function syncEffects(effects) {
   for (const effect of effects) {
     let mesh = cache.get(effect.id);
     if (!mesh) {
-      mesh = effect.kind === "slash" ? makeSlashMesh(effect) : effect.kind === "thunder" ? makeThunderBoltMesh(effect) : effect.kind === "ice" ? makeIceSpikeMesh(effect) : makeRingMesh(effect);
+      mesh = effect.kind === "slash" ? makeSlashMesh(effect) : effect.kind === "thunder" ? makeThunderBoltMesh(effect) : effect.kind === "ice" ? makeIceSpikeMesh(effect) : effect.kind === "ninjaClone" ? makeNinjaCloneMesh(effect) : makeRingMesh(effect);
       scene.add(mesh);
       cache.set(effect.id, mesh);
       if (effect.kind === "slash" && effect.owner && !effect.skill) sfx("saberAttack");
@@ -5352,6 +5574,7 @@ function trackDebugStage3Key() {
 }
 
 function selectedCharacter() {
+  if (playerName().toUpperCase() === "NINJA") return "ninja";
   return CHARACTER_TYPES[selectedCharacterId] ? selectedCharacterId : "archer";
 }
 
@@ -5748,11 +5971,13 @@ function upgradeDescForPlayer(up, player) {
   if (up.name === "ダメージ +25%") {
     if (character === "witch") return "ファイア、魔力爆発、サンダーストーム、アイススパイク、魔女の大爆発の威力が増える。";
     if (character === "saber") return "薙ぎ払いの威力が増える。近づいた敵をまとめて倒しやすくなる。";
+    if (character === "ninja") return "刀、手裏剣、飛影八閃の威力が増える。";
     return "矢の威力が増える。硬い敵に効きやすい。";
   }
   if (up.name === "攻撃速度 +18%") {
     if (character === "witch") return "ファイアを放つ間隔が短くなる。通常攻撃の回転率が上がる。";
     if (character === "saber") return "薙ぎ払いを出せる間隔が短くなる。隙を減らしやすい。";
+    if (character === "ninja") return "刀と手裏剣を出す間隔が短くなる。";
     return "矢を撃つ間隔が短くなる。";
   }
   return up.desc;
