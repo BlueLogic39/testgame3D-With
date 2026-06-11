@@ -1275,7 +1275,7 @@ function setObjectOpacity(object, opacity = 1) {
 
 function updateCastleWallVisibility() {
   if (!castleWallProps.length) return;
-  const sidesByCamera = ["south", "west", "north", "east"];
+  const sidesByCamera = ["north", "east", "south", "west"];
   const bottomSide = sidesByCamera[((Math.round(cameraQuarterTurn) % 4) + 4) % 4];
   for (const prop of castleWallProps) {
     const side = prop.userData.castleWallSide;
@@ -1854,7 +1854,16 @@ function getLocalInput() {
   if (keys.has("KeyA") || keys.has("ArrowLeft")) dx -= 1;
   if (keys.has("KeyD") || keys.has("ArrowRight")) dx += 1;
   const len = Math.hypot(dx, dz) || 1;
-  return { dx: dx / len, dz: dz / len, aimX: aim.x, aimZ: aim.z };
+  dx /= len;
+  dz /= len;
+  if (isStage3DragonBossActive()) {
+    const angle = cameraQuarterTurn * Math.PI / 2;
+    const rotatedX = dx * Math.cos(angle) + dz * Math.sin(angle);
+    const rotatedZ = -dx * Math.sin(angle) + dz * Math.cos(angle);
+    dx = rotatedX;
+    dz = rotatedZ;
+  }
+  return { dx, dz, aimX: aim.x, aimZ: aim.z };
 }
 
 function refreshAimFromPointer() {
@@ -1912,12 +1921,12 @@ function updateCamera() {
   if (!bossMode) targetCameraQuarterTurn = 0;
   cameraQuarterTurn += (targetCameraQuarterTurn - cameraQuarterTurn) * 0.16;
   const angle = cameraQuarterTurn * Math.PI / 2;
-  const distance = bossMode ? 25 : 20;
+  const distance = bossMode ? 28 : 20;
   const targetX = player.x + Math.sin(angle) * distance;
   const targetZ = player.z + Math.cos(angle) * distance;
   camera.position.x += (targetX - camera.position.x) * 0.08;
   camera.position.z += (targetZ - camera.position.z) * 0.08;
-  camera.position.y += ((bossMode ? 26 : 21) - camera.position.y) * 0.08;
+  camera.position.y += ((bossMode ? 20 : 21) - camera.position.y) * 0.08;
   camera.lookAt(player.x, 0, player.z);
   updateCastleWallVisibility();
 }
@@ -2088,8 +2097,7 @@ function applySaberSlash(player, angle) {
     if (d > range + enemy.radius) continue;
     const toEnemy = Math.atan2(enemy.x - player.x, enemy.z - player.z);
     if (Math.abs(angleDiff(toEnemy, angle)) > arc / 2) continue;
-    enemy.hp -= player.damage;
-    enemy.lastHitBy = player.id;
+    damageEnemy(enemy, player.damage, player.id);
     hit = true;
   }
   addSlashEffect(player.x, player.z, range, arc, angle, hit ? 0xfff1a6 : 0x91c7ff, player.id);
@@ -2169,8 +2177,7 @@ function applyNinjaSlash(player, angle) {
     if (d > range + enemy.radius) continue;
     const toEnemy = Math.atan2(enemy.x - player.x, enemy.z - player.z);
     if (Math.abs(angleDiff(toEnemy, angle)) > arc / 2) continue;
-    enemy.hp -= player.damage * 0.72;
-    enemy.lastHitBy = player.id;
+    damageEnemy(enemy, player.damage * 0.72, player.id);
     applyNinjaShadowBind(player, enemy);
     hit = true;
   }
@@ -2205,8 +2212,7 @@ function updateSaberSpinSlash(player, dt) {
     player.spinSlashTick = 0.16;
     for (const enemy of state.enemies) {
       if (distance(player, enemy) > range + enemy.radius) continue;
-      enemy.hp -= damage;
-      enemy.lastHitBy = player.id;
+      damageEnemy(enemy, damage, player.id);
     }
   }
   if (player.spinSlashVisual <= 0) {
@@ -2374,8 +2380,7 @@ function castWitchSkill(player) {
   addRing(player.x, player.z, radius * 0.55, 0xffd166);
   for (const enemy of state.enemies) {
     if (distance(player, enemy) <= radius + enemy.radius) {
-      enemy.hp -= damage;
-      enemy.lastHitBy = player.id;
+      damageEnemy(enemy, damage, player.id);
     }
   }
 }
@@ -2487,6 +2492,10 @@ function addEnemy(boss, shooter, bomber = false, role = "") {
   }
   enemy.mesh = makeEnemyMesh(enemy);
   scene.add(enemy.mesh);
+  if (enemy.bossRole === "castleDragon") {
+    enemy.hitboxMesh = makeDragonHitboxMesh(enemy);
+    scene.add(enemy.hitboxMesh);
+  }
   state.enemies.push(enemy);
   if (enemy.bossRole === "castleDragon") startBgm();
 }
@@ -2925,8 +2934,7 @@ function updateArrows(dt) {
       if (arrow.hit.has(enemy)) continue;
       if (distance(arrow, enemy) < arrow.radius + enemy.radius) {
         const finalDamage = arrow.damage * projectileDamageMultiplier(arrow, enemy);
-        enemy.hp -= finalDamage;
-        enemy.lastHitBy = arrow.owner;
+        damageEnemy(enemy, finalDamage, arrow.owner);
         arrow.hit.add(enemy);
         if (arrow.kind === "magic") sfx("fire", { broadcast: net.mode === "host" });
         const hitColor = arrow.kind === "magic" ? 0xff6b2c : arrow.kind === "flyingSlash" ? 0x91c7ff : arrow.kind === "shuriken" ? 0x2dd4bf : 0xf2c14e;
@@ -3142,7 +3150,7 @@ function updateRockfalls(dt, applyDamage) {
       for (const enemy of state.enemies) {
     if (isGolemEnemy(enemy)) continue;
         if (distance(rockfall, enemy) > rockfall.radius + enemy.radius) continue;
-        enemy.hp -= rockfall.enemyDamage;
+        damageEnemy(enemy, rockfall.enemyDamage);
         const owner = nearestLivingPlayer(enemy);
         if (owner) enemy.lastHitBy = owner.id;
       }
@@ -3580,8 +3588,7 @@ function updateMagicCircles(dt) {
       addThunderStorm(circle, 5);
       for (const enemy of state.enemies) {
         if (distance(circle, enemy) <= circle.radius + enemy.radius) {
-          enemy.hp -= circle.damage;
-          enemy.lastHitBy = circle.owner;
+          damageEnemy(enemy, circle.damage, circle.owner);
           addThunderBolt(enemy.x, enemy.z);
           addRing(enemy.x, enemy.z, 0.85, 0xffe45c);
         }
@@ -3602,8 +3609,7 @@ function castIceSpikes(player) {
     .sort((a, b) => distance(player, a) - distance(player, b))
     .slice(0, count);
   for (const enemy of targets) {
-    enemy.hp -= damage;
-    enemy.lastHitBy = player.id;
+    damageEnemy(enemy, damage, player.id);
     enemy.slowUntil = Math.max(enemy.slowUntil || 0, state.elapsed + slowDuration);
     addIceSpike(enemy.x, enemy.z, radius);
     addRing(enemy.x, enemy.z, 0.72, 0x9fe8ff);
@@ -3648,7 +3654,7 @@ function explode(x, z, radius, damage) {
   sfx("explode", { broadcast: net.mode === "host" });
   addRing(x, z, radius, 0xe8784f);
   for (const enemy of state.enemies) {
-    if (distance({ x, z }, enemy) < radius + enemy.radius) enemy.hp -= damage;
+    if (distance({ x, z }, enemy) < radius + enemy.radius) damageEnemy(enemy, damage);
   }
 }
 
@@ -3659,8 +3665,7 @@ function magicExplosion(x, z, radius, damage, chainLeft = 0, owner = "", chained
   const nextBursts = [];
   for (const enemy of state.enemies) {
     if (distance({ x, z }, enemy) >= radius + enemy.radius) continue;
-    enemy.hp -= damage;
-    if (owner) enemy.lastHitBy = owner;
+    damageEnemy(enemy, damage, owner);
     const key = enemy.id || enemy;
     if (chainLeft > 0 && !chained.has(key)) {
       chained.add(key);
@@ -3972,6 +3977,56 @@ function updateDragonVisual(enemy, target, dt) {
   }
   if (enemy.mesh.userData.mouth) {
     enemy.mesh.userData.mouth.scale.setScalar(0.78 + Math.sin(state.elapsed * 18) * 0.14);
+  }
+  updateDragonHitboxMesh(enemy, dt);
+}
+
+function makeDragonHitboxMesh(enemy) {
+  const radius = enemy.radius || 4.2;
+  const group = new THREE.Group();
+  const disk = new THREE.Mesh(
+    new THREE.CircleGeometry(radius, 64),
+    new THREE.MeshBasicMaterial({ color: 0xff8a22, transparent: true, opacity: 0.08, side: THREE.DoubleSide, depthWrite: false })
+  );
+  disk.rotation.x = -Math.PI / 2;
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(radius * 0.86, radius, 64),
+    new THREE.MeshBasicMaterial({ color: 0xffd166, transparent: true, opacity: 0.32, side: THREE.DoubleSide, depthWrite: false })
+  );
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.y = 0.03;
+  group.add(disk, ring);
+  group.userData.disk = disk;
+  group.userData.ring = ring;
+  group.position.set(enemy.x, 0.16, enemy.z);
+  return group;
+}
+
+function updateDragonHitboxMesh(enemy, dt = 0.016) {
+  if (!enemy.hitboxMesh) return;
+  enemy.hitboxFlash = Math.max(0, (enemy.hitboxFlash || 0) - dt);
+  const flash = enemy.hitboxFlash > 0;
+  const pulse = 1 + Math.sin(state.elapsed * 5.5) * 0.035 + (flash ? Math.sin(state.elapsed * 42) * 0.1 : 0);
+  enemy.hitboxMesh.position.set(enemy.x, 0.16, enemy.z);
+  enemy.hitboxMesh.scale.setScalar(pulse);
+  enemy.hitboxMesh.visible = enemy.hp > 0;
+  if (enemy.hitboxMesh.userData.disk) {
+    enemy.hitboxMesh.userData.disk.material.opacity = flash ? 0.22 : 0.08;
+    enemy.hitboxMesh.userData.disk.material.color.setHex(flash ? 0xfff0a6 : 0xff8a22);
+  }
+  if (enemy.hitboxMesh.userData.ring) {
+    enemy.hitboxMesh.userData.ring.material.opacity = flash ? 0.88 : 0.32;
+    enemy.hitboxMesh.userData.ring.material.color.setHex(flash ? 0xffffff : 0xffd166);
+  }
+}
+
+function damageEnemy(enemy, amount, owner = "") {
+  if (!enemy || amount <= 0) return;
+  enemy.hp -= amount;
+  if (owner) enemy.lastHitBy = owner;
+  if (enemy.bossRole === "castleDragon") {
+    enemy.hitboxFlash = 0.28;
+    updateDragonHitboxMesh(enemy, 0);
   }
 }
 
@@ -4569,6 +4624,7 @@ function removeDead(list, predicate) {
   for (let i = list.length - 1; i >= 0; i -= 1) {
     if (predicate(list[i])) {
       scene.remove(list[i].mesh);
+      if (list[i].hitboxMesh) scene.remove(list[i].hitboxMesh);
       list.splice(i, 1);
     }
   }
@@ -5342,7 +5398,7 @@ function sendHostSnapshot(force = false) {
       boss: e.boss, shooter: e.shooter, bomber: e.bomber, enemyType: e.enemyType,
       walkSeed: e.walkSeed, midBoss: e.midBoss, bossRole: e.bossRole,
       visualScale: e.visualScale, dragonBodyX: e.dragonBodyX, dragonBodyZ: e.dragonBodyZ,
-      dragonHomeIndex: e.dragonHomeIndex,
+      dragonHomeIndex: e.dragonHomeIndex, hitboxFlash: e.hitboxFlash,
     })),
     arrows: state.arrows.map((a) => ({ id: a.id, x: a.x, z: a.z, angle: a.angle, kind: a.kind, radius: a.radius, owner: a.owner, skill: a.skill })),
     bullets: state.enemyBullets.map((b) => ({ id: b.id, x: b.x, z: b.z, kind: b.kind, colorIndex: b.colorIndex, angle: b.angle })),
@@ -5400,6 +5456,7 @@ function syncSimpleMeshes(cache, items, factory, y) {
   const ids = new Set(items.map((item) => item.id));
   for (const [id, mesh] of cache) {
     if (!ids.has(id)) {
+      if (mesh.userData?.hitboxMesh) scene.remove(mesh.userData.hitboxMesh);
       scene.remove(mesh);
       cache.delete(id);
     }
@@ -5412,11 +5469,17 @@ function syncSimpleMeshes(cache, items, factory, y) {
       cache.set(item.id, mesh);
     }
     if (item.bossRole === "castleDragon") {
+      if (!mesh.userData.hitboxMesh) {
+        mesh.userData.hitboxMesh = makeDragonHitboxMesh(item);
+        scene.add(mesh.userData.hitboxMesh);
+      }
+      item.hitboxMesh = mesh.userData.hitboxMesh;
       mesh.position.set(item.dragonBodyX ?? item.x, (item.radius || 4.2) + 2.5 + Math.sin(state.elapsed * 4.2) * 0.65, item.dragonBodyZ ?? item.z);
       mesh.rotation.y = Math.atan2(item.x - (item.dragonBodyX ?? item.x), item.z - (item.dragonBodyZ ?? item.z));
       for (const child of mesh.children) {
         if (child.userData?.side) child.rotation.z = child.userData.side * (0.34 + Math.sin(state.elapsed * 9.5) * 0.62);
       }
+      updateDragonHitboxMesh(item, 0.033);
     } else {
       mesh.position.set(item.x, y || item.radius || 0.6, item.z);
     }
@@ -6505,10 +6568,10 @@ window.addEventListener("keydown", (event) => {
     trackDebugBossKey("boss");
   }
   if (event.code === "KeyQ" && !event.repeat && net.phase === "playing" && state.running) {
-    rotateBossCamera(-1);
+    rotateBossCamera(1);
   }
   if (event.code === "KeyE" && !event.repeat && net.phase === "playing" && state.running) {
-    rotateBossCamera(1);
+    rotateBossCamera(-1);
   }
   if (event.code === "Digit3" && !event.repeat && net.phase !== "playing") {
     trackDebugStage3Key();
