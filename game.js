@@ -126,13 +126,16 @@ let selectedDifficultyId = "normal";
 let stage3DebugUnlocked = false;
 let debugStage3Presses = [];
 let debugMoneySequence = [];
+let cameraQuarterTurn = 0;
+let targetCameraQuarterTurn = 0;
+let castleWallProps = [];
 let presenceClientId = getPresenceClientId();
 let presenceHeartbeatTimer = 0;
 let presenceCountTimer = 0;
 let presenceCleanupTimer = 0;
 let onlinePresenceCount = 1;
 let onlineBadgeLoading = false;
-let progress = loadProgress();
+let progress;
 let net = {
   mode: "solo",
   phase: "menu",
@@ -203,6 +206,8 @@ const SHOP_ITEMS = [
   { id: "saber", type: "character", name: "セイバー購入", desc: "近距離を薙ぎ払うセイバーを使用可能にする。", cost: 500 },
   { id: "stage2", type: "stage", name: "黒晶鉱山 解放", desc: "ステージ2を選択可能にする。", cost: 700 },
 ];
+
+progress = loadProgress();
 
 const CHARACTER_TYPES = {
   archer: { label: "アーチャー", color: 0x57c4a7, remoteColor: 0x5aa7ff },
@@ -675,26 +680,34 @@ function addCastleDecor() {
 }
 
 function addCastleWalls() {
+  castleWallProps = [];
   const wallHalf = WORLD.half + 1.15;
   const towerHalf = wallHalf - 1.05;
   const spacing = 7.25;
-  const southWall = { opacity: 0.38 };
   for (let i = -4; i <= 4; i += 1) {
     if (i !== 0) {
-      addCastleProp(i % 2 ? "castleWall" : "castleWallBricks", i * spacing, -wallHalf, 0, 1.05, makeOldCastleWall);
-      addCastleProp(i % 2 ? "castleWallBricks" : "castleWall", i * spacing, wallHalf, Math.PI, 1.05, makeOldCastleWall, southWall);
+      addCastleWallProp(i % 2 ? "castleWall" : "castleWallBricks", i * spacing, -wallHalf, 0, 1.05, "north");
+      addCastleWallProp(i % 2 ? "castleWallBricks" : "castleWall", i * spacing, wallHalf, Math.PI, 1.05, "south");
     }
-    addCastleProp(i % 2 ? "castleWall" : "castleWallBricks", -wallHalf, i * spacing, Math.PI / 2, 1.05, makeOldCastleWall);
-    addCastleProp(i % 2 ? "castleWallBricks" : "castleWall", wallHalf, i * spacing, -Math.PI / 2, 1.05, makeOldCastleWall);
+    addCastleWallProp(i % 2 ? "castleWall" : "castleWallBricks", -wallHalf, i * spacing, Math.PI / 2, 1.05, "west");
+    addCastleWallProp(i % 2 ? "castleWallBricks" : "castleWall", wallHalf, i * spacing, -Math.PI / 2, 1.05, "east");
   }
-  addCastleProp("castleWallEntrance", 0, -wallHalf, 0, 1.08, makeOldCastleGate);
-  addCastleProp("castleWallEntrance", 0, wallHalf, Math.PI, 1.08, makeOldCastleGate, southWall);
+  addCastleWallProp("castleWallEntrance", 0, -wallHalf, 0, 1.08, "north", makeOldCastleGate);
+  addCastleWallProp("castleWallEntrance", 0, wallHalf, Math.PI, 1.08, "south", makeOldCastleGate);
   for (const [x, z, key, rot] of [
     [-towerHalf, -towerHalf, "castlePointyTower", 0],
     [towerHalf, -towerHalf, "castlePointyTower", 0],
     [-towerHalf, towerHalf, "castlePointyTower", 0],
     [towerHalf, towerHalf, "castlePointyTower", 0],
   ]) addCastleProp(key, x, z, rot, 2.0, makeOldCastleTower);
+  updateCastleWallVisibility();
+}
+
+function addCastleWallProp(key, x, z, rotation, scale, side, fallbackFactory = makeOldCastleWall) {
+  const prop = addCastleProp(key, x, z, rotation, scale, fallbackFactory);
+  prop.userData.castleWallSide = side;
+  castleWallProps.push(prop);
+  return prop;
 }
 
 function addCastleFloorDetail() {
@@ -1245,6 +1258,29 @@ function applyObjectOpacity(object, opacity) {
       material.needsUpdate = true;
     }
   });
+}
+
+function setObjectOpacity(object, opacity = 1) {
+  object.traverse((child) => {
+    if (!child.isMesh || !child.material) return;
+    const mats = Array.isArray(child.material) ? child.material : [child.material];
+    for (const material of mats) {
+      material.transparent = opacity < 1;
+      material.opacity = opacity;
+      material.depthWrite = opacity >= 1;
+      material.needsUpdate = true;
+    }
+  });
+}
+
+function updateCastleWallVisibility() {
+  if (!castleWallProps.length) return;
+  const sidesByCamera = ["south", "west", "north", "east"];
+  const bottomSide = sidesByCamera[((Math.round(cameraQuarterTurn) % 4) + 4) % 4];
+  for (const prop of castleWallProps) {
+    const side = prop.userData.castleWallSide;
+    setObjectOpacity(prop, side === bottomSide ? 0.36 : 1);
+  }
 }
 
 function loadFbxAsset(key) {
@@ -1872,9 +1908,31 @@ function oldAnimateHumanUnused(player, moving, dt) {
 function updateCamera() {
   const player = cameraTargetPlayer();
   if (!player) return;
-  camera.position.x += (player.x - camera.position.x) * 0.08;
-  camera.position.z += (player.z + 20 - camera.position.z) * 0.08;
+  const bossMode = isStage3DragonBossActive();
+  if (!bossMode) targetCameraQuarterTurn = 0;
+  cameraQuarterTurn += (targetCameraQuarterTurn - cameraQuarterTurn) * 0.16;
+  const angle = cameraQuarterTurn * Math.PI / 2;
+  const distance = bossMode ? 25 : 20;
+  const targetX = player.x + Math.sin(angle) * distance;
+  const targetZ = player.z + Math.cos(angle) * distance;
+  camera.position.x += (targetX - camera.position.x) * 0.08;
+  camera.position.z += (targetZ - camera.position.z) * 0.08;
+  camera.position.y += ((bossMode ? 26 : 21) - camera.position.y) * 0.08;
   camera.lookAt(player.x, 0, player.z);
+  updateCastleWallVisibility();
+}
+
+function isStage3DragonBossActive() {
+  const enemies = state?.enemies?.length ? state.enemies : state?.remoteEnemies || [];
+  return Boolean(state?.stageId === "stage3" && enemies.some((enemy) => enemy.bossRole === "castleDragon" && enemy.hp > 0));
+}
+
+function rotateBossCamera(direction) {
+  if (!isStage3DragonBossActive()) return;
+  targetCameraQuarterTurn += direction;
+  targetCameraQuarterTurn = ((targetCameraQuarterTurn % 4) + 4) % 4;
+  cameraQuarterTurn = targetCameraQuarterTurn;
+  updateCastleWallVisibility();
 }
 
 function cameraTargetPlayer() {
@@ -2421,15 +2479,16 @@ function addEnemy(boss, shooter, bomber = false, role = "") {
     bossShotTimer: boss && (state.stageId === "stage2" || state.stageId === "stage3") ? 3.6 : 0,
   };
   if (enemy.bossRole === "castleDragon") {
-    enemy.x = 0;
-    enemy.z = 0;
-    enemy.radius = 3.2;
+    enemy.radius = 4.2;
     enemy.damage = 34;
-    enemy.dragonHomeIndex = 0;
+    enemy.visualScale = 3;
+    enemy.dragonHomeIndex = -1;
+    moveDragonPerch(enemy);
   }
   enemy.mesh = makeEnemyMesh(enemy);
   scene.add(enemy.mesh);
   state.enemies.push(enemy);
+  if (enemy.bossRole === "castleDragon") startBgm();
 }
 
 function updateEnemies(dt) {
@@ -2611,23 +2670,28 @@ function addCastleStrikeZonesForPlayers(enemy) {
 }
 
 function moveDragonPerch(enemy) {
+  const edge = WORLD.half - 1.8;
+  const outside = WORLD.half + 16;
   const spots = [
-    { x: 0, z: 0 },
-    { x: -16, z: -12 },
-    { x: 16, z: -12 },
-    { x: -16, z: 13 },
-    { x: 16, z: 13 },
+    { x: 0, z: -edge, bodyX: 0, bodyZ: -outside },
+    { x: edge, z: 0, bodyX: outside, bodyZ: 0 },
+    { x: 0, z: edge, bodyX: 0, bodyZ: outside },
+    { x: -edge, z: 0, bodyX: -outside, bodyZ: 0 },
   ];
   enemy.dragonHomeIndex = ((enemy.dragonHomeIndex || 0) + 1) % spots.length;
   const spot = spots[enemy.dragonHomeIndex];
   enemy.x = spot.x;
   enemy.z = spot.z;
-  addRing(enemy.x, enemy.z, 3.8, 0xff6b2c);
+  enemy.dragonBodyX = spot.bodyX;
+  enemy.dragonBodyZ = spot.bodyZ;
+  enemy.dragonFaceX = spot.x;
+  enemy.dragonFaceZ = spot.z;
+  addRing(enemy.x, enemy.z, 4.8, 0xff6b2c);
 }
 
 function addDragonBreath(enemy, target) {
   const angle = Math.atan2(target.x - enemy.x, target.z - enemy.z);
-  const length = 30;
+  const length = 36;
   const line = {
     id: crypto.randomUUID(),
     kind: "breath",
@@ -2636,7 +2700,7 @@ function addDragonBreath(enemy, target) {
     endX: clamp(enemy.x + Math.sin(angle) * length, -WORLD.half + 2, WORLD.half - 2),
     endZ: clamp(enemy.z + Math.cos(angle) * length, -WORLD.half + 2, WORLD.half - 2),
     angle,
-    width: 6.8,
+    width: 8.2,
     length,
     damage: bossScaledDamage(enemy, 46),
     owner: enemy.id,
@@ -2646,7 +2710,7 @@ function addDragonBreath(enemy, target) {
     impactAt: 1.18,
     chargeDuration: 0.65,
     impacted: false,
-    mesh: makeBossZoneMesh({ kind: "breath", width: 6.8, length, role: enemy.bossRole }),
+    mesh: makeBossZoneMesh({ kind: "breath", width: 8.2, length, role: enemy.bossRole }),
   };
   scene.add(line.mesh);
   state.bossZones.push(line);
@@ -3249,14 +3313,34 @@ function makeDragonBreathMesh(zone = {}) {
   const warning = new THREE.Mesh(new THREE.BoxGeometry(width, 0.055, length), materials.bossWarning.clone());
   warning.material.color.setHex(0xff6b2c);
   warning.position.set(0, 0.075, length / 2);
-  const fire = new THREE.Mesh(new THREE.BoxGeometry(width * 0.72, 0.065, length), new THREE.MeshBasicMaterial({ color: 0xffb020, transparent: true, opacity: 0.42, depthWrite: false }));
+  const fire = new THREE.Mesh(new THREE.BoxGeometry(width * 0.72, 0.12, length), new THREE.MeshBasicMaterial({ color: 0xff7a1a, transparent: true, opacity: 0.5, depthWrite: false, blending: THREE.AdditiveBlending }));
   fire.position.set(0, 0.115, length / 2);
-  const core = new THREE.Mesh(new THREE.BoxGeometry(width * 0.24, 0.075, length), new THREE.MeshBasicMaterial({ color: 0xfff0a6, transparent: true, opacity: 0.62, depthWrite: false }));
-  core.position.set(0, 0.13, length / 2);
+  const core = new THREE.Mesh(new THREE.BoxGeometry(width * 0.28, 0.18, length), new THREE.MeshBasicMaterial({ color: 0xfff0a6, transparent: true, opacity: 0.72, depthWrite: false, blending: THREE.AdditiveBlending }));
+  core.position.set(0, 0.2, length / 2);
   group.add(warning, fire, core);
+  const flames = [];
+  const flameMatA = new THREE.MeshBasicMaterial({ color: 0xff3b18, transparent: true, opacity: 0.68, depthWrite: false, blending: THREE.AdditiveBlending });
+  const flameMatB = new THREE.MeshBasicMaterial({ color: 0xffd166, transparent: true, opacity: 0.7, depthWrite: false, blending: THREE.AdditiveBlending });
+  for (let i = 0; i < 22; i += 1) {
+    const flame = new THREE.Mesh(new THREE.ConeGeometry(width * (0.12 + (i % 3) * 0.018), 1.5 + (i % 4) * 0.24, 9), (i % 2 ? flameMatA : flameMatB).clone());
+    const side = i % 2 === 0 ? -1 : 1;
+    flame.position.set(side * width * (0.12 + (i % 5) * 0.055), 0.56 + (i % 4) * 0.08, 1.4 + (length - 3) * (i / 21));
+    flame.rotation.x = Math.PI / 2;
+    flame.rotation.z = side * 0.22;
+    flame.userData.seed = i * 0.47;
+    flame.userData.baseX = flame.position.x;
+    flame.userData.baseY = flame.position.y;
+    group.add(flame);
+    flames.push(flame);
+  }
+  const mouthBurst = new THREE.Mesh(new THREE.SphereGeometry(width * 0.42, 18, 10), new THREE.MeshBasicMaterial({ color: 0xffb020, transparent: true, opacity: 0.52, depthWrite: false, blending: THREE.AdditiveBlending }));
+  mouthBurst.position.set(0, 0.55, 0.8);
+  group.add(mouthBurst);
   group.userData.warning = warning;
   group.userData.center = fire;
   group.userData.core = core;
+  group.userData.flames = flames;
+  group.userData.mouthBurst = mouthBurst;
   return group;
 }
 
@@ -3338,6 +3422,20 @@ function updateBossZoneMesh(zone, elapsed) {
     }
     if (mesh.userData.core) {
       mesh.userData.core.material.opacity = (zone.impacted ? 0.28 : 0.46 + danger * 0.22) * fade;
+    }
+    if (mesh.userData.flames) {
+      const active = zone.impacted ? 1 : danger;
+      for (const [index, flame] of mesh.userData.flames.entries()) {
+        const wave = Math.sin(state.elapsed * 14 + flame.userData.seed) * 0.18;
+        flame.scale.set(0.55 + active * 0.55 + wave, 0.7 + active * 0.75, 0.55 + active * 0.55);
+        flame.position.x = flame.userData.baseX + Math.sin(state.elapsed * 9 + index) * 0.16;
+        flame.position.y = flame.userData.baseY + Math.sin(state.elapsed * 12 + index) * 0.14;
+        flame.material.opacity = (0.24 + active * 0.56) * fade;
+      }
+    }
+    if (mesh.userData.mouthBurst) {
+      mesh.userData.mouthBurst.scale.setScalar(0.5 + danger * 1.1 + Math.sin(state.elapsed * 18) * 0.08);
+      mesh.userData.mouthBurst.material.opacity = (zone.impacted ? 0.62 : 0.28 + danger * 0.35) * fade;
     }
     return;
   }
@@ -3754,61 +3852,73 @@ function makeCastleShieldMesh(enemy) {
 
 function makeCastleDragonMesh(enemy) {
   const group = new THREE.Group();
-  const scale = enemy.radius / 3.2;
-  const bodyMat = new THREE.MeshStandardMaterial({ color: 0x3b1620, roughness: 0.58, metalness: 0.08, emissive: 0x170407 });
-  const wingMat = new THREE.MeshStandardMaterial({ color: 0x6f1d2d, roughness: 0.62, metalness: 0.02, side: THREE.DoubleSide, transparent: true, opacity: 0.92 });
+  const scale = (enemy.radius / 3.2) * (enemy.visualScale || 1);
+  const bodyMat = new THREE.MeshStandardMaterial({ color: 0x2a0f18, roughness: 0.54, metalness: 0.08, emissive: 0x160207 });
+  const bellyMat = new THREE.MeshStandardMaterial({ color: 0x7c2d20, roughness: 0.58, metalness: 0.03, emissive: 0x260804 });
+  const wingMat = new THREE.MeshStandardMaterial({ color: 0x7f1d1d, roughness: 0.62, metalness: 0.02, side: THREE.DoubleSide, transparent: true, opacity: 0.94 });
   const hornMat = new THREE.MeshStandardMaterial({ color: 0xe8dcc1, roughness: 0.48, metalness: 0.08 });
+  const clawMat = new THREE.MeshStandardMaterial({ color: 0xf7ead0, roughness: 0.38, metalness: 0.08 });
   const fireMat = new THREE.MeshBasicMaterial({ color: 0xff7a1a, transparent: true, opacity: 0.75, depthWrite: false, blending: THREE.AdditiveBlending });
 
-  const body = new THREE.Mesh(new THREE.SphereGeometry(1.65 * scale, 18, 12), bodyMat);
-  body.scale.set(1.35, 0.86, 1.75);
-  body.position.y = 1.55 * scale;
+  const body = new THREE.Mesh(new THREE.DodecahedronGeometry(1.45 * scale, 1), bodyMat);
+  body.scale.set(1.38, 0.88, 1.85);
+  body.position.y = 1.65 * scale;
   body.castShadow = true;
-  const chest = new THREE.Mesh(new THREE.SphereGeometry(1.05 * scale, 16, 10), bodyMat.clone());
-  chest.scale.set(1.05, 0.9, 1.1);
+  const chest = new THREE.Mesh(new THREE.DodecahedronGeometry(1.08 * scale, 1), bellyMat);
+  chest.scale.set(1.05, 0.95, 1.22);
   chest.position.set(0, 1.95 * scale, 1.65 * scale);
   chest.castShadow = true;
-  group.add(body, chest);
+  const belly = new THREE.Mesh(new THREE.CylinderGeometry(0.42 * scale, 0.7 * scale, 2.5 * scale, 7), bellyMat.clone());
+  belly.position.set(0, 1.48 * scale, 1.28 * scale);
+  belly.rotation.x = Math.PI / 2;
+  belly.castShadow = true;
+  group.add(body, chest, belly);
 
-  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.45 * scale, 0.72 * scale, 2.2 * scale, 10), bodyMat.clone());
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.38 * scale, 0.76 * scale, 2.55 * scale, 9), bodyMat.clone());
   neck.position.set(0, 2.38 * scale, 2.55 * scale);
   neck.rotation.x = -0.72;
   neck.castShadow = true;
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.82 * scale, 14, 10), bodyMat.clone());
-  head.scale.set(1.15, 0.78, 1.05);
-  head.position.set(0, 3.18 * scale, 3.42 * scale);
+  const head = new THREE.Mesh(new THREE.DodecahedronGeometry(0.92 * scale, 1), bodyMat.clone());
+  head.scale.set(1.26, 0.82, 1.18);
+  head.position.set(0, 3.2 * scale, 3.62 * scale);
   head.castShadow = true;
-  const jaw = new THREE.Mesh(new THREE.BoxGeometry(0.92 * scale, 0.28 * scale, 0.82 * scale), bodyMat.clone());
-  jaw.position.set(0, 2.95 * scale, 3.95 * scale);
+  const snout = new THREE.Mesh(new THREE.BoxGeometry(0.9 * scale, 0.42 * scale, 1.1 * scale), bodyMat.clone());
+  snout.position.set(0, 3.04 * scale, 4.25 * scale);
+  snout.castShadow = true;
+  const jaw = new THREE.Mesh(new THREE.BoxGeometry(1.02 * scale, 0.25 * scale, 0.95 * scale), bellyMat.clone());
+  jaw.position.set(0, 2.77 * scale, 4.28 * scale);
   jaw.castShadow = true;
-  const mouthFire = new THREE.Mesh(new THREE.ConeGeometry(0.28 * scale, 0.9 * scale, 12), fireMat);
-  mouthFire.position.set(0, 2.95 * scale, 4.45 * scale);
+  const mouthFire = new THREE.Mesh(new THREE.ConeGeometry(0.36 * scale, 1.18 * scale, 12), fireMat);
+  mouthFire.position.set(0, 2.94 * scale, 4.92 * scale);
   mouthFire.rotation.x = Math.PI / 2;
-  group.add(neck, head, jaw, mouthFire);
+  group.userData.mouth = mouthFire;
+  group.add(neck, head, snout, jaw, mouthFire);
 
   for (const side of [-1, 1]) {
-    const horn = new THREE.Mesh(new THREE.ConeGeometry(0.16 * scale, 0.78 * scale, 8), hornMat);
-    horn.position.set(side * 0.42 * scale, 3.66 * scale, 3.28 * scale);
-    horn.rotation.set(-0.45, 0, side * 0.28);
+    const horn = new THREE.Mesh(new THREE.ConeGeometry(0.18 * scale, 1.05 * scale, 8), hornMat);
+    horn.position.set(side * 0.48 * scale, 3.82 * scale, 3.35 * scale);
+    horn.rotation.set(-0.62, 0, side * 0.28);
     horn.castShadow = true;
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.11 * scale, 10, 8), new THREE.MeshBasicMaterial({ color: 0xffd166 }));
+    eye.position.set(side * 0.45 * scale, 3.26 * scale, 4.3 * scale);
     const wing = makeDragonWing(scale, side, wingMat);
-    wing.position.set(side * 1.05 * scale, 2.3 * scale, 0.1 * scale);
+    wing.position.set(side * 1.18 * scale, 2.55 * scale, 0.0 * scale);
     wing.userData.side = side;
-    group.add(horn, wing);
+    group.add(horn, eye, wing);
   }
 
-  for (let i = 0; i < 6; i += 1) {
-    const spike = new THREE.Mesh(new THREE.ConeGeometry(0.18 * scale, 0.55 * scale, 7), hornMat.clone());
-    spike.position.set(0, (2.65 - i * 0.15) * scale, (2.0 - i * 0.78) * scale);
+  for (let i = 0; i < 10; i += 1) {
+    const spike = new THREE.Mesh(new THREE.ConeGeometry((0.2 - i * 0.006) * scale, (0.62 - i * 0.025) * scale, 7), hornMat.clone());
+    spike.position.set(0, (2.95 - i * 0.12) * scale, (2.45 - i * 0.62) * scale);
     spike.rotation.x = -0.45;
     spike.castShadow = true;
     group.add(spike);
   }
 
-  for (let i = 0; i < 6; i += 1) {
-    const seg = new THREE.Mesh(new THREE.SphereGeometry((0.62 - i * 0.065) * scale, 12, 8), bodyMat.clone());
+  for (let i = 0; i < 8; i += 1) {
+    const seg = new THREE.Mesh(new THREE.DodecahedronGeometry((0.68 - i * 0.06) * scale, 0), bodyMat.clone());
     seg.scale.set(0.9, 0.62, 1.35);
-    seg.position.set(0, (1.45 - i * 0.08) * scale, (-1.9 - i * 0.76) * scale);
+    seg.position.set(0, (1.45 - i * 0.08) * scale, (-1.9 - i * 0.7) * scale);
     seg.castShadow = true;
     group.add(seg);
   }
@@ -3820,10 +3930,17 @@ function makeCastleDragonMesh(enemy) {
       leg.rotation.z = side * 0.18;
       leg.castShadow = true;
       group.add(leg);
+      for (let claw = -1; claw <= 1; claw += 1) {
+        const talon = new THREE.Mesh(new THREE.ConeGeometry(0.08 * scale, 0.34 * scale, 7), clawMat.clone());
+        talon.position.set(side * (0.78 + i * 0.5 + claw * 0.08) * scale, -0.1 * scale, (1.38 - i * 1.9) * scale);
+        talon.rotation.x = Math.PI / 2;
+        talon.castShadow = true;
+        group.add(talon);
+      }
     }
   }
 
-  group.position.set(enemy.x, enemy.radius, enemy.z);
+  group.position.set(enemy.dragonBodyX ?? enemy.x, enemy.radius, enemy.dragonBodyZ ?? enemy.z);
   group.scale.setScalar(1.05);
   group.userData.dragon = true;
   return group;
@@ -3845,13 +3962,16 @@ function makeDragonWing(scale, side, material) {
 }
 
 function updateDragonVisual(enemy, target, dt) {
-  const bob = Math.sin(state.elapsed * 4.2) * 0.22;
-  const angle = target ? Math.atan2(target.x - enemy.x, target.z - enemy.z) : enemy.mesh.rotation.y;
-  enemy.mesh.position.set(enemy.x, enemy.radius + 1.2 + bob, enemy.z);
+  const bob = Math.sin(state.elapsed * 4.2) * 0.65;
+  const angle = Math.atan2(enemy.x - (enemy.dragonBodyX ?? enemy.x), enemy.z - (enemy.dragonBodyZ ?? enemy.z));
+  enemy.mesh.position.set(enemy.dragonBodyX ?? enemy.x, enemy.radius + 2.5 + bob, enemy.dragonBodyZ ?? enemy.z);
   enemy.mesh.rotation.y = angle;
-  const flap = Math.sin(state.elapsed * 9.5) * 0.42;
+  const flap = Math.sin(state.elapsed * 9.5) * 0.62;
   for (const child of enemy.mesh.children) {
     if (child.userData?.side) child.rotation.z = child.userData.side * (0.34 + flap);
+  }
+  if (enemy.mesh.userData.mouth) {
+    enemy.mesh.userData.mouth.scale.setScalar(0.78 + Math.sin(state.elapsed * 18) * 0.14);
   }
 }
 
@@ -4490,7 +4610,9 @@ function initAudio() {
 
 function startBgm() {
   initAudio();
-  const bgmFile = state?.stageId === "stage3" ? "stage3.mp3" : state?.stageId === "stage2" ? "stage2.mp3" : "gamebgm.mp3";
+  const enemies = state?.enemies?.length ? state.enemies : state?.remoteEnemies || [];
+  const stage3Boss = state?.stageId === "stage3" && enemies.some((enemy) => enemy.bossRole === "castleDragon" && enemy.hp > 0);
+  const bgmFile = stage3Boss ? "stage3boss.mp3" : state?.stageId === "stage3" ? "stage3.mp3" : state?.stageId === "stage2" ? "stage2.mp3" : "gamebgm.mp3";
   if (!audio.bgm || audio.bgmFile !== bgmFile) {
     if (audio.bgm) {
       audio.bgm.pause();
@@ -5162,10 +5284,12 @@ function handleHostData(data) {
 function applySnapshot(data) {
   state.elapsed = data.elapsed;
   state.kills = data.kills;
+  state.remoteEnemies = data.enemies || [];
   net.pausedBy = data.pausedBy || null;
   net.waitingFor = data.waitingFor || null;
   syncPlayers(data.players || []);
   syncSimpleMeshes(state.renderCache.enemies, data.enemies || [], (item) => makeEnemyMesh(item), 0);
+  if ((data.enemies || []).some((enemy) => enemy.bossRole === "castleDragon")) startBgm();
   syncSimpleMeshes(state.renderCache.arrows, data.arrows || [], makeProjectileMesh, 1.1);
   syncSimpleMeshes(state.renderCache.bullets, data.bullets || [], makeBulletMesh, 1.05);
   syncSimpleMeshes(state.renderCache.gems, data.gems || [], makeGemMesh, 0.55);
@@ -5213,7 +5337,13 @@ function sendHostSnapshot(force = false) {
       magicSplash: p.magicSplash, magicRadius: p.magicRadius, chainExplosion: p.chainExplosion, iceSpike: p.iceSpike, thunderCircle: p.thunderCircle,
       rerolls: p.rerolls, upgrades: p.upgrades,
     })),
-    enemies: state.enemies.map((e) => ({ id: e.id, x: e.x, z: e.z, radius: e.radius, hp: e.hp, maxHp: e.maxHp, boss: e.boss, shooter: e.shooter, bomber: e.bomber, enemyType: e.enemyType, walkSeed: e.walkSeed, midBoss: e.midBoss, bossRole: e.bossRole })),
+    enemies: state.enemies.map((e) => ({
+      id: e.id, x: e.x, z: e.z, radius: e.radius, hp: e.hp, maxHp: e.maxHp,
+      boss: e.boss, shooter: e.shooter, bomber: e.bomber, enemyType: e.enemyType,
+      walkSeed: e.walkSeed, midBoss: e.midBoss, bossRole: e.bossRole,
+      visualScale: e.visualScale, dragonBodyX: e.dragonBodyX, dragonBodyZ: e.dragonBodyZ,
+      dragonHomeIndex: e.dragonHomeIndex,
+    })),
     arrows: state.arrows.map((a) => ({ id: a.id, x: a.x, z: a.z, angle: a.angle, kind: a.kind, radius: a.radius, owner: a.owner, skill: a.skill })),
     bullets: state.enemyBullets.map((b) => ({ id: b.id, x: b.x, z: b.z, kind: b.kind, colorIndex: b.colorIndex, angle: b.angle })),
     gems: state.gems.map((g) => ({ id: g.id, x: g.x, z: g.z, kind: g.kind, forceTarget: g.forceTarget })),
@@ -5281,7 +5411,15 @@ function syncSimpleMeshes(cache, items, factory, y) {
       scene.add(mesh);
       cache.set(item.id, mesh);
     }
-    mesh.position.set(item.x, y || item.radius || 0.6, item.z);
+    if (item.bossRole === "castleDragon") {
+      mesh.position.set(item.dragonBodyX ?? item.x, (item.radius || 4.2) + 2.5 + Math.sin(state.elapsed * 4.2) * 0.65, item.dragonBodyZ ?? item.z);
+      mesh.rotation.y = Math.atan2(item.x - (item.dragonBodyX ?? item.x), item.z - (item.dragonBodyZ ?? item.z));
+      for (const child of mesh.children) {
+        if (child.userData?.side) child.rotation.z = child.userData.side * (0.34 + Math.sin(state.elapsed * 9.5) * 0.62);
+      }
+    } else {
+      mesh.position.set(item.x, y || item.radius || 0.6, item.z);
+    }
     if (typeof item.angle === "number") mesh.rotation.y = item.angle;
     if (item.kind === "magic") mesh.scale.setScalar((item.radius || 0.34) / 0.34);
     if (item.boss || item.midBoss) applyHealthAura(mesh, healthPhase(item.hp, item.maxHp), item.radius || 1.5);
@@ -6365,6 +6503,12 @@ window.addEventListener("keydown", (event) => {
   }
   if (event.code === "KeyB" && !event.repeat && net.phase === "playing" && state.running) {
     trackDebugBossKey("boss");
+  }
+  if (event.code === "KeyQ" && !event.repeat && net.phase === "playing" && state.running) {
+    rotateBossCamera(-1);
+  }
+  if (event.code === "KeyE" && !event.repeat && net.phase === "playing" && state.running) {
+    rotateBossCamera(1);
   }
   if (event.code === "Digit3" && !event.repeat && net.phase !== "playing") {
     trackDebugStage3Key();
