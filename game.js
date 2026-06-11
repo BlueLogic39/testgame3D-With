@@ -125,6 +125,7 @@ let selectedStageId = "stage1";
 let selectedDifficultyId = "normal";
 let stage3DebugUnlocked = false;
 let debugStage3Presses = [];
+let debugMoneySequence = [];
 let presenceClientId = getPresenceClientId();
 let presenceHeartbeatTimer = 0;
 let presenceCountTimer = 0;
@@ -5816,6 +5817,37 @@ function trackDebugStage3Key() {
   showToast("デバッグ解放: ステージ3を選択できます");
 }
 
+function canUseTitleDebugInput() {
+  return Boolean(
+    net.phase !== "playing" &&
+    !ui.start.classList.contains("hidden") &&
+    ui.updateInfo.classList.contains("hidden") &&
+    ui.characterCodex.classList.contains("hidden") &&
+    ui.shopPanel.classList.contains("hidden")
+  );
+}
+
+function trackDebugMoneyKey(key) {
+  if (!canUseTitleDebugInput()) return;
+  const letter = String(key || "").toLowerCase();
+  if (!/^[a-z]$/.test(letter)) return;
+  const now = performance.now();
+  debugMoneySequence = debugMoneySequence.filter((entry) => now - entry.time <= 3000);
+  debugMoneySequence.push({ key: letter, time: now });
+  const typed = debugMoneySequence.map((entry) => entry.key).join("");
+  if ("money".startsWith(typed)) {
+    if (typed === "money") {
+      debugMoneySequence = [];
+      progress.money += 99999;
+      saveProgress();
+      updateProgressUi();
+      showToast("デバッグ: 99999Gを入手しました");
+    }
+    return;
+  }
+  debugMoneySequence = letter === "m" ? [{ key: "m", time: now }] : [];
+}
+
 function selectedCharacter() {
   if (playerName().toUpperCase() === "NINJA") return "ninja";
   return CHARACTER_TYPES[selectedCharacterId] ? selectedCharacterId : "archer";
@@ -6307,6 +6339,7 @@ function chooseUpgrade(playerId, upgradeName) {
 }
 
 window.addEventListener("keydown", (event) => {
+  if (!event.repeat) trackDebugMoneyKey(event.key);
   if (event.code === "Escape") {
     event.preventDefault();
     if (!ui.updateInfo.classList.contains("hidden")) {
