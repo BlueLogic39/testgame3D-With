@@ -1338,7 +1338,7 @@ function cloneFbxModel(model, key) {
   clone.position.set(...(asset.position || [0, 0, 0]));
   clone.rotation.set(...(asset.rotation || [0, 0, 0]));
   clone.scale.multiply(new THREE.Vector3(...(asset.scale || [1, 1, 1])));
-  if (key.startsWith("castle") || key.startsWith("knightBoss")) {
+  if (key.startsWith("castle") || key === "knightBossBody") {
     snapModelBottomToGround(clone, asset.groundOffset || 0);
     if (key.startsWith("castle")) addCastleModelAccent(clone, key);
   }
@@ -2525,6 +2525,9 @@ function updateEnemies(dt) {
     enemy.touchTimer -= dt;
     if (enemy.bossRole === "castleDragon") {
       updateDragonVisual(enemy, target, dt);
+    } else if (enemy.bossRole === "castleGuard") {
+      const bob = Math.abs(Math.sin(state.elapsed * 7.2 + (enemy.walkSeed || 0))) * 0.06;
+      enemy.mesh.position.set(enemy.x, bob, enemy.z);
     } else if (enemy.enemyType?.startsWith("castle")) {
       const bob = Math.sin(state.elapsed * 8.5 + (enemy.walkSeed || 0)) * 0.08;
       enemy.mesh.position.set(enemy.x, enemy.radius + bob, enemy.z);
@@ -2689,8 +2692,8 @@ function addCastleStrikeZonesForPlayers(enemy) {
 }
 
 function moveDragonPerch(enemy) {
-  const edge = WORLD.half - 1.8;
-  const outside = WORLD.half + 16;
+  const edge = WORLD.half - 4.2;
+  const outside = WORLD.half + 9.5;
   const spots = [
     { x: 0, z: -edge, bodyX: 0, bodyZ: -outside },
     { x: edge, z: 0, bodyX: outside, bodyZ: 0 },
@@ -2707,6 +2710,7 @@ function moveDragonPerch(enemy) {
   enemy.dragonBodyZ = spot.bodyZ;
   enemy.dragonFaceX = spot.x;
   enemy.dragonFaceZ = spot.z;
+  enemy.dragonCenterAttack = false;
   addRing(enemy.x, enemy.z, 4.8, 0xff6b2c);
   sfx("dragonMove", { broadcast: net.mode === "host" });
 }
@@ -2741,7 +2745,33 @@ function addDragonBreath(enemy, target) {
 }
 
 function addDragonTailSweep(enemy) {
-  addBossZone(enemy.x, enemy.z, 9.2, bossScaledDamage(enemy, 40), enemy.id, enemy.bossRole, "tail");
+  enemy.x = 0;
+  enemy.z = 0;
+  enemy.dragonBodyX = 0;
+  enemy.dragonBodyZ = -6.5;
+  enemy.dragonFaceX = 0;
+  enemy.dragonFaceZ = 0;
+  enemy.dragonCenterAttack = true;
+  sfx("dragonMove", { broadcast: net.mode === "host" });
+  const radius = 13.2;
+  const zone = {
+    id: crypto.randomUUID(),
+    kind: "tailSpin",
+    x: 0,
+    z: 0,
+    radius,
+    damage: bossScaledDamage(enemy, 42),
+    owner: enemy.id,
+    role: enemy.bossRole,
+    life: 2.15,
+    start: 2.15,
+    impactAt: 1.2,
+    impacted: false,
+    mesh: makeBossZoneMesh({ radius, role: enemy.bossRole, kind: "tailSpin" }),
+  };
+  scene.add(zone.mesh);
+  state.bossZones.push(zone);
+  addSlashEffect(0, 0, radius, Math.PI * 2, 0, 0xffd166, enemy.id, true);
 }
 
 function addDragonFireRain(enemy) {
@@ -3325,6 +3355,23 @@ function makeBossZoneMesh(zone = {}) {
   group.add(warning, ring);
   group.userData.warning = warning;
   group.userData.ring = ring;
+  if (zone.kind === "tailSpin") {
+    const tail = new THREE.Group();
+    const blade = new THREE.Mesh(
+      new THREE.BoxGeometry(radius * 1.65, 0.18, radius * 0.28),
+      new THREE.MeshBasicMaterial({ color: 0xffd166, transparent: true, opacity: 0.82, depthWrite: false, blending: THREE.AdditiveBlending })
+    );
+    blade.position.x = radius * 0.55;
+    const edge = new THREE.Mesh(
+      new THREE.BoxGeometry(radius * 1.55, 0.08, radius * 0.08),
+      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.72, depthWrite: false, blending: THREE.AdditiveBlending })
+    );
+    edge.position.set(radius * 0.56, 0.13, radius * 0.16);
+    tail.position.y = 0.28;
+    tail.add(blade, edge);
+    group.add(tail);
+    group.userData.tail = tail;
+  }
   group.position.set(zone.x || 0, 0, zone.z || 0);
   return group;
 }
@@ -3471,8 +3518,16 @@ function updateBossZoneMesh(zone, elapsed) {
     mesh.userData.warning.material.opacity = (zone.impacted ? 0.12 : 0.28 + danger * 0.18) * fade;
   }
   if (mesh.userData.ring) {
-    mesh.userData.ring.rotation.z += 0.08;
+    mesh.userData.ring.rotation.z += zone.kind === "tailSpin" ? 0.2 : 0.08;
     mesh.userData.ring.material.opacity = (zone.impacted ? 0.2 : 0.72) * fade;
+  }
+  if (mesh.userData.tail) {
+    const spin = clamp(elapsed / zone.impactAt, 0, 1);
+    mesh.userData.tail.rotation.y = spin * Math.PI * 2.35;
+    mesh.userData.tail.visible = spin > 0.08;
+    for (const child of mesh.userData.tail.children) {
+      child.material.opacity = (zone.impacted ? 0.72 : 0.42 + spin * 0.42) * fade;
+    }
   }
   if (mesh.userData.roots) {
     const warnGrow = clamp(danger, 0, 1) * 0.32;
@@ -3984,7 +4039,7 @@ function makeDragonWing(scale, side, material) {
 function updateDragonVisual(enemy, target, dt) {
   const bob = Math.sin(state.elapsed * 4.2) * 0.65;
   const angle = Math.atan2(enemy.x - (enemy.dragonBodyX ?? enemy.x), enemy.z - (enemy.dragonBodyZ ?? enemy.z));
-  enemy.mesh.position.set(enemy.dragonBodyX ?? enemy.x, enemy.radius + 2.5 + bob, enemy.dragonBodyZ ?? enemy.z);
+  enemy.mesh.position.set(enemy.dragonBodyX ?? enemy.x, enemy.radius + 1.25 + bob, enemy.dragonBodyZ ?? enemy.z);
   enemy.mesh.rotation.y = angle;
   const flap = Math.sin(state.elapsed * 9.5) * 0.62;
   for (const child of enemy.mesh.children) {
@@ -4235,8 +4290,8 @@ function makeFbxCastleGuardMesh(enemy) {
   aura.rotation.x = -Math.PI / 2;
   aura.position.y = 0.04;
   group.add(aura);
-  group.position.set(enemy.x, enemy.radius * 0.42, enemy.z);
-  group.scale.setScalar(1.2);
+  group.position.set(enemy.x, 0, enemy.z);
+  group.scale.setScalar(2.4);
   return group;
 }
 
@@ -5501,12 +5556,15 @@ function syncSimpleMeshes(cache, items, factory, y) {
         scene.add(mesh.userData.hitboxMesh);
       }
       item.hitboxMesh = mesh.userData.hitboxMesh;
-      mesh.position.set(item.dragonBodyX ?? item.x, (item.radius || 4.2) + 2.5 + Math.sin(state.elapsed * 4.2) * 0.65, item.dragonBodyZ ?? item.z);
+      mesh.position.set(item.dragonBodyX ?? item.x, (item.radius || 4.2) + 1.25 + Math.sin(state.elapsed * 4.2) * 0.65, item.dragonBodyZ ?? item.z);
       mesh.rotation.y = Math.atan2(item.x - (item.dragonBodyX ?? item.x), item.z - (item.dragonBodyZ ?? item.z));
       for (const child of mesh.children) {
         if (child.userData?.side) child.rotation.z = child.userData.side * (0.34 + Math.sin(state.elapsed * 9.5) * 0.62);
       }
       updateDragonHitboxMesh(item, 0.033);
+    } else if (item.bossRole === "castleGuard") {
+      const bob = Math.abs(Math.sin(state.elapsed * 7.2 + (item.walkSeed || 0))) * 0.06;
+      mesh.position.set(item.x, bob, item.z);
     } else {
       mesh.position.set(item.x, y || item.radius || 0.6, item.z);
     }
