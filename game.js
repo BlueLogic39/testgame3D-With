@@ -189,6 +189,10 @@ const AUDIO_FILES = {
   bomber: "bomber.mp3",
   rockA: "rock1.mp3",
   rockB: "rock2.mp3",
+  dragonBreathA: "dragon_bless.mp3",
+  dragonBreathB: "dragon_bless2.mp3",
+  dragonMove: "dragon_idou.mp3",
+  dragonRoar: "dragon_nakigoe.mp3",
 };
 
 const SUPABASE_URL = "https://oeizknymvzmokzxksidg.supabase.co";
@@ -1275,7 +1279,7 @@ function setObjectOpacity(object, opacity = 1) {
 
 function updateCastleWallVisibility() {
   if (!castleWallProps.length) return;
-  const sidesByCamera = ["north", "east", "south", "west"];
+  const sidesByCamera = ["south", "east", "north", "west"];
   const bottomSide = sidesByCamera[((Math.round(cameraQuarterTurn) % 4) + 4) % 4];
   for (const prop of castleWallProps) {
     const side = prop.userData.castleWallSide;
@@ -1700,10 +1704,16 @@ function startGame(mode = "solo") {
 function resetSceneEntities() {
   for (const player of state.players) scene.remove(player.mesh);
   for (const group of [state.enemies, state.arrows, state.enemyBullets, state.gems, state.hearts, state.magnets, state.magicCircles, state.rockfalls, state.bossZones, state.effects]) {
-    for (const item of group) scene.remove(item.mesh);
+    for (const item of group) {
+      scene.remove(item.mesh);
+      if (item.hitboxMesh) scene.remove(item.hitboxMesh);
+    }
   }
   for (const cache of Object.values(state.renderCache || {})) {
-    for (const mesh of cache.values()) scene.remove(mesh);
+    for (const mesh of cache.values()) {
+      if (mesh.userData?.hitboxMesh) scene.remove(mesh.userData.hitboxMesh);
+      scene.remove(mesh);
+    }
   }
 }
 
@@ -1921,12 +1931,12 @@ function updateCamera() {
   if (!bossMode) targetCameraQuarterTurn = 0;
   cameraQuarterTurn += (targetCameraQuarterTurn - cameraQuarterTurn) * 0.16;
   const angle = cameraQuarterTurn * Math.PI / 2;
-  const distance = bossMode ? 28 : 20;
+  const distance = bossMode ? 38 : 20;
   const targetX = player.x + Math.sin(angle) * distance;
   const targetZ = player.z + Math.cos(angle) * distance;
   camera.position.x += (targetX - camera.position.x) * 0.08;
   camera.position.z += (targetZ - camera.position.z) * 0.08;
-  camera.position.y += ((bossMode ? 20 : 21) - camera.position.y) * 0.08;
+  camera.position.y += ((bossMode ? 32 : 21) - camera.position.y) * 0.08;
   camera.lookAt(player.x, 0, player.z);
   updateCastleWallVisibility();
 }
@@ -2574,7 +2584,7 @@ function updateBossEnemy(enemy, target, dt) {
       } else {
         addDragonFireRain(enemy);
       }
-      enemy.bossAttackTimer = bossAttackCooldown(enemy, 4.8);
+      enemy.bossAttackTimer = bossAttackCooldown(enemy, 6.8);
     } else if (enemy.bossRole === "crystalGolem") {
       enemy.bossPattern = ((enemy.bossPattern || 0) + 1) % 2;
       if (enemy.bossPattern === 0) {
@@ -2687,7 +2697,9 @@ function moveDragonPerch(enemy) {
     { x: 0, z: edge, bodyX: 0, bodyZ: outside },
     { x: -edge, z: 0, bodyX: -outside, bodyZ: 0 },
   ];
-  enemy.dragonHomeIndex = ((enemy.dragonHomeIndex || 0) + 1) % spots.length;
+  let nextIndex = Math.floor(Math.random() * spots.length);
+  if (spots.length > 1 && nextIndex === enemy.dragonHomeIndex) nextIndex = (nextIndex + 1) % spots.length;
+  enemy.dragonHomeIndex = nextIndex;
   const spot = spots[enemy.dragonHomeIndex];
   enemy.x = spot.x;
   enemy.z = spot.z;
@@ -2696,9 +2708,12 @@ function moveDragonPerch(enemy) {
   enemy.dragonFaceX = spot.x;
   enemy.dragonFaceZ = spot.z;
   addRing(enemy.x, enemy.z, 4.8, 0xff6b2c);
+  sfx("dragonMove", { broadcast: net.mode === "host" });
 }
 
 function addDragonBreath(enemy, target) {
+  sfx("dragonBreathA", { broadcast: net.mode === "host" });
+  sfx("dragonBreathB", { broadcast: net.mode === "host" });
   const angle = Math.atan2(target.x - enemy.x, target.z - enemy.z);
   const length = 36;
   const line = {
@@ -3999,6 +4014,7 @@ function makeDragonHitboxMesh(enemy) {
   group.userData.disk = disk;
   group.userData.ring = ring;
   group.position.set(enemy.x, 0.16, enemy.z);
+  group.visible = false;
   return group;
 }
 
@@ -4009,7 +4025,7 @@ function updateDragonHitboxMesh(enemy, dt = 0.016) {
   const pulse = 1 + Math.sin(state.elapsed * 5.5) * 0.035 + (flash ? Math.sin(state.elapsed * 42) * 0.1 : 0);
   enemy.hitboxMesh.position.set(enemy.x, 0.16, enemy.z);
   enemy.hitboxMesh.scale.setScalar(pulse);
-  enemy.hitboxMesh.visible = enemy.hp > 0;
+  enemy.hitboxMesh.visible = enemy.hp > 0 && enemy.bossRole === "castleDragon" && isStage3DragonBossActive() && flash;
   if (enemy.hitboxMesh.userData.disk) {
     enemy.hitboxMesh.userData.disk.material.opacity = flash ? 0.22 : 0.08;
     enemy.hitboxMesh.userData.disk.material.color.setHex(flash ? 0xfff0a6 : 0xff8a22);
@@ -4032,7 +4048,18 @@ function damageEnemy(enemy, amount, owner = "") {
 
 function updateBossHealthVisual(enemy) {
   if (!enemy?.mesh || (!enemy.boss && !enemy.midBoss) || !enemy.maxHp) return;
+  updateDragonRoarPhase(enemy);
   applyHealthAura(enemy.mesh, healthPhase(enemy.hp, enemy.maxHp), enemy.radius || 1.5);
+}
+
+function updateDragonRoarPhase(enemy) {
+  if (enemy.bossRole !== "castleDragon") return;
+  const ratio = enemy.hp / enemy.maxHp;
+  const phase = ratio <= 0.25 ? 2 : ratio <= 0.5 ? 1 : 0;
+  if (phase > (enemy.dragonRoarPhase || 0)) {
+    enemy.dragonRoarPhase = phase;
+    sfx("dragonRoar", { broadcast: net.mode === "host" });
+  }
 }
 
 function healthPhase(hp, maxHp) {
@@ -4208,7 +4235,7 @@ function makeFbxCastleGuardMesh(enemy) {
   aura.rotation.x = -Math.PI / 2;
   aura.position.y = 0.04;
   group.add(aura);
-  group.position.set(enemy.x, enemy.radius * 0.05, enemy.z);
+  group.position.set(enemy.x, enemy.radius * 0.42, enemy.z);
   group.scale.setScalar(1.2);
   return group;
 }
