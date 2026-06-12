@@ -11,6 +11,7 @@ const ui = {
   skillText: document.getElementById("skillText"),
   skillFill: document.getElementById("skillFill"),
   skillReadyHint: document.getElementById("skillReadyHint"),
+  bossCameraHint: document.getElementById("bossCameraHint"),
   xpFill: document.getElementById("xpFill"),
   build: document.getElementById("build"),
   start: document.getElementById("start"),
@@ -424,7 +425,7 @@ function applyStageTheme(stageId) {
   const castle = stage.castle;
   const forest = stageId === "stage1";
   scene.background = new THREE.Color(mine ? 0x0b1016 : castle ? 0x171a21 : forest ? 0x102017 : 0x101419);
-  scene.fog = new THREE.Fog(mine ? 0x0b1016 : castle ? 0x171a21 : forest ? 0x102017 : 0x101419, mine ? 30 : castle ? 38 : forest ? 34 : 42, mine ? 70 : castle ? 86 : forest ? 76 : 86);
+  scene.fog = new THREE.Fog(mine ? 0x0b1016 : castle ? 0x171a21 : forest ? 0x102017 : 0x101419, mine ? 30 : castle ? 62 : forest ? 34 : 42, mine ? 70 : castle ? 150 : forest ? 76 : 86);
   if (arenaFloor) arenaFloor.material.color.set(mine ? 0x171b20 : castle ? 0x3b4047 : forest ? 0x24472b : 0x20262b);
   if (arenaGrid) {
     const mats = Array.isArray(arenaGrid.material) ? arenaGrid.material : [arenaGrid.material];
@@ -667,6 +668,10 @@ function addMineCart(x, z, rotation) {
 }
 
 function addCastleDecor() {
+  const castleLight = new THREE.HemisphereLight(0xf6f1e8, 0x59606b, 0.85);
+  const farFill = new THREE.DirectionalLight(0xfff2d5, 1.15);
+  farFill.position.set(16, 34, -28);
+  stageDecor.add(castleLight, farFill);
   addCastleFloorDetail();
   addCastleCarpet();
   addCastleWalls();
@@ -1000,6 +1005,8 @@ function makePlayer(id, name, x, z, local, character = "archer") {
     fumaShuriken: 0,
     shadowClone: 0,
     shadowBind: 0,
+    modelActionName: "",
+    modelActionUntil: 0,
     mesh: makePlayerMesh(name, local, type),
   };
   if (type === "witch") {
@@ -1098,6 +1105,7 @@ function makePlayerMesh(name, local, character = "archer", options = {}) {
   group.userData.fallbackCore = fallbackCore;
   group.userData.characterProps = propMeshes;
   group.userData.externalModelPending = useExternalModel;
+  group.userData.character = type;
   if (useExternalModel) setFallbackModelVisible(group, false);
   if (!useLegacyModel) attachCharacterModel(group, type);
   return group;
@@ -1891,7 +1899,14 @@ function animateHumanMesh(mesh, moving, dt) {
   if (!parts) return;
   mesh.userData.walkTime = (mesh.userData.walkTime || 0) + (moving ? dt * 10 : dt * 3);
   if (mesh.userData.modelRoot?.userData.mixer) {
-    playModelAction(mesh.userData.modelRoot, moving ? "Walk" : "Idle");
+    const forced = mesh.userData.modelActionUntil > state.elapsed ? mesh.userData.modelActionName : "";
+    if (!forced) {
+      mesh.userData.modelActionName = "";
+      mesh.userData.modelActionUntil = 0;
+    }
+    const character = mesh.userData.character || "archer";
+    const movingAction = character === "ninja" ? ["Run", "Walk"] : ["Walk", "Run"];
+    playModelAction(mesh.userData.modelRoot, forced || (moving ? movingAction : "Idle"));
     mesh.userData.modelRoot.userData.mixer.update(dt);
   }
   const swing = moving ? Math.sin(mesh.userData.walkTime) * 0.55 : Math.sin(mesh.userData.walkTime) * 0.06;
@@ -1905,12 +1920,34 @@ function animateHumanMesh(mesh, moving, dt) {
 function playModelAction(model, name) {
   const actions = model.userData.actions;
   if (!actions) return;
-  const action = actions.get(name) || actions.get("Idle");
+  const names = Array.isArray(name) ? name : [name];
+  const action = names.map((candidate) => findModelAction(actions, candidate)).find(Boolean) || findModelAction(actions, "Idle");
   if (!action || model.userData.activeAction === action) return;
   action.enabled = true;
   action.reset().play();
   if (model.userData.activeAction) model.userData.activeAction.crossFadeTo(action, 0.16, false);
   model.userData.activeAction = action;
+}
+
+function findModelAction(actions, name) {
+  if (!actions || !name) return null;
+  if (actions.get(name)) return actions.get(name);
+  const normalized = name.toLowerCase();
+  const compact = normalized.replace(/[^a-z0-9]/g, "");
+  for (const [key, action] of actions) {
+    const actionName = key.toLowerCase();
+    if (actionName === normalized || actionName.replace(/[^a-z0-9]/g, "") === compact) return action;
+  }
+  return null;
+}
+
+function triggerPlayerModelAction(player, name, duration = 0.45) {
+  if (!player?.mesh || !name) return;
+  player.modelActionName = name;
+  player.modelActionUntil = state.elapsed + duration;
+  player.mesh.userData.modelActionName = name;
+  player.mesh.userData.modelActionUntil = player.modelActionUntil;
+  if (player.mesh.userData.modelRoot) playModelAction(player.mesh.userData.modelRoot, name);
 }
 
 function oldAnimateHumanUnused(player, moving, dt) {
@@ -2062,6 +2099,10 @@ function witchSpellDamage(player, scale = 1) {
   return player.damage * scale;
 }
 
+function enemyHitRadius(enemy) {
+  return enemy?.hitRadius || enemy?.radius || 0;
+}
+
 function swingSaber(player) {
   const base = Math.atan2(player.input.aimX - player.x, player.input.aimZ - player.z);
   const swings = Math.max(1, 1 + (player.doubleSlash || 0));
@@ -2104,7 +2145,7 @@ function applySaberSlash(player, angle) {
   let hit = false;
   for (const enemy of state.enemies) {
     const d = distance(player, enemy);
-    if (d > range + enemy.radius) continue;
+    if (d > range + enemyHitRadius(enemy)) continue;
     const toEnemy = Math.atan2(enemy.x - player.x, enemy.z - player.z);
     if (Math.abs(angleDiff(toEnemy, angle)) > arc / 2) continue;
     damageEnemy(enemy, player.damage, player.id);
@@ -2115,6 +2156,7 @@ function applySaberSlash(player, angle) {
 
 function attackNinja(player) {
   const base = Math.atan2(player.input.aimX - player.x, player.input.aimZ - player.z);
+  triggerPlayerModelAction(player, "SwordSlash", 0.52);
   applyNinjaSlash(player, base);
   fireNinjaShurikenSpread(player, base, ninjaShurikenCount(player), { damageScale: 1, clone: false });
   const clones = Math.min(4, player.shadowClone || 0);
@@ -2184,7 +2226,7 @@ function applyNinjaSlash(player, angle) {
   let hit = false;
   for (const enemy of state.enemies) {
     const d = distance(player, enemy);
-    if (d > range + enemy.radius) continue;
+    if (d > range + enemyHitRadius(enemy)) continue;
     const toEnemy = Math.atan2(enemy.x - player.x, enemy.z - player.z);
     if (Math.abs(angleDiff(toEnemy, angle)) > arc / 2) continue;
     damageEnemy(enemy, player.damage * 0.72, player.id);
@@ -2221,7 +2263,7 @@ function updateSaberSpinSlash(player, dt) {
   if (player.spinSlashTick <= 0) {
     player.spinSlashTick = 0.16;
     for (const enemy of state.enemies) {
-      if (distance(player, enemy) > range + enemy.radius) continue;
+      if (distance(player, enemy) > range + enemyHitRadius(enemy)) continue;
       damageEnemy(enemy, damage, player.id);
     }
   }
@@ -2389,7 +2431,7 @@ function castWitchSkill(player) {
   addRing(player.x, player.z, radius, 0xff6b2c);
   addRing(player.x, player.z, radius * 0.55, 0xffd166);
   for (const enemy of state.enemies) {
-    if (distance(player, enemy) <= radius + enemy.radius) {
+    if (distance(player, enemy) <= radius + enemyHitRadius(enemy)) {
       damageEnemy(enemy, damage, player.id);
     }
   }
@@ -2405,6 +2447,7 @@ function castSaberSkill(player, baseAngle) {
 }
 
 function castNinjaSkill(player, baseAngle) {
+  triggerPlayerModelAction(player, "Roll", 0.72);
   const startX = player.x;
   const startZ = player.z;
   const dashDistance = 9.5;
@@ -2495,6 +2538,7 @@ function addEnemy(boss, shooter, bomber = false, role = "") {
   };
   if (enemy.bossRole === "castleDragon") {
     enemy.radius = 4.2;
+    enemy.hitRadius = 6.4;
     enemy.damage = 34;
     enemy.visualScale = 3;
     enemy.dragonHomeIndex = -1;
@@ -2977,7 +3021,7 @@ function updateArrows(dt) {
     if (arrow.kind === "shuriken") arrow.mesh.rotation.z += dt * 18;
     for (const enemy of state.enemies) {
       if (arrow.hit.has(enemy)) continue;
-      if (distance(arrow, enemy) < arrow.radius + enemy.radius) {
+      if (distance(arrow, enemy) < arrow.radius + enemyHitRadius(enemy)) {
         const finalDamage = arrow.damage * projectileDamageMultiplier(arrow, enemy);
         damageEnemy(enemy, finalDamage, arrow.owner);
         arrow.hit.add(enemy);
@@ -3194,7 +3238,7 @@ function updateRockfalls(dt, applyDamage) {
     if (rockfall.hurtsEnemies) {
       for (const enemy of state.enemies) {
     if (isGolemEnemy(enemy)) continue;
-        if (distance(rockfall, enemy) > rockfall.radius + enemy.radius) continue;
+        if (distance(rockfall, enemy) > rockfall.radius + enemyHitRadius(enemy)) continue;
         damageEnemy(enemy, rockfall.enemyDamage);
         const owner = nearestLivingPlayer(enemy);
         if (owner) enemy.lastHitBy = owner.id;
@@ -3657,7 +3701,7 @@ function updateMagicCircles(dt) {
       circle.tick = 0.62;
       addThunderStorm(circle, 5);
       for (const enemy of state.enemies) {
-        if (distance(circle, enemy) <= circle.radius + enemy.radius) {
+        if (distance(circle, enemy) <= circle.radius + enemyHitRadius(enemy)) {
           damageEnemy(enemy, circle.damage, circle.owner);
           addThunderBolt(enemy.x, enemy.z);
           addRing(enemy.x, enemy.z, 0.85, 0xffe45c);
@@ -3724,7 +3768,7 @@ function explode(x, z, radius, damage) {
   sfx("explode", { broadcast: net.mode === "host" });
   addRing(x, z, radius, 0xe8784f);
   for (const enemy of state.enemies) {
-    if (distance({ x, z }, enemy) < radius + enemy.radius) damageEnemy(enemy, damage);
+    if (distance({ x, z }, enemy) < radius + enemyHitRadius(enemy)) damageEnemy(enemy, damage);
   }
 }
 
@@ -3734,7 +3778,7 @@ function magicExplosion(x, z, radius, damage, chainLeft = 0, owner = "", chained
   addRing(x, z, radius * 0.55, 0xffd166);
   const nextBursts = [];
   for (const enemy of state.enemies) {
-    if (distance({ x, z }, enemy) >= radius + enemy.radius) continue;
+    if (distance({ x, z }, enemy) >= radius + enemyHitRadius(enemy)) continue;
     damageEnemy(enemy, damage, owner);
     const key = enemy.id || enemy;
     if (chainLeft > 0 && !chained.has(key)) {
@@ -3949,22 +3993,22 @@ function makeCastleDragonMesh(enemy) {
   belly.castShadow = true;
   group.add(body, chest, belly);
 
-  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.38 * scale, 0.76 * scale, 2.55 * scale, 9), bodyMat.clone());
-  neck.position.set(0, 2.38 * scale, 2.55 * scale);
-  neck.rotation.x = -0.72;
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.42 * scale, 0.7 * scale, 2.35 * scale, 9), bodyMat.clone());
+  neck.position.set(0, 2.55 * scale, 2.68 * scale);
+  neck.rotation.x = -0.46;
   neck.castShadow = true;
   const head = new THREE.Mesh(new THREE.DodecahedronGeometry(0.92 * scale, 1), bodyMat.clone());
   head.scale.set(1.26, 0.82, 1.18);
-  head.position.set(0, 3.2 * scale, 3.62 * scale);
+  head.position.set(0, 3.08 * scale, 3.72 * scale);
   head.castShadow = true;
   const snout = new THREE.Mesh(new THREE.BoxGeometry(0.9 * scale, 0.42 * scale, 1.1 * scale), bodyMat.clone());
-  snout.position.set(0, 3.04 * scale, 4.25 * scale);
+  snout.position.set(0, 2.95 * scale, 4.34 * scale);
   snout.castShadow = true;
   const jaw = new THREE.Mesh(new THREE.BoxGeometry(1.02 * scale, 0.25 * scale, 0.95 * scale), bellyMat.clone());
-  jaw.position.set(0, 2.77 * scale, 4.28 * scale);
+  jaw.position.set(0, 2.68 * scale, 4.36 * scale);
   jaw.castShadow = true;
   const mouthFire = new THREE.Mesh(new THREE.ConeGeometry(0.36 * scale, 1.18 * scale, 12), fireMat);
-  mouthFire.position.set(0, 2.94 * scale, 4.92 * scale);
+  mouthFire.position.set(0, 2.85 * scale, 5.0 * scale);
   mouthFire.rotation.x = Math.PI / 2;
   group.userData.mouth = mouthFire;
   group.add(neck, head, snout, jaw, mouthFire);
@@ -4052,7 +4096,7 @@ function updateDragonVisual(enemy, target, dt) {
 }
 
 function makeDragonHitboxMesh(enemy) {
-  const radius = enemy.radius || 4.2;
+  const radius = enemyHitRadius(enemy) || enemy.radius || 4.2;
   const group = new THREE.Group();
   const disk = new THREE.Mesh(
     new THREE.CircleGeometry(radius, 64),
@@ -5041,6 +5085,7 @@ function updateUi() {
   ui.skillText.textContent = skillPct >= 1 ? "READY" : `${Math.ceil(skillCooldown - (player.skillCharge || 0))}s`;
   ui.skillText.closest(".skill-hud")?.classList.toggle("ready", skillPct >= 1);
   ui.skillReadyHint?.classList.toggle("hidden", skillPct < 1 || net.phase !== "playing" || !state.running);
+  ui.bossCameraHint?.classList.toggle("hidden", !(net.phase === "playing" && state.running && isStage3DragonBossActive()));
   const buildSummary = formatBuildSummary(player);
   const room = net.roomCode ? ` / 部屋 ${net.roomCode}` : "";
   const revive = player.dead ? ` / 復活まで${Math.max(0, Math.ceil(player.reviveAt - state.elapsed))}秒` : "";
@@ -5252,6 +5297,7 @@ function showLobby(message) {
   if (state) state.running = false;
   stopBgm();
   ui.skillText.closest(".skill-hud")?.classList.add("hidden");
+  ui.bossCameraHint?.classList.add("hidden");
   ui.start.classList.add("hidden");
   ui.createRoomPanel.classList.add("hidden");
   ui.joinRoomPanel.classList.add("hidden");
@@ -5404,6 +5450,7 @@ function handleHostData(data) {
     stopBgm();
     sfx(data.won ? "victory" : "gameover");
     ui.skillText.closest(".skill-hud")?.classList.add("hidden");
+    ui.bossCameraHint?.classList.add("hidden");
     const earnedMoney = awardMoney(data.won, { elapsed: data.elapsed, kills: data.kills, stageId: data.stageId });
     ui.endTitle.textContent = data.won ? "Clear!" : "Game Over";
     ui.endText.textContent = `${endSummaryText(data.elapsed, data.kills, false)} / ${earnedMoney}G獲得`;
@@ -5469,6 +5516,7 @@ function sendHostSnapshot(force = false) {
       angle: isSaberSpinning(p) ? (p.spinSlashAngle || 0) + state.elapsed * 18 : Math.atan2((p.input?.aimX ?? p.x) - p.x, (p.input?.aimZ ?? p.z - 1) - p.z),
       skillCharge: p.skillCharge, skillCooldown: p.skillCooldown,
       spinSlashUntil: p.spinSlashUntil, spinSlashAngle: p.spinSlashAngle,
+      modelActionName: p.modelActionName, modelActionUntil: p.modelActionUntil,
       arrows: p.arrows, backShots: p.backShots, damage: p.damage, pierce: p.pierce,
       flyingSlash: p.flyingSlash, fumaShuriken: p.fumaShuriken, shadowClone: p.shadowClone, shadowBind: p.shadowBind,
       baseFireRate: p.baseFireRate, attackSpeedBonus: p.attackSpeedBonus, fireRate: p.fireRate,
@@ -5477,6 +5525,7 @@ function sendHostSnapshot(force = false) {
     })),
     enemies: state.enemies.map((e) => ({
       id: e.id, x: e.x, z: e.z, radius: e.radius, hp: e.hp, maxHp: e.maxHp,
+      hitRadius: e.hitRadius,
       boss: e.boss, shooter: e.shooter, bomber: e.bomber, enemyType: e.enemyType,
       walkSeed: e.walkSeed, midBoss: e.midBoss, bossRole: e.bossRole,
       visualScale: e.visualScale, dragonBodyX: e.dragonBodyX, dragonBodyZ: e.dragonBodyZ,
@@ -5514,6 +5563,8 @@ function syncPlayers(players) {
       setPlayerDeadVisual(existingPlayer, Boolean(p.dead));
       existingPlayer.mesh.position.set(p.x, 0, p.z);
       if (typeof p.angle === "number") existingPlayer.mesh.rotation.y = p.angle;
+      existingPlayer.mesh.userData.modelActionName = p.modelActionName || "";
+      existingPlayer.mesh.userData.modelActionUntil = p.modelActionUntil || 0;
       animateHuman(existingPlayer, isSaberSpinning(existingPlayer) || Math.hypot(p.input?.dx || 0, p.input?.dz || 0) > 0.01, 0.033);
       setPlayerFlash(existingPlayer.mesh, playerFlashMode(existingPlayer));
       continue;
@@ -5529,6 +5580,8 @@ function syncPlayers(players) {
     setPlayerDeadVisual(pseudo, Boolean(p.dead));
     mesh.position.set(p.x, 0, p.z);
     if (typeof p.angle === "number") mesh.rotation.y = p.angle;
+    mesh.userData.modelActionName = p.modelActionName || "";
+    mesh.userData.modelActionUntil = p.modelActionUntil || 0;
     animateHumanMesh(mesh, isSaberSpinning(p) || Math.hypot(p.input?.dx || 0, p.input?.dz || 0) > 0.01, 0.033);
     setPlayerFlash(mesh, playerFlashMode(p));
   }
@@ -6256,6 +6309,7 @@ function endGame(won) {
   stopBgm();
   sfx(won ? "victory" : "gameover");
   ui.skillText.closest(".skill-hud")?.classList.add("hidden");
+  ui.bossCameraHint?.classList.add("hidden");
   net.restartVotes = new Set();
   const earnedMoney = awardMoney(won);
   ui.endTitle.textContent = won ? "Clear!" : "Game Over";
@@ -6494,6 +6548,7 @@ function showTitle() {
   stopBgm();
   setMenuBackdrop(true);
   ui.skillText.closest(".skill-hud")?.classList.add("hidden");
+  ui.bossCameraHint?.classList.add("hidden");
   ui.start.classList.remove("hidden");
   ui.stageSelectPanel.classList.add("hidden");
   ui.createRoomPanel.classList.add("hidden");
