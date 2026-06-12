@@ -2174,11 +2174,11 @@ function applySaberSlash(player, angle) {
 function attackNinja(player) {
   const base = Math.atan2(player.input.aimX - player.x, player.input.aimZ - player.z);
   if ((player.ninjaAttackMode || "shuriken") === "shuriken") {
+    triggerPlayerModelAction(player, "SwordSlash", 0.48);
     fireNinjaShurikenSpread(player, base, ninjaShurikenCount(player), { damageScale: 1, clone: false });
     player.ninjaAttackMode = "slash";
     return;
   }
-  triggerPlayerModelAction(player, "SwordSlash", 0.48);
   applyNinjaSlash(player, base + Math.PI);
   const clones = Math.min(4, player.shadowClone || 0);
   for (let i = 0; i < clones; i += 1) {
@@ -4032,7 +4032,7 @@ function makeCastleDragonMesh(enemy) {
 
   const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.42 * scale, 0.7 * scale, 2.35 * scale, 9), bodyMat.clone());
   neck.position.set(0, 2.55 * scale, 2.68 * scale);
-  neck.rotation.x = Math.PI * 0.75;
+  neck.rotation.x = Math.PI / 4;
   neck.castShadow = true;
   const head = new THREE.Mesh(new THREE.DodecahedronGeometry(0.92 * scale, 1), bodyMat.clone());
   head.scale.set(1.26, 0.82, 1.18);
