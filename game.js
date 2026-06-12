@@ -1924,6 +1924,10 @@ function playModelAction(model, name) {
   const action = names.map((candidate) => findModelAction(actions, candidate)).find(Boolean) || findModelAction(actions, "Idle");
   if (!action || model.userData.activeAction === action) return;
   action.enabled = true;
+  const actionName = action.getClip?.().name?.toLowerCase?.() || "";
+  const once = actionName.includes("roll") || actionName.replace(/[^a-z0-9]/g, "").includes("swordslash");
+  action.setLoop(once ? THREE.LoopOnce : THREE.LoopRepeat, once ? 1 : Infinity);
+  action.clampWhenFinished = once;
   action.reset().play();
   if (model.userData.activeAction) model.userData.activeAction.crossFadeTo(action, 0.16, false);
   model.userData.activeAction = action;
@@ -1943,11 +1947,18 @@ function findModelAction(actions, name) {
 
 function triggerPlayerModelAction(player, name, duration = 0.45) {
   if (!player?.mesh || !name) return;
+  const current = player.modelActionName || player.mesh.userData.modelActionName;
+  const currentUntil = Math.max(player.modelActionUntil || 0, player.mesh.userData.modelActionUntil || 0);
+  if (current === "Roll" && currentUntil > state.elapsed && name !== "Roll") return;
+  let actionDuration = duration;
+  const model = player.mesh.userData.modelRoot;
+  const action = model ? findModelAction(model.userData.actions, name) : null;
+  if (action?.getClip) actionDuration = Math.max(actionDuration, action.getClip().duration || duration);
   player.modelActionName = name;
-  player.modelActionUntil = state.elapsed + duration;
+  player.modelActionUntil = state.elapsed + actionDuration;
   player.mesh.userData.modelActionName = name;
   player.mesh.userData.modelActionUntil = player.modelActionUntil;
-  if (player.mesh.userData.modelRoot) playModelAction(player.mesh.userData.modelRoot, name);
+  if (model) playModelAction(model, name);
 }
 
 function oldAnimateHumanUnused(player, moving, dt) {
@@ -2447,7 +2458,7 @@ function castSaberSkill(player, baseAngle) {
 }
 
 function castNinjaSkill(player, baseAngle) {
-  triggerPlayerModelAction(player, "Roll", 0.72);
+  triggerPlayerModelAction(player, "Roll", 1.15);
   const startX = player.x;
   const startZ = player.z;
   const dashDistance = 9.5;
@@ -2756,7 +2767,11 @@ function moveDragonPerch(enemy) {
   enemy.dragonFaceZ = spot.z;
   enemy.dragonCenterAttack = false;
   addRing(enemy.x, enemy.z, 4.8, 0xff6b2c);
-  sfx("dragonMove", { broadcast: net.mode === "host" });
+  playDragonMoveSound();
+}
+
+function playDragonMoveSound() {
+  window.setTimeout(() => sfx("dragonMove", { broadcast: net.mode === "host" }), 90);
 }
 
 function addDragonBreath(enemy, target) {
@@ -2792,11 +2807,14 @@ function addDragonTailSweep(enemy) {
   enemy.x = 0;
   enemy.z = 0;
   enemy.dragonBodyX = 0;
-  enemy.dragonBodyZ = -6.5;
+  enemy.dragonBodyZ = 0;
   enemy.dragonFaceX = 0;
   enemy.dragonFaceZ = 0;
   enemy.dragonCenterAttack = true;
-  sfx("dragonMove", { broadcast: net.mode === "host" });
+  enemy.dragonTailSweepStart = state.elapsed;
+  enemy.dragonTailSweepUntil = state.elapsed + 2.15;
+  enemy.dragonTailBaseAngle = enemy.mesh?.rotation?.y || 0;
+  playDragonMoveSound();
   const radius = 13.2;
   const zone = {
     id: crypto.randomUUID(),
@@ -2815,7 +2833,6 @@ function addDragonTailSweep(enemy) {
   };
   scene.add(zone.mesh);
   state.bossZones.push(zone);
-  addSlashEffect(0, 0, radius, Math.PI * 2, 0, 0xffd166, enemy.id, true);
 }
 
 function addDragonFireRain(enemy) {
@@ -3399,23 +3416,6 @@ function makeBossZoneMesh(zone = {}) {
   group.add(warning, ring);
   group.userData.warning = warning;
   group.userData.ring = ring;
-  if (zone.kind === "tailSpin") {
-    const tail = new THREE.Group();
-    const blade = new THREE.Mesh(
-      new THREE.BoxGeometry(radius * 1.65, 0.18, radius * 0.28),
-      new THREE.MeshBasicMaterial({ color: 0xffd166, transparent: true, opacity: 0.82, depthWrite: false, blending: THREE.AdditiveBlending })
-    );
-    blade.position.x = radius * 0.55;
-    const edge = new THREE.Mesh(
-      new THREE.BoxGeometry(radius * 1.55, 0.08, radius * 0.08),
-      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.72, depthWrite: false, blending: THREE.AdditiveBlending })
-    );
-    edge.position.set(radius * 0.56, 0.13, radius * 0.16);
-    tail.position.y = 0.28;
-    tail.add(blade, edge);
-    group.add(tail);
-    group.userData.tail = tail;
-  }
   group.position.set(zone.x || 0, 0, zone.z || 0);
   return group;
 }
@@ -3564,14 +3564,6 @@ function updateBossZoneMesh(zone, elapsed) {
   if (mesh.userData.ring) {
     mesh.userData.ring.rotation.z += zone.kind === "tailSpin" ? 0.2 : 0.08;
     mesh.userData.ring.material.opacity = (zone.impacted ? 0.2 : 0.72) * fade;
-  }
-  if (mesh.userData.tail) {
-    const spin = clamp(elapsed / zone.impactAt, 0, 1);
-    mesh.userData.tail.rotation.y = spin * Math.PI * 2.35;
-    mesh.userData.tail.visible = spin > 0.08;
-    for (const child of mesh.userData.tail.children) {
-      child.material.opacity = (zone.impacted ? 0.72 : 0.42 + spin * 0.42) * fade;
-    }
   }
   if (mesh.userData.roots) {
     const warnGrow = clamp(danger, 0, 1) * 0.32;
@@ -3995,7 +3987,7 @@ function makeCastleDragonMesh(enemy) {
 
   const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.42 * scale, 0.7 * scale, 2.35 * scale, 9), bodyMat.clone());
   neck.position.set(0, 2.55 * scale, 2.68 * scale);
-  neck.rotation.x = -0.46;
+  neck.rotation.x = Math.PI / 2;
   neck.castShadow = true;
   const head = new THREE.Mesh(new THREE.DodecahedronGeometry(0.92 * scale, 1), bodyMat.clone());
   head.scale.set(1.26, 0.82, 1.18);
@@ -4083,8 +4075,18 @@ function makeDragonWing(scale, side, material) {
 function updateDragonVisual(enemy, target, dt) {
   const bob = Math.sin(state.elapsed * 4.2) * 0.65;
   const angle = Math.atan2(enemy.x - (enemy.dragonBodyX ?? enemy.x), enemy.z - (enemy.dragonBodyZ ?? enemy.z));
-  enemy.mesh.position.set(enemy.dragonBodyX ?? enemy.x, enemy.radius + 1.25 + bob, enemy.dragonBodyZ ?? enemy.z);
-  enemy.mesh.rotation.y = angle;
+  const tailActive = Boolean(enemy.dragonCenterAttack && state.elapsed < (enemy.dragonTailSweepUntil || 0));
+  if (enemy.dragonCenterAttack && !tailActive && enemy.dragonTailSweepUntil && state.elapsed >= enemy.dragonTailSweepUntil) {
+    enemy.dragonCenterAttack = false;
+  }
+  const y = tailActive ? 0.55 : enemy.radius + 1.25 + bob;
+  enemy.mesh.position.set(enemy.dragonBodyX ?? enemy.x, y, enemy.dragonBodyZ ?? enemy.z);
+  if (tailActive) {
+    const progress = clamp((state.elapsed - (enemy.dragonTailSweepStart || state.elapsed)) / Math.max(0.1, (enemy.dragonTailSweepUntil || state.elapsed) - (enemy.dragonTailSweepStart || state.elapsed)), 0, 1);
+    enemy.mesh.rotation.y = (enemy.dragonTailBaseAngle || angle) + progress * Math.PI * 2.15;
+  } else {
+    enemy.mesh.rotation.y = angle;
+  }
   const flap = Math.sin(state.elapsed * 9.5) * 0.62;
   for (const child of enemy.mesh.children) {
     if (child.userData?.side) child.rotation.z = child.userData.side * (0.34 + flap);
@@ -5529,7 +5531,9 @@ function sendHostSnapshot(force = false) {
       boss: e.boss, shooter: e.shooter, bomber: e.bomber, enemyType: e.enemyType,
       walkSeed: e.walkSeed, midBoss: e.midBoss, bossRole: e.bossRole,
       visualScale: e.visualScale, dragonBodyX: e.dragonBodyX, dragonBodyZ: e.dragonBodyZ,
-      dragonHomeIndex: e.dragonHomeIndex, hitboxFlash: e.hitboxFlash,
+      dragonHomeIndex: e.dragonHomeIndex, dragonCenterAttack: e.dragonCenterAttack,
+      dragonTailSweepStart: e.dragonTailSweepStart, dragonTailSweepUntil: e.dragonTailSweepUntil,
+      dragonTailBaseAngle: e.dragonTailBaseAngle, hitboxFlash: e.hitboxFlash,
     })),
     arrows: state.arrows.map((a) => ({ id: a.id, x: a.x, z: a.z, angle: a.angle, kind: a.kind, radius: a.radius, owner: a.owner, skill: a.skill })),
     bullets: state.enemyBullets.map((b) => ({ id: b.id, x: b.x, z: b.z, kind: b.kind, colorIndex: b.colorIndex, angle: b.angle })),
@@ -5609,8 +5613,14 @@ function syncSimpleMeshes(cache, items, factory, y) {
         scene.add(mesh.userData.hitboxMesh);
       }
       item.hitboxMesh = mesh.userData.hitboxMesh;
-      mesh.position.set(item.dragonBodyX ?? item.x, (item.radius || 4.2) + 1.25 + Math.sin(state.elapsed * 4.2) * 0.65, item.dragonBodyZ ?? item.z);
-      mesh.rotation.y = Math.atan2(item.x - (item.dragonBodyX ?? item.x), item.z - (item.dragonBodyZ ?? item.z));
+      const tailActive = Boolean(item.dragonCenterAttack && state.elapsed < (item.dragonTailSweepUntil || 0));
+      mesh.position.set(item.dragonBodyX ?? item.x, tailActive ? 0.55 : (item.radius || 4.2) + 1.25 + Math.sin(state.elapsed * 4.2) * 0.65, item.dragonBodyZ ?? item.z);
+      if (tailActive) {
+        const progress = clamp((state.elapsed - (item.dragonTailSweepStart || state.elapsed)) / Math.max(0.1, (item.dragonTailSweepUntil || state.elapsed) - (item.dragonTailSweepStart || state.elapsed)), 0, 1);
+        mesh.rotation.y = (item.dragonTailBaseAngle || 0) + progress * Math.PI * 2.15;
+      } else {
+        mesh.rotation.y = Math.atan2(item.x - (item.dragonBodyX ?? item.x), item.z - (item.dragonBodyZ ?? item.z));
+      }
       for (const child of mesh.children) {
         if (child.userData?.side) child.rotation.z = child.userData.side * (0.34 + Math.sin(state.elapsed * 9.5) * 0.62);
       }
