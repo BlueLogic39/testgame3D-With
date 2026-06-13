@@ -61,6 +61,12 @@ input[type="checkbox"] {
   min-height: auto;
 }
 
+#debugInvincibleLabel.hidden,
+#debugInvincibleLabel[hidden],
+.start-panel > button[data-character="ninja"] {
+  display: none !important;
+}
+
 .shell {
   width: min(100vw - 24px, 1080px);
   display: grid;
