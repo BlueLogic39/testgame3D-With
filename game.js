@@ -104,6 +104,7 @@ let debugSkillPresses = [];
 let debugBossPresses = { mid: [], boss: [] };
 let dragonEntranceUntil = 0;
 let dragonEntranceFocusId = "";
+let dragonEntranceFocus = null;
 const aim = new THREE.Vector3(0, 0, -8);
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
@@ -130,7 +131,7 @@ let selectedCharacterId = "archer";
 let selectedStageId = "stage1";
 let selectedDifficultyId = "normal";
 let stage3DebugUnlocked = false;
-let debugStage3Presses = [];
+let stage3InputSequence = [];
 let debugModeEnabled = false;
 let debugInvincible = false;
 let debugInputSequence = [];
@@ -213,13 +214,13 @@ const PROGRESS_KEY = "vansabaProgress";
 const UPGRADE_MAX_LEVEL = 5;
 
 const SHOP_ITEMS = [
-  { id: "power", type: "permanent", name: "筋力訓練", desc: "全キャラの攻撃力がレベルごとに+5%。", baseCost: 120, costStep: 80, max: 5 },
-  { id: "vitality", type: "permanent", name: "体力訓練", desc: "全キャラの最大HPがレベルごとに+10。", baseCost: 110, costStep: 75, max: 5 },
-  { id: "speed", type: "permanent", name: "俊足訓練", desc: "全キャラの移動速度がレベルごとに+3%。", baseCost: 130, costStep: 90, max: 5 },
-  { id: "magnet", type: "permanent", name: "磁力強化", desc: "経験値を吸い寄せる範囲がレベルごとに+8%。", baseCost: 100, costStep: 70, max: 5 },
-  { id: "learning", type: "permanent", name: "学習術", desc: "取得する経験値がレベルごとに+10%。最大+50%。", baseCost: 150, costStep: 110, max: 5 },
-  { id: "witch", type: "character", name: "ウィッチ購入", desc: "元素魔法を操るウィッチを使用可能にする。", cost: 300 },
-  { id: "saber", type: "character", name: "セイバー購入", desc: "近距離を薙ぎ払うセイバーを使用可能にする。", cost: 500 },
+  { id: "power", type: "permanent", name: "筋力訓練", desc: "全キャラの攻撃力がレベルごとに+5%。", costs: [500, 1000, 1500, 2000, 2500], max: 5 },
+  { id: "vitality", type: "permanent", name: "体力訓練", desc: "全キャラの最大HPがレベルごとに+10。", costs: [500, 1000, 1500, 2000, 2500], max: 5 },
+  { id: "speed", type: "permanent", name: "俊足訓練", desc: "全キャラの移動速度がレベルごとに+3%。", costs: [500, 1000, 1500, 2000, 2500], max: 5 },
+  { id: "magnet", type: "permanent", name: "磁力強化", desc: "経験値を吸い寄せる範囲がレベルごとに+8%。", costs: [500, 1000, 1500, 2000, 2500], max: 5 },
+  { id: "learning", type: "permanent", name: "学習術", desc: "取得する経験値がレベルごとに+10%。最大+50%。", costs: [1000, 2000, 3000, 4000, 5000], max: 5 },
+  { id: "witch", type: "character", name: "ウィッチ購入", desc: "元素魔法を操るウィッチを使用可能にする。", cost: 1000 },
+  { id: "saber", type: "character", name: "セイバー購入", desc: "近距離を薙ぎ払うセイバーを使用可能にする。", cost: 1500 },
   { id: "ninja", type: "character", name: "忍者購入", desc: "刀と手裏剣を使い分ける隠密アタッカーを使用可能にする。", cost: 5000, requiresClear: "stage2" },
 ];
 
@@ -1109,7 +1110,7 @@ function makePlayer(id, name, x, z, local, character = "archer") {
     player.damage = 21;
     player.baseFireRate = 1;
     player.speed = 9.4 * 1.15;
-    player.skillCooldown = 10;
+    player.skillCooldown = 15;
     player.arrows = 0;
     player.pierce = 0;
     player.slashArc = THREE.MathUtils.degToRad(74);
@@ -1911,7 +1912,7 @@ function updateNinjaSummonJutsu(player, dt) {
 function castNinjaSummon(player, level) {
   const kind = ["toad", "hawk", "wolf"][Math.floor(Math.random() * 3)];
   const target = nearestEnemy(player, 24) || player;
-  const duration = 0.72 + level * 0.18;
+  const duration = 1.5 + Math.max(0, level - 1) * 0.6;
   const radius = 3.0 + level * 0.38;
   const damage = player.damage * (1.1 + level * 0.11);
   if (kind === "toad") {
@@ -2130,15 +2131,16 @@ function updateCamera() {
   if (performance.now() < dragonEntranceUntil) {
     const dragons = [...(state?.enemies || []), ...(state?.remoteEnemies || [])];
     const dragon = dragons.find((enemy) => (dragonEntranceFocusId ? enemy.id === dragonEntranceFocusId : enemy.bossRole === "castleDragon") && enemy.hp > 0);
-    if (dragon) {
-      const face = new THREE.Vector3(dragon.x, 5.6, dragon.z);
-      const outward = new THREE.Vector3((dragon.dragonBodyX ?? dragon.x) - dragon.x, 0, (dragon.dragonBodyZ ?? dragon.z) - dragon.z);
+    const focus = dragon || dragonEntranceFocus;
+    if (focus) {
+      const face = new THREE.Vector3(focus.x, 6.2, focus.z);
+      const outward = new THREE.Vector3((focus.dragonBodyX ?? focus.x) - focus.x, 0, (focus.dragonBodyZ ?? focus.z) - focus.z);
       if (outward.lengthSq() < 0.01) outward.set(0, 0, 1);
       outward.normalize();
-      const camPos = face.clone().add(outward.multiplyScalar(12));
-      camPos.y = 8.2;
-      camera.position.lerp(camPos, 0.22);
-      camera.lookAt(face.x, face.y - 0.6, face.z);
+      const camPos = face.clone().add(outward.multiplyScalar(6.8));
+      camPos.y = 7.4;
+      camera.position.lerp(camPos, 0.5);
+      camera.lookAt(face.x, face.y - 0.35, face.z);
       updateCastleWallVisibility();
       return;
     }
@@ -3044,7 +3046,7 @@ function addCastleShieldBreaker(enemy, target, tier = 1) {
 function addCastleShieldShockwaves(enemy, tier = 1, delay = 0) {
   const count = 16;
   const speed = 10.8;
-  const life = (10.5 + tier * 1.25) / speed;
+  const life = ((10.5 + tier * 1.25) * 2.5) / speed;
   addRing(enemy.x, enemy.z, 2.5 + tier * 0.2, 0xfacc15);
   for (let i = 0; i < count; i += 1) {
     const angle = (Math.PI * 2 * i) / count;
@@ -5443,25 +5445,56 @@ function makeNinjaSummonMesh(effect = {}) {
     const body = new THREE.Mesh(new THREE.ConeGeometry(0.42, length, 3), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.72, depthWrite: false, blending: THREE.AdditiveBlending }));
     body.rotation.x = Math.PI / 2;
     body.position.set(0, 0.55, length / 2);
-    const wingL = new THREE.Mesh(new THREE.BoxGeometry(radius * 1.05, 0.055, length * 0.28), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.46, depthWrite: false }));
+    const wingL = new THREE.Mesh(new THREE.ConeGeometry(radius * 0.42, radius * 1.35, 3), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, depthWrite: false, blending: THREE.AdditiveBlending }));
     const wingR = wingL.clone();
     wingL.position.set(-radius * 0.36, 0.5, length * 0.34);
     wingR.position.set(radius * 0.36, 0.5, length * 0.34);
-    wingL.rotation.y = 0.55;
-    wingR.rotation.y = -0.55;
-    group.add(body, wingL, wingR);
+    wingL.rotation.set(Math.PI / 2, 0.75, -0.2);
+    wingR.rotation.set(Math.PI / 2, -0.75, 0.2);
+    const beak = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.44, 8), new THREE.MeshBasicMaterial({ color: 0xffe08a, transparent: true, opacity: 0.85, depthWrite: false }));
+    beak.rotation.x = Math.PI / 2;
+    beak.position.set(0, 0.55, length * 0.92);
+    const slashTrail = makeSlashArcMesh(radius * 0.82, THREE.MathUtils.degToRad(128), 0.045, 0x9fe8ff, 0.64);
+    slashTrail.position.set(0, 0.3, length * 0.45);
+    group.add(body, wingL, wingR, beak, slashTrail);
   } else {
-    const body = new THREE.Mesh(
-      kind === "toad" ? new THREE.SphereGeometry(radius * 0.28, 16, 10) : new THREE.CapsuleGeometry(radius * 0.16, radius * 0.36, 5, 10),
-      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.68, depthWrite: false, blending: THREE.AdditiveBlending })
-    );
-    body.position.y = 0.72;
-    const head = new THREE.Mesh(new THREE.SphereGeometry(radius * 0.16, 12, 8), body.material.clone());
-    head.position.set(0, 0.92, radius * 0.24);
+    const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.68, depthWrite: false, blending: THREE.AdditiveBlending });
+    const body = new THREE.Mesh(kind === "toad" ? new THREE.SphereGeometry(radius * 0.34, 18, 12) : new THREE.CapsuleGeometry(radius * 0.18, radius * 0.58, 6, 12), mat);
+    body.position.y = kind === "toad" ? 0.62 : 0.78;
+    if (kind === "wolf") body.rotation.x = Math.PI / 2;
+    const head = new THREE.Mesh(new THREE.SphereGeometry(radius * 0.17, 12, 8), mat.clone());
+    head.position.set(0, kind === "toad" ? 0.82 : 0.9, radius * 0.34);
     const ring = new THREE.Mesh(new THREE.TorusGeometry(radius * 0.82, 0.045, 8, 64), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, depthWrite: false }));
     ring.rotation.x = Math.PI / 2;
     ring.position.y = 0.16;
     group.add(body, head, ring);
+    if (kind === "toad") {
+      for (const sx of [-1, 1]) {
+        const eye = new THREE.Mesh(new THREE.SphereGeometry(radius * 0.055, 8, 6), new THREE.MeshBasicMaterial({ color: 0xfff7c2, transparent: true, opacity: 0.9, depthWrite: false }));
+        eye.position.set(sx * radius * 0.14, 0.98, radius * 0.22);
+        const leg = new THREE.Mesh(new THREE.CapsuleGeometry(radius * 0.06, radius * 0.32, 4, 6), mat.clone());
+        leg.position.set(sx * radius * 0.32, 0.34, -radius * 0.08);
+        leg.rotation.z = sx * 0.85;
+        group.add(eye, leg);
+      }
+      const tongue = new THREE.Mesh(new THREE.BoxGeometry(radius * 0.1, 0.035, radius * 0.72), new THREE.MeshBasicMaterial({ color: 0xff6b9f, transparent: true, opacity: 0.7, depthWrite: false }));
+      tongue.position.set(0, 0.56, radius * 0.48);
+      group.add(tongue);
+    } else {
+      for (const sx of [-1, 1]) {
+        const ear = new THREE.Mesh(new THREE.ConeGeometry(radius * 0.08, radius * 0.22, 3), mat.clone());
+        ear.position.set(sx * radius * 0.12, 1.1, radius * 0.32);
+        ear.rotation.z = sx * 0.38;
+        const claw = new THREE.Mesh(new THREE.BoxGeometry(radius * 0.06, 0.035, radius * 0.46), new THREE.MeshBasicMaterial({ color: 0xe9d5ff, transparent: true, opacity: 0.58, depthWrite: false }));
+        claw.position.set(sx * radius * 0.22, 0.28, radius * 0.7);
+        claw.rotation.y = sx * 0.22;
+        group.add(ear, claw);
+      }
+      const tail = new THREE.Mesh(new THREE.ConeGeometry(radius * 0.11, radius * 0.58, 9), mat.clone());
+      tail.position.set(0, 0.72, -radius * 0.42);
+      tail.rotation.x = -Math.PI / 2;
+      group.add(tail);
+    }
   }
   group.userData.aura = aura;
   return group;
@@ -6291,7 +6324,7 @@ function handleHostData(data) {
   }
   if (data.type === "toast") showToast(data.text);
   if (data.type === "skillBanner") showSkillBanner(data.playerName, data.skill);
-  if (data.type === "dragonEntrance") startDragonEntranceCutscene({ remote: true });
+  if (data.type === "dragonEntrance") startDragonEntranceCutscene({ remote: true, focus: data.focus });
   if (data.type === "comm") showToast(`${data.name}: ${data.text}`);
   if (data.type === "levelOffer" && data.playerId === localPlayerId) {
     net.waitingFor = localPlayerId;
@@ -6921,6 +6954,7 @@ function captureDebugOriginalProgress() {
 function progressItemCost(item) {
   if (item.type !== "permanent") return item.cost || 0;
   const level = progress.permanent[item.id] || 0;
+  if (Array.isArray(item.costs)) return item.costs[Math.min(level, item.costs.length - 1)] || 0;
   return item.baseCost + item.costStep * level;
 }
 
@@ -7092,15 +7126,24 @@ function normalizePasswordInput(input) {
   if (input.value !== normalized) input.value = normalized;
 }
 
-function trackDebugStage3Key() {
+function trackStage3UnlockKey(key) {
+  if (!canUseTitleDebugInput()) return;
+  const letter = String(key || "").toLowerCase();
+  if (!/^[a-z0-9]$/.test(letter)) return;
   const now = performance.now();
-  debugStage3Presses = debugStage3Presses.filter((time) => now - time <= 2000);
-  debugStage3Presses.push(now);
-  if (debugStage3Presses.length < 3) return;
-  debugStage3Presses = [];
-  stage3DebugUnlocked = true;
-  updateStageDifficultyButtons();
-  showToast("デバッグ解放: ステージ3を選択できます");
+  stage3InputSequence = stage3InputSequence.filter((entry) => now - entry.time <= 3000);
+  stage3InputSequence.push({ key: letter, time: now });
+  const typed = stage3InputSequence.map((entry) => entry.key).join("");
+  if ("sute3".startsWith(typed)) {
+    if (typed === "sute3") {
+      stage3InputSequence = [];
+      stage3DebugUnlocked = true;
+      updateStageDifficultyButtons();
+      showToast("ステージ3を選択できます");
+    }
+    return;
+  }
+  stage3InputSequence = letter === "s" ? [{ key: "s", time: now }] : [];
 }
 
 function canUseTitleDebugInput() {
@@ -7165,7 +7208,7 @@ function selectedDifficulty() {
 
 function selectStage(stageId) {
   if (!isStageProgressUnlocked(stageId)) {
-    showToast(stageId === "stage3" ? "ステージ3は制作中です。3キーを3回押すとデバッグ解放できます" : "前のステージをクリアすると解放されます");
+    showToast(stageId === "stage3" ? "ステージ3は制作中です" : "前のステージをクリアすると解放されます");
     updateStageDifficultyButtons();
     return;
   }
@@ -7186,7 +7229,7 @@ function updateStageDifficultyButtons() {
       button.classList.toggle("locked", false);
       button.classList.toggle("progress-locked", progressLocked);
       button.disabled = progressLocked;
-      button.title = progressLocked ? (button.dataset.stage === "stage3" ? "制作中: 3キーを3回押すとデバッグ解放" : "前のステージをクリアすると解放されます") : "";
+      button.title = progressLocked ? (button.dataset.stage === "stage3" ? "制作中" : "前のステージをクリアすると解放されます") : "";
     }
   }
   for (const root of [ui.difficultySelect, ui.roomDifficultySelect]) {
@@ -7322,11 +7365,27 @@ function showSkillBanner(playerName, skill) {
 }
 
 function startDragonEntranceCutscene(options = {}) {
-  dragonEntranceUntil = Math.max(dragonEntranceUntil, performance.now() + 2300);
-  if (options.enemy?.id) dragonEntranceFocusId = options.enemy.id;
-  sfx("dragonRoar", { broadcast: false });
+  dragonEntranceUntil = Math.max(dragonEntranceUntil, performance.now() + 2800);
+  if (options.enemy?.id) {
+    dragonEntranceFocusId = options.enemy.id;
+    dragonEntranceFocus = {
+      x: options.enemy.x,
+      z: options.enemy.z,
+      dragonBodyX: options.enemy.dragonBodyX,
+      dragonBodyZ: options.enemy.dragonBodyZ,
+    };
+  } else if (options.focus) {
+    dragonEntranceFocus = options.focus;
+  } else if (!dragonEntranceFocus) {
+    const dragon = [...(state?.enemies || []), ...(state?.remoteEnemies || [])].find((enemy) => enemy.bossRole === "castleDragon" && enemy.hp > 0);
+    if (dragon) {
+      dragonEntranceFocusId = dragon.id || "";
+      dragonEntranceFocus = { x: dragon.x, z: dragon.z, dragonBodyX: dragon.dragonBodyX, dragonBodyZ: dragon.dragonBodyZ };
+    }
+  }
+  window.setTimeout(() => sfx("dragonRoar", { broadcast: false }), 500);
   showDragonEntranceBanner();
-  if (!options.remote && net.mode === "host") broadcast({ type: "dragonEntrance" });
+  if (!options.remote && net.mode === "host") broadcast({ type: "dragonEntrance", focus: dragonEntranceFocus });
 }
 
 function showDragonEntranceBanner() {
@@ -7698,9 +7757,7 @@ window.addEventListener("keydown", (event) => {
   if (event.code === "KeyE" && !event.repeat && net.phase === "playing" && state.running) {
     rotateBossCamera(-1);
   }
-  if (event.code === "Digit3" && !event.repeat && net.phase !== "playing") {
-    trackDebugStage3Key();
-  }
+  if (!event.repeat && net.phase !== "playing") trackStage3UnlockKey(event.key);
   if (event.code === "Space") {
     event.preventDefault();
     if (!event.repeat) requestSkillUse();
