@@ -56,6 +56,11 @@ input {
   font: inherit;
 }
 
+input[type="checkbox"] {
+  width: auto;
+  min-height: auto;
+}
+
 .shell {
   width: min(100vw - 24px, 1080px);
   display: grid;

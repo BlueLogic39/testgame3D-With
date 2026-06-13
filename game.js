@@ -57,6 +57,8 @@ const ui = {
   closeUpdateButton: document.getElementById("closeUpdateButton"),
   settingsButton: document.getElementById("settingsButton"),
   settingsPanel: document.getElementById("settingsPanel"),
+  debugInvincibleLabel: document.getElementById("debugInvincibleLabel"),
+  debugInvincibleToggle: document.getElementById("debugInvincibleToggle"),
   masterVolume: document.getElementById("masterVolume"),
   bgmVolume: document.getElementById("bgmVolume"),
   seVolume: document.getElementById("seVolume"),
@@ -126,7 +128,9 @@ let selectedStageId = "stage1";
 let selectedDifficultyId = "normal";
 let stage3DebugUnlocked = false;
 let debugStage3Presses = [];
-let debugMoneySequence = [];
+let debugModeEnabled = false;
+let debugInvincible = false;
+let debugInputSequence = [];
 let cameraQuarterTurn = 0;
 let targetCameraQuarterTurn = 0;
 let castleWallProps = [];
@@ -2179,7 +2183,7 @@ function attackNinja(player) {
     player.ninjaAttackMode = "slash";
     return;
   }
-  applyNinjaSlash(player, base + Math.PI);
+  applyNinjaSlash(player, base);
   const clones = Math.min(4, player.shadowClone || 0);
   for (let i = 0; i < clones; i += 1) {
     const side = i % 2 === 0 ? -1 : 1;
@@ -2249,7 +2253,7 @@ function fireNinjaShuriken(player, angle, options = {}) {
 
 function applyNinjaSlash(player, angle) {
   const range = player.slashRange || 3.75;
-  const arc = player.slashArc || THREE.MathUtils.degToRad(74);
+  const arc = THREE.MathUtils.degToRad(180);
   for (const enemy of state.enemies) {
     const d = distance(player, enemy);
     if (d > range + enemyHitRadius(enemy)) continue;
@@ -2366,6 +2370,7 @@ function spawnDebugBoss(kind) {
 }
 
 function trackDebugSkillKey() {
+  if (!debugModeEnabled) return;
   const now = performance.now();
   debugSkillPresses = debugSkillPresses.filter((time) => now - time <= 2000);
   debugSkillPresses.push(now);
@@ -2376,6 +2381,7 @@ function trackDebugSkillKey() {
 }
 
 function trackDebugBossKey(kind) {
+  if (!debugModeEnabled) return;
   const now = performance.now();
   debugBossPresses[kind] = debugBossPresses[kind].filter((time) => now - time <= 2000);
   debugBossPresses[kind].push(now);
@@ -3040,6 +3046,7 @@ function updateEnemyBullets(dt) {
 }
 
 function damagePlayer(player, damage) {
+  if (debugModeEnabled && debugInvincible && player.local) return;
   if (player.dead || state.elapsed < (player.invincibleUntil || 0)) return;
   player.hp -= damage;
   player.hitFlash = 0.45;
@@ -4748,24 +4755,27 @@ function makeNinjaCloneMesh() {
 
 function makeNinjaSlashMesh(effect = {}) {
   const radius = effect.radius || 3.75;
-  const arc = effect.arc || THREE.MathUtils.degToRad(74);
+  const arc = effect.arc || Math.PI;
   const group = new THREE.Group();
-  const bladeCount = 4;
-  for (let i = 0; i < bladeCount; i += 1) {
-    const t = bladeCount === 1 ? 0 : i / (bladeCount - 1);
-    const a = -arc / 2 + arc * t;
-    const slash = makeSlashArcMesh(radius * (0.74 + i * 0.08), arc * 0.18, 0.045 + i * 0.01, i % 2 ? 0x2dd4bf : 0xffffff, 0.88 - i * 0.12);
-    slash.rotation.y = a;
-    slash.position.y = 0.08 + i * 0.08;
-    group.add(slash);
+  const shape = new THREE.Shape();
+  shape.moveTo(0, 0);
+  for (let i = 0; i <= 36; i += 1) {
+    const a = -arc / 2 + (arc * i) / 36;
+    shape.lineTo(Math.sin(a) * radius, Math.cos(a) * radius);
   }
-  const cut = new THREE.Mesh(
-    new THREE.BoxGeometry(radius * 1.35, 0.06, 0.1),
-    new THREE.MeshBasicMaterial({ color: 0x67e8f9, transparent: true, opacity: 0.58, depthWrite: false, blending: THREE.AdditiveBlending })
+  shape.lineTo(0, 0);
+  const fan = new THREE.Mesh(
+    new THREE.ShapeGeometry(shape),
+    new THREE.MeshBasicMaterial({ color: 0x2dd4bf, transparent: true, opacity: 0.16, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending })
   );
-  cut.position.set(0, 0.22, radius * 0.38);
-  cut.rotation.y = 0.18;
-  group.add(cut);
+  fan.rotation.x = -Math.PI / 2;
+  group.add(fan);
+  const guide = makeSlashArcMesh(radius, arc, 0.035, 0x67e8f9, 0.62);
+  const cutA = makeSlashArcMesh(radius * 0.92, arc * 0.82, 0.075, 0xffffff, 0.9);
+  const cutB = makeSlashArcMesh(radius * 0.72, arc * 0.62, 0.04, 0x2dd4bf, 0.7);
+  cutA.rotation.y = 0.18;
+  cutB.rotation.y = 0.34;
+  group.add(guide, cutA, cutB);
   return group;
 }
 
@@ -6270,6 +6280,7 @@ function normalizePasswordInput(input) {
 }
 
 function trackDebugStage3Key() {
+  if (!debugModeEnabled) return;
   const now = performance.now();
   debugStage3Presses = debugStage3Presses.filter((time) => now - time <= 2000);
   debugStage3Presses.push(now);
@@ -6290,25 +6301,34 @@ function canUseTitleDebugInput() {
   );
 }
 
-function trackDebugMoneyKey(key) {
+function enableDebugMode() {
+  debugModeEnabled = true;
+  stage3DebugUnlocked = true;
+  progress.money = Math.max(progress.money || 0, 99999);
+  for (const stageId of Object.keys(progress.stages || {})) progress.stages[stageId] = true;
+  saveProgress();
+  updateProgressUi();
+  updateStageDifficultyButtons();
+  ui.debugInvincibleLabel?.classList.remove("hidden");
+  showToast("デバッグモード開始: 99999G / ステージ全開放");
+}
+
+function trackDebugModeKey(key) {
   if (!canUseTitleDebugInput()) return;
   const letter = String(key || "").toLowerCase();
   if (!/^[a-z]$/.test(letter)) return;
   const now = performance.now();
-  debugMoneySequence = debugMoneySequence.filter((entry) => now - entry.time <= 3000);
-  debugMoneySequence.push({ key: letter, time: now });
-  const typed = debugMoneySequence.map((entry) => entry.key).join("");
-  if ("money".startsWith(typed)) {
-    if (typed === "money") {
-      debugMoneySequence = [];
-      progress.money += 99999;
-      saveProgress();
-      updateProgressUi();
-      showToast("デバッグ: 99999Gを入手しました");
+  debugInputSequence = debugInputSequence.filter((entry) => now - entry.time <= 2000);
+  debugInputSequence.push({ key: letter, time: now });
+  const typed = debugInputSequence.map((entry) => entry.key).join("");
+  if ("debug".startsWith(typed)) {
+    if (typed === "debug") {
+      debugInputSequence = [];
+      enableDebugMode();
     }
     return;
   }
-  debugMoneySequence = letter === "m" ? [{ key: "m", time: now }] : [];
+  debugInputSequence = letter === "d" ? [{ key: "d", time: now }] : [];
 }
 
 function selectedCharacter() {
@@ -6409,7 +6429,8 @@ function shuffle(items) {
 
 function makeUpgradeChoices(player = localPlayer()) {
   const character = player?.character || "archer";
-  return shuffle(upgrades.filter((up) => canOfferUpgrade(up, player, character))).slice(0, 3).map((up) => up.name);
+  const available = upgrades.filter((up) => canOfferUpgrade(up, player, character));
+  return (debugModeEnabled ? available : shuffle(available).slice(0, 3)).map((up) => up.name);
 }
 
 function upgradeLevel(player, name) {
@@ -6730,13 +6751,15 @@ function showLevelChoices(player, choiceNames) {
     button.addEventListener("click", () => chooseUpgrade(player.id, up.name));
     ui.choices.appendChild(button);
   }
-  const reroll = document.createElement("button");
-  reroll.className = "reroll-button secondary";
-  reroll.type = "button";
-  reroll.textContent = `リロール 残り${player.rerolls || 0}回`;
-  reroll.disabled = (player.rerolls || 0) <= 0;
-  reroll.addEventListener("click", () => rerollChoices(player.id));
-  ui.choices.appendChild(reroll);
+  if (!debugModeEnabled) {
+    const reroll = document.createElement("button");
+    reroll.className = "reroll-button secondary";
+    reroll.type = "button";
+    reroll.textContent = `リロール 残り${player.rerolls || 0}回`;
+    reroll.disabled = (player.rerolls || 0) <= 0;
+    reroll.addEventListener("click", () => rerollChoices(player.id));
+    ui.choices.appendChild(reroll);
+  }
   ui.levelUp.classList.remove("hidden");
 }
 
@@ -6804,7 +6827,7 @@ function chooseUpgrade(playerId, upgradeName) {
 }
 
 window.addEventListener("keydown", (event) => {
-  if (!event.repeat) trackDebugMoneyKey(event.key);
+  if (!event.repeat) trackDebugModeKey(event.key);
   if (event.code === "Escape") {
     event.preventDefault();
     if (!ui.updateInfo.classList.contains("hidden")) {
@@ -6920,6 +6943,10 @@ ui.settingsButton.addEventListener("click", () => ui.settingsPanel.classList.tog
 ui.masterVolume.addEventListener("input", (event) => setVolume("master", event.target.value));
 ui.bgmVolume.addEventListener("input", (event) => setVolume("bgm", event.target.value));
 ui.seVolume.addEventListener("input", (event) => setVolume("se", event.target.value));
+ui.debugInvincibleToggle?.addEventListener("change", (event) => {
+  debugInvincible = Boolean(event.target.checked);
+  showToast(debugInvincible ? "デバッグ: 無敵ON" : "デバッグ: 無敵OFF");
+});
 ui.roomPasswordInput.addEventListener("input", () => normalizePasswordInput(ui.roomPasswordInput));
 ui.joinPasswordInput.addEventListener("input", () => normalizePasswordInput(ui.joinPasswordInput));
 for (const root of [ui.stageSelect, ui.roomStageSelect]) {
