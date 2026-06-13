@@ -215,7 +215,7 @@ const UPGRADE_MAX_LEVEL = 5;
 
 const SHOP_ITEMS = [
   { id: "power", type: "permanent", name: "筋力訓練", desc: "全キャラの攻撃力がレベルごとに+5%。", costs: [500, 1000, 1500, 2000, 2500], max: 5 },
-  { id: "vitality", type: "permanent", name: "体力訓練", desc: "全キャラの最大HPがレベルごとに+10。", costs: [500, 1000, 1500, 2000, 2500], max: 5 },
+  { id: "vitality", type: "permanent", name: "体力訓練", desc: "全キャラの最大HPがレベルごとに+5。", costs: [500, 1000, 1500, 2000, 2500], max: 5 },
   { id: "speed", type: "permanent", name: "俊足訓練", desc: "全キャラの移動速度がレベルごとに+3%。", costs: [500, 1000, 1500, 2000, 2500], max: 5 },
   { id: "magnet", type: "permanent", name: "磁力強化", desc: "経験値を吸い寄せる範囲がレベルごとに+8%。", costs: [500, 1000, 1500, 2000, 2500], max: 5 },
   { id: "learning", type: "permanent", name: "学習術", desc: "取得する経験値がレベルごとに+10%。最大+50%。", costs: [1000, 2000, 3000, 4000, 5000], max: 5 },
@@ -306,8 +306,8 @@ const CHARACTER_CODEX = [
     id: "ninja",
     role: "刀と手裏剣を交互に使う高速アタッカー",
     weapon: "手裏剣を投げた1秒後に刀で斬り、さらに1秒後に手裏剣へ戻る交互攻撃です。",
-    passive: "旋風: 移動速度が15%高い。忍具精通: 5レベルごとに手裏剣+1、手裏剣貫通+1。",
-    skill: "飛影八閃: 10秒ごとにマウス方向へワープし、八方向へ手裏剣を放ちます。",
+    passive: "旋風: 移動速度が15%高い。忍具精通: 5レベルごとに手裏剣+1、手裏剣貫通+1。最大4段階。",
+    skill: "飛影八閃: 15秒ごとにマウス方向へワープし、八方向へ手裏剣を放ちます。",
     upgrades: ["風魔手裏剣", "影分身", "口寄せの術"],
   },
 ];
@@ -1090,6 +1090,7 @@ function makePlayer(id, name, x, z, local, character = "archer") {
     shadowClone: 0,
     summonJutsu: 0,
     summonTimer: 4.2,
+    summonIndex: 0,
     ninjaAttackMode: "shuriken",
     modelActionName: "",
     modelActionUntil: 0,
@@ -1906,11 +1907,13 @@ function updateNinjaSummonJutsu(player, dt) {
   player.summonTimer = (player.summonTimer || 0) - dt;
   if (player.summonTimer > 0) return;
   castNinjaSummon(player, level);
-  player.summonTimer = Math.max(4.4, 7.4 - level * 0.28);
+  player.summonTimer = Math.max(3.65, (7.4 - level * 0.28) / 1.2);
 }
 
 function castNinjaSummon(player, level) {
-  const kind = ["toad", "hawk", "wolf"][Math.floor(Math.random() * 3)];
+  const order = ["toad", "hawk", "wolf"];
+  const kind = order[player.summonIndex % order.length];
+  player.summonIndex = (player.summonIndex || 0) + 1;
   const target = nearestEnemy(player, 24) || player;
   const duration = 1.5 + Math.max(0, level - 1) * 0.6;
   const radius = 3.0 + level * 0.38;
@@ -2159,6 +2162,19 @@ function updateCamera() {
   updateCastleWallVisibility();
 }
 
+function focusDragonEntranceCameraNow(focus = dragonEntranceFocus) {
+  if (!focus || !camera) return;
+  const face = new THREE.Vector3(focus.x, 6.2, focus.z);
+  const outward = new THREE.Vector3((focus.dragonBodyX ?? focus.x) - focus.x, 0, (focus.dragonBodyZ ?? focus.z) - focus.z);
+  if (outward.lengthSq() < 0.01) outward.set(0, 0, 1);
+  outward.normalize();
+  const camPos = face.clone().add(outward.multiplyScalar(6.8));
+  camPos.y = 7.4;
+  camera.position.copy(camPos);
+  camera.lookAt(face.x, face.y - 0.35, face.z);
+  updateCastleWallVisibility();
+}
+
 function isStage3DragonBossActive() {
   const enemies = state?.enemies?.length ? state.enemies : state?.remoteEnemies || [];
   return Boolean(state?.stageId === "stage3" && enemies.some((enemy) => enemy.bossRole === "castleDragon" && enemy.hp > 0));
@@ -2365,7 +2381,7 @@ function attackNinja(player) {
 }
 
 function ninjaLevelBonus(player) {
-  return Math.floor(Math.max(0, (player.level || 1) - 1) / 5);
+  return Math.min(4, Math.floor(Math.max(0, (player.level || 1) - 1) / 5));
 }
 
 function ninjaShurikenCount(player) {
@@ -2519,7 +2535,8 @@ function spawnDebugBoss(kind) {
   if (!state?.running || net.phase !== "playing") return false;
   if (kind === "boss") {
     state.bossSpawned = true;
-    addEnemy(true, false, false, "boss");
+    const boss = addEnemy(true, false, false, "boss");
+    if (boss?.bossRole === "castleDragon") startDragonEntranceCutscene({ enemy: boss, force: true });
     showToast("デバッグ: 大ボス出現");
   } else {
     addEnemy(false, false, false, state.stageId === "stage3" ? "midMax" : "mid");
@@ -2744,8 +2761,8 @@ function addEnemy(boss, shooter, bomber = false, role = "") {
     x: pos.x,
     z: pos.z,
     radius: boss ? 2.2 : isMidRole ? 1.75 : castleShield ? 1.12 : castleGhost ? 0.98 : castleMage ? 1.0 : shooter ? 1.05 : bomber ? 0.82 : 0.72 + Math.random() * 0.28,
-    hp: boss ? (state.stageId === "stage3" ? 11600 : state.stageId === "stage2" ? 2900 : 1960) : isMidRole ? midHpBase * scale : castleShield ? 112 * scale : castleGhost ? 58 * scale : castleMage ? 76 * scale : shooter ? 46 * scale : bomber ? 34 * scale : 28 * scale,
-    maxHp: boss ? (state.stageId === "stage3" ? 11600 : state.stageId === "stage2" ? 2900 : 1960) : isMidRole ? midHpBase * scale : castleShield ? 112 * scale : castleGhost ? 58 * scale : castleMage ? 76 * scale : shooter ? 46 * scale : bomber ? 34 * scale : 28 * scale,
+    hp: boss ? (state.stageId === "stage3" ? 23200 : state.stageId === "stage2" ? 2900 : 1960) : isMidRole ? midHpBase * scale : castleShield ? 112 * scale : castleGhost ? 58 * scale : castleMage ? 76 * scale : shooter ? 46 * scale : bomber ? 34 * scale : 28 * scale,
+    maxHp: boss ? (state.stageId === "stage3" ? 23200 : state.stageId === "stage2" ? 2900 : 1960) : isMidRole ? midHpBase * scale : castleShield ? 112 * scale : castleGhost ? 58 * scale : castleMage ? 76 * scale : shooter ? 46 * scale : bomber ? 34 * scale : 28 * scale,
     speed: boss ? 2.15 : isMidRole ? midSpeedBase : castleShield ? 2.35 + state.elapsed * 0.004 : castleGhost ? 3.15 + state.elapsed * 0.004 : castleMage ? 2.25 + state.elapsed * 0.004 : shooter ? 2.1 + state.elapsed * 0.006 : bomber ? 4.5 + state.elapsed * 0.008 : 2.8 + Math.random() * 1.7 + state.elapsed * 0.005,
     damage: boss ? 24 : isMidRole ? 30 + castleGuardTier * 6 : castleShield ? 12 : castleGhost ? 14 : castleMage ? 13 : shooter ? 12 : bomber ? 40 : 9,
     touchTimer: 0,
@@ -5434,6 +5451,7 @@ function makeNinjaSummonMesh(effect = {}) {
   const radius = effect.radius || 3;
   const group = new THREE.Group();
   const color = kind === "toad" ? 0x65d46e : kind === "hawk" ? 0x9fe8ff : 0x7c3aed;
+  const summonMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.7, depthWrite: false, blending: THREE.AdditiveBlending });
   const aura = new THREE.Mesh(
     new THREE.CylinderGeometry(radius, radius, 0.045, 48),
     new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.22, depthWrite: false, blending: THREE.AdditiveBlending })
@@ -5442,10 +5460,10 @@ function makeNinjaSummonMesh(effect = {}) {
   group.add(aura);
   if (kind === "hawk") {
     const length = effect.length || radius * 3;
-    const body = new THREE.Mesh(new THREE.ConeGeometry(0.42, length, 3), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.72, depthWrite: false, blending: THREE.AdditiveBlending }));
+    const body = new THREE.Mesh(new THREE.ConeGeometry(0.42, length, 3), summonMat.clone());
     body.rotation.x = Math.PI / 2;
     body.position.set(0, 0.55, length / 2);
-    const wingL = new THREE.Mesh(new THREE.ConeGeometry(radius * 0.42, radius * 1.35, 3), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, depthWrite: false, blending: THREE.AdditiveBlending }));
+    const wingL = new THREE.Mesh(new THREE.ConeGeometry(radius * 0.48, radius * 1.55, 3), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, depthWrite: false, blending: THREE.AdditiveBlending }));
     const wingR = wingL.clone();
     wingL.position.set(-radius * 0.36, 0.5, length * 0.34);
     wingR.position.set(radius * 0.36, 0.5, length * 0.34);
@@ -5456,9 +5474,19 @@ function makeNinjaSummonMesh(effect = {}) {
     beak.position.set(0, 0.55, length * 0.92);
     const slashTrail = makeSlashArcMesh(radius * 0.82, THREE.MathUtils.degToRad(128), 0.045, 0x9fe8ff, 0.64);
     slashTrail.position.set(0, 0.3, length * 0.45);
-    group.add(body, wingL, wingR, beak, slashTrail);
+    const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.055, 8, 6), new THREE.MeshBasicMaterial({ color: 0x0f172a, transparent: true, opacity: 0.9, depthWrite: false }));
+    const eyeR = eyeL.clone();
+    eyeL.position.set(-0.09, 0.68, length * 0.72);
+    eyeR.position.set(0.09, 0.68, length * 0.72);
+    const tailA = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.7, 3), summonMat.clone());
+    const tailB = tailA.clone();
+    tailA.position.set(-0.16, 0.42, -0.05);
+    tailB.position.set(0.16, 0.42, -0.05);
+    tailA.rotation.x = -Math.PI / 2;
+    tailB.rotation.x = -Math.PI / 2;
+    group.add(body, wingL, wingR, beak, eyeL, eyeR, tailA, tailB, slashTrail);
   } else {
-    const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.68, depthWrite: false, blending: THREE.AdditiveBlending });
+    const mat = summonMat.clone();
     const body = new THREE.Mesh(kind === "toad" ? new THREE.SphereGeometry(radius * 0.34, 18, 12) : new THREE.CapsuleGeometry(radius * 0.18, radius * 0.58, 6, 12), mat);
     body.position.y = kind === "toad" ? 0.62 : 0.78;
     if (kind === "wolf") body.rotation.x = Math.PI / 2;
@@ -5479,7 +5507,9 @@ function makeNinjaSummonMesh(effect = {}) {
       }
       const tongue = new THREE.Mesh(new THREE.BoxGeometry(radius * 0.1, 0.035, radius * 0.72), new THREE.MeshBasicMaterial({ color: 0xff6b9f, transparent: true, opacity: 0.7, depthWrite: false }));
       tongue.position.set(0, 0.56, radius * 0.48);
-      group.add(tongue);
+      const belly = new THREE.Mesh(new THREE.SphereGeometry(radius * 0.2, 14, 8), new THREE.MeshBasicMaterial({ color: 0xd9f99d, transparent: true, opacity: 0.38, depthWrite: false, blending: THREE.AdditiveBlending }));
+      belly.position.set(0, 0.57, radius * 0.08);
+      group.add(tongue, belly);
     } else {
       for (const sx of [-1, 1]) {
         const ear = new THREE.Mesh(new THREE.ConeGeometry(radius * 0.08, radius * 0.22, 3), mat.clone());
@@ -5493,7 +5523,10 @@ function makeNinjaSummonMesh(effect = {}) {
       const tail = new THREE.Mesh(new THREE.ConeGeometry(radius * 0.11, radius * 0.58, 9), mat.clone());
       tail.position.set(0, 0.72, -radius * 0.42);
       tail.rotation.x = -Math.PI / 2;
-      group.add(tail);
+      const mane = new THREE.Mesh(new THREE.ConeGeometry(radius * 0.22, radius * 0.5, 5), new THREE.MeshBasicMaterial({ color: 0xc4b5fd, transparent: true, opacity: 0.42, depthWrite: false, blending: THREE.AdditiveBlending }));
+      mane.position.set(0, 0.9, radius * 0.03);
+      mane.rotation.x = Math.PI / 2;
+      group.add(tail, mane);
     }
   }
   group.userData.aura = aura;
@@ -5615,6 +5648,9 @@ function updateEffects(dt) {
 function updateNinjaSummonEffect(effect, t) {
   effect.mesh.rotation.y = (effect.angle || 0) + (effect.summonKind === "wolf" ? t * Math.PI * 1.4 : 0);
   const pulse = 1 + Math.sin(state.elapsed * 18) * 0.08 + t * 0.18;
+  if (effect.summonKind === "toad") effect.mesh.position.y = 0.12 + Math.sin(t * Math.PI) * 0.42;
+  if (effect.summonKind === "hawk") effect.mesh.position.y = 0.12 + Math.sin(state.elapsed * 16) * 0.18;
+  if (effect.summonKind === "wolf") effect.mesh.position.x += Math.sin(state.elapsed * 18) * 0.004;
   if (effect.mesh.userData.aura) effect.mesh.userData.aura.scale.setScalar(pulse);
 }
 
@@ -7073,7 +7109,7 @@ function ensureNinjaCharacterButton() {
 
 function applyPermanentBonuses(player) {
   const permanent = progress.permanent || {};
-  const hpBonus = (permanent.vitality || 0) * 10;
+  const hpBonus = (permanent.vitality || 0) * 5;
   const damageBonus = 1 + (permanent.power || 0) * 0.05;
   const speedBonus = 1 + (permanent.speed || 0) * 0.03;
   const magnetBonus = 1 + (permanent.magnet || 0) * 0.08;
@@ -7383,6 +7419,7 @@ function startDragonEntranceCutscene(options = {}) {
       dragonEntranceFocus = { x: dragon.x, z: dragon.z, dragonBodyX: dragon.dragonBodyX, dragonBodyZ: dragon.dragonBodyZ };
     }
   }
+  if (options.force) focusDragonEntranceCameraNow(dragonEntranceFocus);
   window.setTimeout(() => sfx("dragonRoar", { broadcast: false }), 500);
   showDragonEntranceBanner();
   if (!options.remote && net.mode === "host") broadcast({ type: "dragonEntrance", focus: dragonEntranceFocus });
