@@ -103,6 +103,7 @@ const keys = new Set();
 let debugSkillPresses = [];
 let debugBossPresses = { mid: [], boss: [] };
 let dragonEntranceUntil = 0;
+let dragonEntranceFocusId = "";
 const aim = new THREE.Vector3(0, 0, -8);
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
@@ -305,7 +306,7 @@ const CHARACTER_CODEX = [
     weapon: "手裏剣を投げた1秒後に刀で斬り、さらに1秒後に手裏剣へ戻る交互攻撃です。",
     passive: "旋風: 移動速度が15%高い。忍具精通: 5レベルごとに手裏剣+1、手裏剣貫通+1。",
     skill: "飛影八閃: 10秒ごとにマウス方向へワープし、八方向へ手裏剣を放ちます。",
-    upgrades: ["風魔手裏剣", "影分身", "影縫い"],
+    upgrades: ["風魔手裏剣", "影分身", "口寄せの術"],
   },
 ];
 
@@ -353,7 +354,7 @@ const upgrades = [
   { name: "貫通 +1", desc: "矢が追加で敵を貫く。群れに強い。", apply: (p) => (p.pierce += 1) },
   { name: "移動速度 +15%", desc: "囲まれにくくなり、経験値回収もしやすくなる。", apply: (p) => (p.speed *= 1.15) },
   { name: "最大HP +25", desc: "最大HPが増え、少し回復する。", apply: (p) => { p.maxHp += 25; p.hp = Math.min(p.maxHp, p.hp + 25); } },
-  { name: "吸血", desc: "敵を倒すたびにHPを少し回復する。", apply: (p) => (p.lifeSteal += 1.2) },
+  { name: "吸血", desc: "敵を倒すたびにHPを少し回復する。", maxLevel: 3, apply: (p) => (p.lifeSteal += 1.2) },
   { name: "バックショット", desc: "通常攻撃と同時にマウス方向の逆へ矢を撃つ。複数取ると後方矢が増える。", apply: (p) => (p.backShots += 1) },
   { name: "磁力 +40%", desc: "経験値を吸い寄せる範囲が広がる。", apply: (p) => (p.magnet *= 1.4) },
 ];
@@ -370,7 +371,7 @@ upgrades.push(
   { name: "二連斬り", desc: "薙ぎ払いの直後に、少しずらした追加の斬撃を放つ。", classes: ["saber"], apply: (p) => (p.doubleSlash += 1) },
   { name: "風魔手裏剣", desc: "手裏剣が風をまとい、取得するたび威力+15%、大きさ+0.1、飛距離が少し伸びる。命中した敵を真空の刃で切り刻む。", classes: ["ninja"], apply: (p) => (p.fumaShuriken += 1) },
   { name: "影分身", desc: "通常攻撃時に分身が追加の手裏剣を投げる。取得するたび分身が増える。", classes: ["ninja"], apply: (p) => (p.shadowClone += 1) },
-  { name: "影縫い", desc: "刀と手裏剣に短時間スローを付与する。取得するたびスロー時間が伸びる。", classes: ["ninja"], apply: (p) => (p.shadowBind += 1) }
+  { name: "口寄せの術", desc: "3種類の生物からランダムに1匹を呼び出し範囲攻撃を行う。取得するたび持続時間、範囲、威力が少し伸びる。", classes: ["ninja"], apply: (p) => (p.summonJutsu += 1) }
 );
 
 initThree();
@@ -1025,6 +1026,7 @@ function newState(playerInfos, options = {}) {
     effects: [],
     kills: 0,
     thunderSoundAt: 0,
+    castleSigilTimer: 5.5,
     renderCache: { players: new Map(), enemies: new Map(), arrows: new Map(), bullets: new Map(), gems: new Map(), hearts: new Map(), magnets: new Map(), circles: new Map(), rockfalls: new Map(), bossZones: new Map(), effects: new Map() },
   };
 }
@@ -1084,7 +1086,8 @@ function makePlayer(id, name, x, z, local, character = "archer") {
     spinSlashVisual: 0,
     fumaShuriken: 0,
     shadowClone: 0,
-    shadowBind: 0,
+    summonJutsu: 0,
+    summonTimer: 4.2,
     ninjaAttackMode: "shuriken",
     modelActionName: "",
     modelActionUntil: 0,
@@ -1875,6 +1878,7 @@ function updatePlayers(dt) {
     }
     updatePlayerIceSpike(player, dt);
     updatePlayerThunderCircle(player, dt);
+    updateNinjaSummonJutsu(player, dt);
   }
 }
 
@@ -1892,6 +1896,67 @@ function updatePlayerThunderCircle(player, dt) {
   if (player.thunderTimer > 0) return;
   addMagicCircle(player);
   player.thunderTimer = Math.max(2.8, (9.5 - player.thunderCircle * 0.45) * attackIntervalMultiplier(player));
+}
+
+function updateNinjaSummonJutsu(player, dt) {
+  const level = player.summonJutsu || 0;
+  if (player.character !== "ninja" || level <= 0) return;
+  player.summonTimer = (player.summonTimer || 0) - dt;
+  if (player.summonTimer > 0) return;
+  castNinjaSummon(player, level);
+  player.summonTimer = Math.max(4.4, 7.4 - level * 0.28);
+}
+
+function castNinjaSummon(player, level) {
+  const kind = ["toad", "hawk", "wolf"][Math.floor(Math.random() * 3)];
+  const target = nearestEnemy(player, 24) || player;
+  const duration = 0.72 + level * 0.18;
+  const radius = 3.0 + level * 0.38;
+  const damage = player.damage * (1.1 + level * 0.11);
+  if (kind === "toad") {
+    damageEnemiesInCircle(target.x, target.z, radius, damage, player.id);
+    addNinjaSummonEffect(kind, target.x, target.z, radius, 0, duration);
+  } else if (kind === "hawk") {
+    const angle = Math.atan2(target.x - player.x, target.z - player.z);
+    const length = 7.0 + level * 0.55;
+    const width = 2.0 + level * 0.16;
+    const endX = clamp(player.x + Math.sin(angle) * length, -WORLD.half + 1, WORLD.half - 1);
+    const endZ = clamp(player.z + Math.cos(angle) * length, -WORLD.half + 1, WORLD.half - 1);
+    damageEnemiesOnLine(player.x, player.z, endX, endZ, width, damage * 0.92, player.id);
+    addNinjaSummonEffect(kind, player.x, player.z, width, angle, duration, { length: Math.hypot(endX - player.x, endZ - player.z) });
+  } else {
+    damageEnemiesInCircle(player.x, player.z, radius * 1.08, damage * 0.86, player.id);
+    addNinjaSummonEffect(kind, player.x, player.z, radius * 1.08, 0, duration);
+  }
+}
+
+function nearestEnemy(origin, maxDistance = Infinity) {
+  let best = null;
+  let bestDistance = maxDistance;
+  for (const enemy of state.enemies) {
+    if (enemy.hp <= 0 || isGhostIntangible(enemy)) continue;
+    const d = distance(origin, enemy);
+    if (d >= bestDistance) continue;
+    best = enemy;
+    bestDistance = d;
+  }
+  return best;
+}
+
+function damageEnemiesInCircle(x, z, radius, damage, owner = "") {
+  for (const enemy of state.enemies) {
+    if (enemy.hp <= 0 || isGhostIntangible(enemy)) continue;
+    if (Math.hypot(enemy.x - x, enemy.z - z) > radius + enemyHitRadius(enemy)) continue;
+    damageEnemy(enemy, damage, owner);
+  }
+}
+
+function damageEnemiesOnLine(startX, startZ, endX, endZ, width, damage, owner = "") {
+  for (const enemy of state.enemies) {
+    if (enemy.hp <= 0 || isGhostIntangible(enemy)) continue;
+    if (distancePointToSegment(enemy.x, enemy.z, startX, startZ, endX, endZ) > width + enemyHitRadius(enemy)) continue;
+    damageEnemy(enemy, damage, owner);
+  }
 }
 
 function attackIntervalMultiplier(player) {
@@ -2061,6 +2126,22 @@ function oldAnimateHumanUnused(player, moving, dt) {
 function updateCamera() {
   const player = cameraTargetPlayer();
   if (!player) return;
+  if (performance.now() < dragonEntranceUntil) {
+    const dragons = [...(state?.enemies || []), ...(state?.remoteEnemies || [])];
+    const dragon = dragons.find((enemy) => (dragonEntranceFocusId ? enemy.id === dragonEntranceFocusId : enemy.bossRole === "castleDragon") && enemy.hp > 0);
+    if (dragon) {
+      const face = new THREE.Vector3(dragon.x, 5.6, dragon.z);
+      const outward = new THREE.Vector3((dragon.dragonBodyX ?? dragon.x) - dragon.x, 0, (dragon.dragonBodyZ ?? dragon.z) - dragon.z);
+      if (outward.lengthSq() < 0.01) outward.set(0, 0, 1);
+      outward.normalize();
+      const camPos = face.clone().add(outward.multiplyScalar(12));
+      camPos.y = 8.2;
+      camera.position.lerp(camPos, 0.22);
+      camera.lookAt(face.x, face.y - 0.6, face.z);
+      updateCastleWallVisibility();
+      return;
+    }
+  }
   const bossMode = isStage3DragonBossActive();
   if (!bossMode) targetCameraQuarterTurn = 0;
   cameraQuarterTurn += (targetCameraQuarterTurn - cameraQuarterTurn) * 0.16;
@@ -2336,6 +2417,7 @@ function fireNinjaShuriken(player, angle, options = {}) {
 }
 
 function applyNinjaSlash(player, angle) {
+  if (player.local || net.mode !== "client") sfx("saberAttack");
   const range = player.slashRange || 3.75;
   const arc = THREE.MathUtils.degToRad(180);
   for (const enemy of state.enemies) {
@@ -2344,17 +2426,8 @@ function applyNinjaSlash(player, angle) {
     const toEnemy = Math.atan2(enemy.x - player.x, enemy.z - player.z);
     if (Math.abs(angleDiff(toEnemy, angle)) > arc / 2) continue;
     damageEnemy(enemy, player.damage * 0.72, player.id);
-    applyNinjaShadowBind(player, enemy);
   }
   addNinjaSlashEffect(player.x, player.z, range, arc, angle, player.id);
-}
-
-function applyNinjaShadowBind(player, enemy) {
-  const level = player.shadowBind || 0;
-  if (level <= 0 || !enemy) return;
-  const duration = 0.45 + level * 0.35;
-  enemy.slowUntil = Math.max(enemy.slowUntil || 0, state.elapsed + duration);
-  addRing(enemy.x, enemy.z, 0.82 + level * 0.08, 0x2dd4bf);
 }
 
 function applyFumaShurikenBleed(enemy, projectile) {
@@ -2446,7 +2519,7 @@ function spawnDebugBoss(kind) {
     addEnemy(true, false, false, "boss");
     showToast("デバッグ: 大ボス出現");
   } else {
-    addEnemy(false, false, false, "mid");
+    addEnemy(false, false, false, state.stageId === "stage3" ? "midMax" : "mid");
     showToast("デバッグ: 中ボス出現");
   }
   if (net.mode === "host") sendHostSnapshot(true);
@@ -2658,30 +2731,31 @@ function addEnemy(boss, shooter, bomber = false, role = "") {
   const castleShield = role === "castleShield";
   const castleGhost = role === "castleGhost";
   const castleMage = role === "castleMage";
-  const castleGuardTier = role === "mid" && state.stageId === "stage3" ? castleGuardTierFromTime() : 0;
+  const isMidRole = role === "mid" || role === "midMax";
+  const castleGuardTier = isMidRole && state.stageId === "stage3" ? (role === "midMax" ? 3 : castleGuardTierFromTime()) : 0;
   const enemyType = castleShield ? "castleShield" : castleGhost ? "castleGhost" : castleMage ? "castleMage" : state.stageId === "stage3" && !boss && !bomber && !role ? (shooter ? "castleArbalest" : "castleSoldier") : "";
-  const midHpBase = state.stageId === "stage3" ? 1320 * (castleGuardTier === 3 ? 1.7 : castleGuardTier === 2 ? 1.3 : 1) : 720;
-  const midSpeedBase = state.stageId === "stage3" ? (castleGuardTier === 3 ? 3.35 : castleGuardTier === 2 ? 3.0 : 2.55) : 2.65;
+  const midHpBase = state.stageId === "stage3" ? 1600 * (castleGuardTier === 3 ? 1.85 : castleGuardTier === 2 ? 1.38 : 1) : 720;
+  const midSpeedBase = state.stageId === "stage3" ? (castleGuardTier === 3 ? 3.65 : castleGuardTier === 2 ? 3.22 : 2.75) : 2.65;
   const enemy = {
     id: crypto.randomUUID(),
     x: pos.x,
     z: pos.z,
-    radius: boss ? 2.2 : role === "mid" ? 1.75 : castleShield ? 1.12 : castleGhost ? 0.98 : castleMage ? 1.0 : shooter ? 1.05 : bomber ? 0.82 : 0.72 + Math.random() * 0.28,
-    hp: boss ? (state.stageId === "stage3" ? 11600 : state.stageId === "stage2" ? 2900 : 1960) : role === "mid" ? midHpBase * scale : castleShield ? 112 * scale : castleGhost ? 58 * scale : castleMage ? 76 * scale : shooter ? 46 * scale : bomber ? 34 * scale : 28 * scale,
-    maxHp: boss ? (state.stageId === "stage3" ? 11600 : state.stageId === "stage2" ? 2900 : 1960) : role === "mid" ? midHpBase * scale : castleShield ? 112 * scale : castleGhost ? 58 * scale : castleMage ? 76 * scale : shooter ? 46 * scale : bomber ? 34 * scale : 28 * scale,
-    speed: boss ? 2.15 : role === "mid" ? midSpeedBase : castleShield ? 2.35 + state.elapsed * 0.004 : castleGhost ? 3.15 + state.elapsed * 0.004 : castleMage ? 2.25 + state.elapsed * 0.004 : shooter ? 2.1 + state.elapsed * 0.006 : bomber ? 4.5 + state.elapsed * 0.008 : 2.8 + Math.random() * 1.7 + state.elapsed * 0.005,
-    damage: boss ? 24 : role === "mid" ? 24 + castleGuardTier * 4 : castleShield ? 12 : castleGhost ? 14 : castleMage ? 13 : shooter ? 12 : bomber ? 40 : 9,
+    radius: boss ? 2.2 : isMidRole ? 1.75 : castleShield ? 1.12 : castleGhost ? 0.98 : castleMage ? 1.0 : shooter ? 1.05 : bomber ? 0.82 : 0.72 + Math.random() * 0.28,
+    hp: boss ? (state.stageId === "stage3" ? 11600 : state.stageId === "stage2" ? 2900 : 1960) : isMidRole ? midHpBase * scale : castleShield ? 112 * scale : castleGhost ? 58 * scale : castleMage ? 76 * scale : shooter ? 46 * scale : bomber ? 34 * scale : 28 * scale,
+    maxHp: boss ? (state.stageId === "stage3" ? 11600 : state.stageId === "stage2" ? 2900 : 1960) : isMidRole ? midHpBase * scale : castleShield ? 112 * scale : castleGhost ? 58 * scale : castleMage ? 76 * scale : shooter ? 46 * scale : bomber ? 34 * scale : 28 * scale,
+    speed: boss ? 2.15 : isMidRole ? midSpeedBase : castleShield ? 2.35 + state.elapsed * 0.004 : castleGhost ? 3.15 + state.elapsed * 0.004 : castleMage ? 2.25 + state.elapsed * 0.004 : shooter ? 2.1 + state.elapsed * 0.006 : bomber ? 4.5 + state.elapsed * 0.008 : 2.8 + Math.random() * 1.7 + state.elapsed * 0.005,
+    damage: boss ? 24 : isMidRole ? 30 + castleGuardTier * 6 : castleShield ? 12 : castleGhost ? 14 : castleMage ? 13 : shooter ? 12 : bomber ? 40 : 9,
     touchTimer: 0,
     shotTimer: shooter ? (1.2 + Math.random() * 1.4) * 1.5 : 0,
-    xp: boss ? 120 : role === "mid" ? 65 : castleMage ? Math.ceil(redXp * 3) : castleShield || castleGhost ? redXp * 2 : shooter ? redXp * 3 : bomber ? redXp * 6 : redXp,
+    xp: boss ? 120 : isMidRole ? 65 : castleMage ? Math.ceil(redXp * 3) : castleShield || castleGhost ? redXp * 2 : shooter ? redXp * 3 : bomber ? redXp * 6 : redXp,
     walkSeed: Math.random() * Math.PI * 2,
     boss,
     shooter,
     bomber,
     enemyType,
-    midBoss: role === "mid",
-    bossRole: boss ? (state.stageId === "stage3" ? "castleDragon" : state.stageId === "stage2" ? "crystalGolem" : "forestTree") : role === "mid" && state.stageId === "stage3" ? "castleGuard" : role === "mid" && state.stageId === "stage2" ? "crystalMid" : role === "mid" && state.stageId === "stage1" ? "forestTreeMid" : role,
-    bossAttackTimer: role === "mid" ? 2.4 : boss ? 2.8 : 0,
+    midBoss: isMidRole,
+    bossRole: boss ? (state.stageId === "stage3" ? "castleDragon" : state.stageId === "stage2" ? "crystalGolem" : "forestTree") : isMidRole && state.stageId === "stage3" ? "castleGuard" : isMidRole && state.stageId === "stage2" ? "crystalMid" : isMidRole && state.stageId === "stage1" ? "forestTreeMid" : role,
+    bossAttackTimer: isMidRole ? 2.15 : boss ? 2.8 : 0,
     bossShotTimer: boss && (state.stageId === "stage2" || state.stageId === "stage3") ? 3.6 : 0,
     castleGuardTier,
     ghostPhaseSeed: Math.random() * Math.PI * 2,
@@ -2707,7 +2781,7 @@ function addEnemy(boss, shooter, bomber = false, role = "") {
   state.enemies.push(enemy);
   if (enemy.bossRole === "castleDragon") {
     startBgm();
-    startDragonEntranceCutscene();
+    startDragonEntranceCutscene({ enemy });
   }
   return enemy;
 }
@@ -2933,10 +3007,10 @@ function addCastleGuardAttack(enemy, target) {
 function addCastleGuardCharge(enemy, target, tier = 1) {
   const charge = addBossChargeLine(enemy, target, 0, null, {
     length: WORLD.half * 2.2,
-    width: 2.7 + tier * 0.22,
-    damage: 34 + tier * 10,
-    impactAt: Math.max(0.58, 1.05 - tier * 0.14),
-    chargeDuration: Math.max(0.34, 0.62 - tier * 0.08),
+    width: 2.95 + tier * 0.26,
+    damage: 42 + tier * 12,
+    impactAt: Math.max(0.52, 0.98 - tier * 0.13),
+    chargeDuration: Math.max(0.3, 0.58 - tier * 0.08),
     role: enemy.bossRole,
   });
   charge.kind = "guardCharge";
@@ -2947,14 +3021,49 @@ function addCastleShieldBreaker(enemy, target, tier = 1) {
   const angle = Math.atan2(target.x - enemy.x, target.z - enemy.z);
   const repeats = tier >= 3 ? 3 : tier >= 2 ? 2 : 1;
   for (let i = 0; i < repeats; i += 1) {
-    addBossConeZone(enemy.x, enemy.z, angle, 5.0 + tier * 0.8 + i * 0.55, THREE.MathUtils.degToRad(82 + tier * 8), bossScaledDamage(enemy, 24 + tier * 7), enemy.id, enemy.bossRole, {
+    addBossConeZone(enemy.x, enemy.z, angle, 5.5 + tier * 0.9 + i * 0.6, THREE.MathUtils.degToRad(88 + tier * 8), bossScaledDamage(enemy, 30 + tier * 9), enemy.id, enemy.bossRole, {
       delay: i * 0.36,
       kind: "shieldBreaker",
       impactAt: 0.72,
       life: 1.42 + i * 0.36,
     });
   }
-  enemy.castleGuardCastingUntil = state.elapsed + 0.95;
+  addCastleShieldShockwaves(enemy, tier, 0.22);
+  enemy.castleGuardCastingUntil = state.elapsed + 1.18;
+}
+
+function addCastleShieldShockwaves(enemy, tier = 1, delay = 0) {
+  const count = 16;
+  const length = 8.8 + tier * 1.15;
+  const width = 0.78 + tier * 0.05;
+  for (let i = 0; i < count; i += 1) {
+    const angle = (Math.PI * 2 * i) / count;
+    const endX = clamp(enemy.x + Math.sin(angle) * length, -WORLD.half + 1, WORLD.half - 1);
+    const endZ = clamp(enemy.z + Math.cos(angle) * length, -WORLD.half + 1, WORLD.half - 1);
+    const zoneLength = Math.hypot(endX - enemy.x, endZ - enemy.z);
+    const zone = {
+      id: crypto.randomUUID(),
+      kind: "shockwave",
+      x: enemy.x,
+      z: enemy.z,
+      endX,
+      endZ,
+      angle,
+      width,
+      length: zoneLength,
+      damage: bossScaledDamage(enemy, 18 + tier * 5),
+      owner: enemy.id,
+      role: enemy.bossRole,
+      delay,
+      life: 1.34 + delay,
+      start: 1.34 + delay,
+      impactAt: 0.78,
+      impacted: false,
+      mesh: makeBossZoneMesh({ kind: "shockwave", width, length: zoneLength, role: enemy.bossRole }),
+    };
+    scene.add(zone.mesh);
+    state.bossZones.push(zone);
+  }
 }
 
 function addCastleExecutionStrike(enemy, target, tier = 2) {
@@ -2977,7 +3086,7 @@ function addCastleExecutionStrike(enemy, target, tier = 2) {
     angle,
     width,
     length: Math.hypot(endX - startX, endZ - startZ),
-    damage: bossScaledDamage(enemy, tier >= 3 ? 58 : 48),
+    damage: bossScaledDamage(enemy, tier >= 3 ? 72 : 58),
     owner: enemy.id,
     role: enemy.bossRole,
     life: 2.25,
@@ -3042,17 +3151,21 @@ function addDragonBreath(enemy, target) {
   sfx("dragonBreathA", { broadcast: net.mode === "host" });
   sfx("dragonBreathB", { broadcast: net.mode === "host" });
   const angle = Math.atan2(target.x - enemy.x, target.z - enemy.z);
-  const length = 36;
+  const length = 72;
+  const width = 16.4;
+  const endX = clamp(enemy.x + Math.sin(angle) * length, -WORLD.half + 2, WORLD.half - 2);
+  const endZ = clamp(enemy.z + Math.cos(angle) * length, -WORLD.half + 2, WORLD.half - 2);
+  const zoneLength = Math.hypot(endX - enemy.x, endZ - enemy.z);
   const line = {
     id: crypto.randomUUID(),
     kind: "breath",
     x: enemy.x,
     z: enemy.z,
-    endX: clamp(enemy.x + Math.sin(angle) * length, -WORLD.half + 2, WORLD.half - 2),
-    endZ: clamp(enemy.z + Math.cos(angle) * length, -WORLD.half + 2, WORLD.half - 2),
+    endX,
+    endZ,
     angle,
-    width: 8.2,
-    length,
+    width,
+    length: zoneLength,
     damage: bossScaledDamage(enemy, 46),
     owner: enemy.id,
     role: enemy.bossRole,
@@ -3061,7 +3174,7 @@ function addDragonBreath(enemy, target) {
     impactAt: 1.18,
     chargeDuration: 0.65,
     impacted: false,
-    mesh: makeBossZoneMesh({ kind: "breath", width: 8.2, length, role: enemy.bossRole }),
+    mesh: makeBossZoneMesh({ kind: "breath", width, length: zoneLength, role: enemy.bossRole }),
   };
   scene.add(line.mesh);
   state.bossZones.push(line);
@@ -3314,8 +3427,6 @@ function updateArrows(dt) {
         const hitColor = arrow.kind === "magic" ? 0xff6b2c : arrow.kind === "flyingSlash" ? 0x91c7ff : arrow.kind === "shuriken" ? 0x2dd4bf : 0xf2c14e;
         addRing(enemy.x, enemy.z, arrow.kind === "magic" ? 1.0 : arrow.kind === "flyingSlash" ? 1.15 : arrow.kind === "shuriken" ? 0.95 : 0.8, hitColor);
         if (arrow.kind === "shuriken") {
-          const owner = state.players.find((p) => p.id === arrow.owner);
-          if (owner) applyNinjaShadowBind(owner, enemy);
           if (arrow.bleedDamage > 0) applyFumaShurikenBleed(enemy, arrow);
         }
         if (arrow.kind === "magic" && arrow.splash > 0) {
@@ -3463,6 +3574,16 @@ function updateMagnets(dt) {
 }
 
 function updateStageHazards(dt) {
+  if (state.stageId === "stage3") {
+    state.castleSigilTimer = (state.castleSigilTimer || 5.5) - dt;
+    if (state.castleSigilTimer <= 0) {
+      const count = Math.min(4, 1 + Math.floor(state.elapsed / 180));
+      for (let i = 0; i < count; i += 1) spawnCastleSigil();
+      state.castleSigilTimer = Math.max(5.2, 9.4 - state.elapsed / 150);
+    }
+    updateRockfalls(dt, false);
+    return;
+  }
   if (!STAGES[state.stageId]?.rockfalls) {
     updateRockfalls(dt, false);
     return;
@@ -3478,6 +3599,27 @@ function updateStageHazards(dt) {
 
 function spawnRockfall() {
   spawnRockfallAt(randomFieldPoint(), randomFieldPoint());
+}
+
+function spawnCastleSigil() {
+  const radius = 2.8 + Math.min(1.2, state.elapsed / 360);
+  const zone = {
+    id: crypto.randomUUID(),
+    kind: "castleSigil",
+    x: randomFieldPoint(),
+    z: randomFieldPoint(),
+    radius,
+    damage: 32 + Math.floor(state.elapsed / 120) * 3,
+    owner: "",
+    role: "castleDragon",
+    life: 1.85,
+    start: 1.85,
+    impactAt: 1.05,
+    impacted: false,
+    mesh: makeBossZoneMesh({ kind: "castleSigil", radius, role: "castleDragon" }),
+  };
+  scene.add(zone.mesh);
+  state.bossZones.push(zone);
 }
 
 function spawnRockfallAt(x, z, options = {}) {
@@ -3588,6 +3730,10 @@ function updateBossZones(dt) {
     }
     if (zone.kind === "breath") {
       resolveDragonBreathDamage(zone);
+      continue;
+    }
+    if (zone.kind === "shockwave") {
+      resolveExecutionStrikeDamage(zone);
       continue;
     }
     if (zone.kind === "shieldBreaker") {
@@ -3736,6 +3882,8 @@ function makeBossZoneMesh(zone = {}) {
   if (zone.kind === "breath") return makeDragonBreathMesh(zone);
   if (zone.kind === "charge") return makeBossChargeMesh(zone);
   if (zone.kind === "guardCharge") return makeBossChargeMesh({ ...zone, castleGuard: true });
+  if (zone.kind === "shockwave") return makeExecutionStrikeMesh({ ...zone, kind: "shockwave" });
+  if (zone.kind === "castleSigil") return makeCastleSigilMesh(zone);
   if (zone.kind === "shieldBreaker" || zone.kind === "cone") return makeBossConeMesh(zone);
   if (zone.kind === "execution" || zone.kind === "executionPlus") return makeExecutionStrikeMesh(zone);
   if (isForestBossRole(zone.role)) return makeForestRootZoneMesh(zone);
@@ -3837,6 +3985,38 @@ function makeForestRootZoneMesh(zone = {}) {
   return group;
 }
 
+function makeCastleSigilMesh(zone = {}) {
+  const radius = zone.radius || 3;
+  const group = new THREE.Group();
+  const warning = new THREE.Mesh(
+    new THREE.CylinderGeometry(radius, radius, 0.045, 56),
+    new THREE.MeshBasicMaterial({ color: 0x7f1d1d, transparent: true, opacity: 0.32, depthWrite: false })
+  );
+  warning.position.y = 0.06;
+  const outer = new THREE.Mesh(new THREE.TorusGeometry(radius * 0.92, 0.045, 8, 72), new THREE.MeshBasicMaterial({ color: 0xff315f, transparent: true, opacity: 0.76, depthWrite: false, blending: THREE.AdditiveBlending }));
+  outer.rotation.x = Math.PI / 2;
+  outer.position.y = 0.13;
+  const inner = new THREE.Mesh(new THREE.TorusGeometry(radius * 0.48, 0.035, 8, 56), new THREE.MeshBasicMaterial({ color: 0xfacc15, transparent: true, opacity: 0.62, depthWrite: false, blending: THREE.AdditiveBlending }));
+  inner.rotation.x = Math.PI / 2;
+  inner.position.y = 0.15;
+  const pillar = new THREE.Mesh(new THREE.CylinderGeometry(radius * 0.34, radius * 0.62, 5.8, 18), new THREE.MeshBasicMaterial({ color: 0xff3b66, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
+  pillar.position.y = 2.9;
+  group.add(warning, outer, inner, pillar);
+  for (let i = 0; i < 6; i += 1) {
+    const a = (Math.PI * 2 * i) / 6;
+    const spoke = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.055, radius * 1.55), new THREE.MeshBasicMaterial({ color: 0xffd166, transparent: true, opacity: 0.45, depthWrite: false }));
+    spoke.position.set(Math.sin(a) * radius * 0.16, 0.16, Math.cos(a) * radius * 0.16);
+    spoke.rotation.y = a;
+    group.add(spoke);
+  }
+  group.userData.warning = warning;
+  group.userData.ring = outer;
+  group.userData.inner = inner;
+  group.userData.pillar = pillar;
+  group.position.set(zone.x || 0, 0, zone.z || 0);
+  return group;
+}
+
 function makeBossChargeMesh(zone = {}) {
   const length = zone.length || 16;
   const width = zone.width || 2.6;
@@ -3910,7 +4090,7 @@ function makeExecutionStrikeMesh(zone = {}) {
 function updateBossZoneMesh(zone, elapsed) {
   const mesh = zone.mesh;
   if (!mesh) return;
-  if (zone.kind === "charge" || zone.kind === "guardCharge" || zone.kind === "breath" || zone.kind === "execution" || zone.kind === "executionPlus") {
+  if (zone.kind === "charge" || zone.kind === "guardCharge" || zone.kind === "breath" || zone.kind === "execution" || zone.kind === "executionPlus" || zone.kind === "shockwave") {
     mesh.position.set(zone.x, 0, zone.z);
     mesh.rotation.y = zone.angle || 0;
     const fade = zone.life < 0.35 ? zone.life / 0.35 : 1;
@@ -3952,6 +4132,15 @@ function updateBossZoneMesh(zone, elapsed) {
   if (mesh.userData.ring) {
     mesh.userData.ring.rotation.z += zone.kind === "tailSpin" ? 0.2 : 0.08;
     mesh.userData.ring.material.opacity = (zone.impacted ? 0.2 : 0.72) * fade;
+  }
+  if (mesh.userData.inner) {
+    mesh.userData.inner.rotation.z -= 0.13;
+    mesh.userData.inner.material.opacity = (zone.impacted ? 0.18 : 0.62) * fade;
+  }
+  if (mesh.userData.pillar) {
+    const active = zone.impacted ? 1 : clamp(danger, 0, 1);
+    mesh.userData.pillar.scale.setScalar(0.55 + active * 0.72);
+    mesh.userData.pillar.material.opacity = (zone.impacted ? 0.55 : 0.1 + active * 0.25) * fade;
   }
   if (mesh.userData.roots) {
     const warnGrow = clamp(danger, 0, 1) * 0.32;
@@ -5146,6 +5335,14 @@ function addNinjaCloneEffect(x, z, angle = 0) {
   state.effects.push({ id: crypto.randomUUID(), kind: "ninjaClone", x, z, angle, mesh, life: 0.36, start: 0.36 });
 }
 
+function addNinjaSummonEffect(summonKind, x, z, radius, angle = 0, duration = 0.8, options = {}) {
+  const mesh = makeNinjaSummonMesh({ summonKind, radius, length: options.length || radius * 2.2 });
+  mesh.position.set(x, 0.12, z);
+  mesh.rotation.y = angle;
+  scene.add(mesh);
+  state.effects.push({ id: crypto.randomUUID(), kind: "ninjaSummon", summonKind, x, z, radius, angle, length: options.length || radius * 2.2, mesh, life: duration, start: duration });
+}
+
 function addSubstitutionLogEffect(x, z, angle = 0) {
   const mesh = makeSubstitutionLogMesh();
   mesh.position.set(x, 0.08, z);
@@ -5188,6 +5385,46 @@ function makeNinjaCloneMesh() {
   const slash = makeSlashArcMesh(1.05, THREE.MathUtils.degToRad(90), 0.045, 0x2dd4bf, 0.52);
   slash.position.y = 0.72;
   group.add(body, head, slash);
+  return group;
+}
+
+function makeNinjaSummonMesh(effect = {}) {
+  const kind = effect.summonKind || "toad";
+  const radius = effect.radius || 3;
+  const group = new THREE.Group();
+  const color = kind === "toad" ? 0x65d46e : kind === "hawk" ? 0x9fe8ff : 0x7c3aed;
+  const aura = new THREE.Mesh(
+    new THREE.CylinderGeometry(radius, radius, 0.045, 48),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.22, depthWrite: false, blending: THREE.AdditiveBlending })
+  );
+  aura.position.y = 0.08;
+  group.add(aura);
+  if (kind === "hawk") {
+    const length = effect.length || radius * 3;
+    const body = new THREE.Mesh(new THREE.ConeGeometry(0.42, length, 3), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.72, depthWrite: false, blending: THREE.AdditiveBlending }));
+    body.rotation.x = Math.PI / 2;
+    body.position.set(0, 0.55, length / 2);
+    const wingL = new THREE.Mesh(new THREE.BoxGeometry(radius * 1.05, 0.055, length * 0.28), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.46, depthWrite: false }));
+    const wingR = wingL.clone();
+    wingL.position.set(-radius * 0.36, 0.5, length * 0.34);
+    wingR.position.set(radius * 0.36, 0.5, length * 0.34);
+    wingL.rotation.y = 0.55;
+    wingR.rotation.y = -0.55;
+    group.add(body, wingL, wingR);
+  } else {
+    const body = new THREE.Mesh(
+      kind === "toad" ? new THREE.SphereGeometry(radius * 0.28, 16, 10) : new THREE.CapsuleGeometry(radius * 0.16, radius * 0.36, 5, 10),
+      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.68, depthWrite: false, blending: THREE.AdditiveBlending })
+    );
+    body.position.y = 0.72;
+    const head = new THREE.Mesh(new THREE.SphereGeometry(radius * 0.16, 12, 8), body.material.clone());
+    head.position.set(0, 0.92, radius * 0.24);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(radius * 0.82, 0.045, 8, 64), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, depthWrite: false }));
+    ring.rotation.x = Math.PI / 2;
+    ring.position.y = 0.16;
+    group.add(body, head, ring);
+  }
+  group.userData.aura = aura;
   return group;
 }
 
@@ -5296,10 +5533,17 @@ function updateEffects(dt) {
     effect.life -= dt;
     const t = 1 - effect.life / effect.start;
     if (effect.kind === "substitutionLog") updateSubstitutionLogEffect(effect, t);
+    if (effect.kind === "ninjaSummon") updateNinjaSummonEffect(effect, t);
     effect.mesh.scale.setScalar(effect.skill ? 1 + t * 0.8 : 1);
     setEffectOpacity(effect.mesh, Math.max(0, 0.75 * (1 - t)));
   }
   removeDead(state.effects, (effect) => effect.life <= 0);
+}
+
+function updateNinjaSummonEffect(effect, t) {
+  effect.mesh.rotation.y = (effect.angle || 0) + (effect.summonKind === "wolf" ? t * Math.PI * 1.4 : 0);
+  const pulse = 1 + Math.sin(state.elapsed * 18) * 0.08 + t * 0.18;
+  if (effect.mesh.userData.aura) effect.mesh.userData.aura.scale.setScalar(pulse);
 }
 
 function updateSubstitutionLogEffect(effect, t) {
@@ -5722,7 +5966,7 @@ function formatBuildSummary(player) {
   addCount("二連斬り");
   addCount("風魔手裏剣");
   addCount("影分身");
-  addCount("影縫い");
+  addCount("口寄せの術");
   for (const [name, count] of counts) {
     if (handled.has(name)) continue;
     if (!upgrades.some((up) => up.name === name)) continue;
@@ -6101,7 +6345,7 @@ function sendHostSnapshot(force = false) {
       spinSlashUntil: p.spinSlashUntil, spinSlashAngle: p.spinSlashAngle,
       modelActionName: p.modelActionName, modelActionUntil: p.modelActionUntil,
       arrows: p.arrows, backShots: p.backShots, damage: p.damage, pierce: p.pierce,
-      flyingSlash: p.flyingSlash, fumaShuriken: p.fumaShuriken, shadowClone: p.shadowClone, shadowBind: p.shadowBind,
+      flyingSlash: p.flyingSlash, fumaShuriken: p.fumaShuriken, shadowClone: p.shadowClone, summonJutsu: p.summonJutsu,
       baseFireRate: p.baseFireRate, attackSpeedBonus: p.attackSpeedBonus, fireRate: p.fireRate,
       magicSplash: p.magicSplash, magicRadius: p.magicRadius, chainExplosion: p.chainExplosion, iceSpike: p.iceSpike, thunderCircle: p.thunderCircle,
       rerolls: p.rerolls, upgrades: p.upgrades,
@@ -6129,7 +6373,7 @@ function sendHostSnapshot(force = false) {
       radius: z.radius, width: z.width, length: z.length, arc: z.arc, life: z.life, start: z.start,
       impactAt: z.impactAt, impacted: z.impacted, role: z.role, delay: z.delay, startX: z.startX, startZ: z.startZ, chargeDuration: z.chargeDuration, retargetOnStart: z.retargetOnStart, retargeted: z.retargeted,
     })),
-    effects: state.effects.map((fx) => ({ id: fx.id, kind: fx.kind, owner: fx.owner, skill: fx.skill, x: fx.x, z: fx.z, radius: fx.radius, arc: fx.arc, angle: fx.angle, color: fx.color, life: fx.life, start: fx.start })),
+    effects: state.effects.map((fx) => ({ id: fx.id, kind: fx.kind, summonKind: fx.summonKind, owner: fx.owner, skill: fx.skill, x: fx.x, z: fx.z, radius: fx.radius, arc: fx.arc, angle: fx.angle, length: fx.length, color: fx.color, life: fx.life, start: fx.start })),
   });
 }
 
@@ -6259,7 +6503,7 @@ function syncBossZones(zones) {
   }
   state.bossZones = zones.map((item) => {
     let mesh = cache.get(item.id);
-    if (mesh && ["charge", "guardCharge", "execution", "executionPlus"].includes(item.kind) && Math.abs((mesh.userData.syncLength || 0) - (item.length || 0)) > 0.05) {
+    if (mesh && ["charge", "guardCharge", "execution", "executionPlus", "shockwave"].includes(item.kind) && Math.abs((mesh.userData.syncLength || 0) - (item.length || 0)) > 0.05) {
       scene.remove(mesh);
       cache.delete(item.id);
       mesh = null;
@@ -6293,7 +6537,7 @@ function syncEffects(effects) {
   for (const effect of effects) {
     let mesh = cache.get(effect.id);
     if (!mesh) {
-      mesh = effect.kind === "slash" ? makeSlashMesh(effect) : effect.kind === "ninjaSlash" ? makeNinjaSlashMesh(effect) : effect.kind === "thunder" ? makeThunderBoltMesh(effect) : effect.kind === "ice" ? makeIceSpikeMesh(effect) : effect.kind === "ninjaClone" ? makeNinjaCloneMesh(effect) : effect.kind === "substitutionLog" ? makeSubstitutionLogMesh(effect) : makeRingMesh(effect);
+      mesh = effect.kind === "slash" ? makeSlashMesh(effect) : effect.kind === "ninjaSlash" ? makeNinjaSlashMesh(effect) : effect.kind === "thunder" ? makeThunderBoltMesh(effect) : effect.kind === "ice" ? makeIceSpikeMesh(effect) : effect.kind === "ninjaClone" ? makeNinjaCloneMesh(effect) : effect.kind === "ninjaSummon" ? makeNinjaSummonMesh(effect) : effect.kind === "substitutionLog" ? makeSubstitutionLogMesh(effect) : makeRingMesh(effect);
       scene.add(mesh);
       cache.set(effect.id, mesh);
       if (effect.kind === "slash" && effect.owner && !effect.skill) sfx("saberAttack");
@@ -6304,6 +6548,7 @@ function syncEffects(effects) {
     mesh.position.set(effect.x, 0.12, effect.z);
     if (typeof effect.angle === "number") mesh.rotation.y = effect.angle;
     if (effect.kind === "substitutionLog") updateSubstitutionLogEffect({ ...effect, mesh }, t);
+    if (effect.kind === "ninjaSummon") updateNinjaSummonEffect({ ...effect, mesh }, t);
     mesh.scale.setScalar(effect.skill ? 1 + t * 0.8 : 1);
     setEffectOpacity(mesh, Math.max(0, 0.75 * (1 - t)));
   }
@@ -7035,6 +7280,7 @@ function showSkillBanner(playerName, skill) {
 
 function startDragonEntranceCutscene(options = {}) {
   dragonEntranceUntil = Math.max(dragonEntranceUntil, performance.now() + 2300);
+  if (options.enemy?.id) dragonEntranceFocusId = options.enemy.id;
   sfx("dragonRoar", { broadcast: false });
   showDragonEntranceBanner();
   if (!options.remote && net.mode === "host") broadcast({ type: "dragonEntrance" });
