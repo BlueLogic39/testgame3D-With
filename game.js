@@ -131,6 +131,7 @@ let debugStage3Presses = [];
 let debugModeEnabled = false;
 let debugInvincible = false;
 let debugInputSequence = [];
+let debugOriginalProgressJson = "";
 let cameraQuarterTurn = 0;
 let targetCameraQuarterTurn = 0;
 let castleWallProps = [];
@@ -6156,7 +6157,13 @@ function loadProgress() {
 }
 
 function saveProgress() {
+  if (debugModeEnabled) return;
   localStorage.setItem(PROGRESS_KEY, JSON.stringify(progress));
+}
+
+function captureDebugOriginalProgress() {
+  if (debugOriginalProgressJson) return;
+  debugOriginalProgressJson = localStorage.getItem(PROGRESS_KEY) || "";
 }
 
 function progressItemCost(item) {
@@ -6323,15 +6330,21 @@ function canUseTitleDebugInput() {
 }
 
 function enableDebugMode() {
+  captureDebugOriginalProgress();
   debugModeEnabled = true;
   stage3DebugUnlocked = true;
   progress.money = Math.max(progress.money || 0, 99999);
   for (const stageId of Object.keys(progress.stages || {})) progress.stages[stageId] = true;
   ui.debugInvincibleLabel?.classList.remove("hidden");
-  saveProgress();
   updateProgressUi();
   updateStageDifficultyButtons();
   showToast("デバッグモード開始: 99999G / ステージ全開放");
+}
+
+function leaveDebugModeForReload() {
+  if (!debugModeEnabled) return;
+  if (debugOriginalProgressJson) localStorage.setItem(PROGRESS_KEY, debugOriginalProgressJson);
+  else localStorage.removeItem(PROGRESS_KEY);
 }
 
 function trackDebugModeKey(key) {
@@ -6948,8 +6961,14 @@ ui.leaveRoomButton.addEventListener("click", leaveRoom);
 ui.restartButton.addEventListener("click", restartMatch);
 ui.disbandButton.addEventListener("click", leaveRoom);
 ui.pauseTitleButton.addEventListener("click", leaveRoom);
-window.addEventListener("pagehide", closePresence);
-window.addEventListener("beforeunload", closePresence);
+window.addEventListener("pagehide", () => {
+  leaveDebugModeForReload();
+  closePresence();
+});
+window.addEventListener("beforeunload", () => {
+  leaveDebugModeForReload();
+  closePresence();
+});
 ui.updateButton.addEventListener("click", () => ui.updateInfo.classList.remove("hidden"));
 ui.closeUpdateButton.addEventListener("click", () => ui.updateInfo.classList.add("hidden"));
 ui.settingsButton.addEventListener("click", () => ui.settingsPanel.classList.toggle("hidden"));
