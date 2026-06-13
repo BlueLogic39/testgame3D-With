@@ -123,7 +123,7 @@ input[type="checkbox"] {
 .boss-camera-hint {
   position: absolute;
   left: 50%;
-  top: 16px;
+  bottom: 42px;
   transform: translateX(-50%);
   z-index: 5;
   padding: 8px 14px;

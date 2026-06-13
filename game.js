@@ -213,7 +213,7 @@ const SHOP_ITEMS = [
   { id: "magnet", type: "permanent", name: "磁力強化", desc: "経験値を吸い寄せる範囲がレベルごとに+8%。", baseCost: 100, costStep: 70, max: 5 },
   { id: "witch", type: "character", name: "ウィッチ購入", desc: "元素魔法を操るウィッチを使用可能にする。", cost: 300 },
   { id: "saber", type: "character", name: "セイバー購入", desc: "近距離を薙ぎ払うセイバーを使用可能にする。", cost: 500 },
-  { id: "stage2", type: "stage", name: "黒晶鉱山 解放", desc: "ステージ2を選択可能にする。", cost: 700 },
+  { id: "ninja", type: "character", name: "忍者購入", desc: "刀と手裏剣を使い分ける隠密アタッカーを使用可能にする。", cost: 5000, requiresStage: "stage3" },
 ];
 
 progress = loadProgress();
@@ -5059,7 +5059,9 @@ function setVolume(kind, value) {
 function openCharacterCodex() {
   ui.characterCodex.classList.remove("hidden");
   initCodexViewer();
-  selectCodexCharacter(selectedCharacter());
+  buildCodexCards();
+  const initial = isCharacterUnlocked(selectedCharacter()) ? selectedCharacter() : "archer";
+  selectCodexCharacter(initial);
   if (codexViewer?.raf) cancelAnimationFrame(codexViewer.raf);
   codexViewer.raf = 0;
   animateCodex();
@@ -5123,6 +5125,7 @@ function initCodexViewer() {
 function buildCodexCards() {
   ui.codexCards.innerHTML = "";
   for (const info of CHARACTER_CODEX) {
+    if (!isCharacterUnlocked(info.id)) continue;
     const button = document.createElement("button");
     button.type = "button";
     button.dataset.character = info.id;
@@ -5133,7 +5136,7 @@ function buildCodexCards() {
 }
 
 function selectCodexCharacter(character) {
-  const info = CHARACTER_CODEX.find((item) => item.id === character) || CHARACTER_CODEX[0];
+  const info = CHARACTER_CODEX.find((item) => item.id === character && isCharacterUnlocked(item.id)) || CHARACTER_CODEX.find((item) => isCharacterUnlocked(item.id)) || CHARACTER_CODEX[0];
   if (!codexViewer) return;
   codexViewer.character = info.id;
   renderCodexModel(info);
@@ -6131,7 +6134,7 @@ function playerName() {
 function defaultProgress() {
   return {
     money: 0,
-    characters: { archer: true, witch: false, saber: false },
+    characters: { archer: true, witch: false, saber: false, ninja: false },
     stages: { stage1: true, stage2: false, stage3: false },
     permanent: { power: 0, vitality: 0, speed: 0, magnet: 0 },
   };
@@ -6190,6 +6193,7 @@ function updateProgressUi() {
   if (ui.moneyBadge) ui.moneyBadge.textContent = `${progress.money}G`;
   ui.moneyBadge?.parentElement?.classList.toggle("hidden", net.phase === "playing" || net.phase === "gameover");
   if (ui.shopMoney) ui.shopMoney.textContent = `所持金 ${progress.money}G`;
+  ui.debugInvincibleLabel?.classList.toggle("hidden", !debugModeEnabled);
   renderShop();
   updateCharacterLocks();
   updateStageDifficultyButtons();
@@ -6199,6 +6203,7 @@ function renderShop() {
   if (!ui.shopItems) return;
   ui.shopItems.innerHTML = "";
   for (const item of SHOP_ITEMS) {
+    if (!canShowShopItem(item)) continue;
     const owned = ownsShopItem(item);
     const level = item.type === "permanent" ? progress.permanent[item.id] || 0 : 0;
     const cost = progressItemCost(item);
@@ -6216,14 +6221,18 @@ function renderShop() {
   }
 }
 
+function canShowShopItem(item) {
+  if (!item) return false;
+  if (item.requiresStage && !progress.stages?.[item.requiresStage] && !ownsShopItem(item)) return false;
+  return true;
+}
+
 function isCharacterUnlocked(character) {
-  if (character === "ninja") return true;
   return Boolean(progress.characters[character]);
 }
 
 function isStageProgressUnlocked(stageId) {
-  if (stageId === "stage3") return stage3DebugUnlocked;
-  return Boolean(progress.stages[stageId]);
+  return Boolean(progress.stages[stageId] || (debugModeEnabled && stage3DebugUnlocked));
 }
 
 function updateCharacterLocks() {
@@ -6263,9 +6272,21 @@ function awardMoney(won, stats = {}) {
   const stageBonus = stageId === "stage3" ? 80 : stageId === "stage2" ? 45 : 25;
   const earned = Math.max(1, Math.floor(kills * 1.2 + (player.level || 1) * 8 + elapsed / 12 + (won ? stageBonus : 0)));
   progress.money += earned;
+  if (won) unlockStageClearRewards(stageId);
   saveProgress();
   updateProgressUi();
   return earned;
+}
+
+function unlockStageClearRewards(stageId) {
+  if (stageId === "stage1" && !progress.stages.stage2) {
+    progress.stages.stage2 = true;
+    showToast("ステージ2 黒晶鉱山が解放されました");
+  }
+  if (stageId === "stage2" && !progress.stages.stage3) {
+    progress.stages.stage3 = true;
+    showToast("ステージ3 冥冠城塞が解放されました");
+  }
 }
 
 function toHalfWidth(text) {
@@ -6306,10 +6327,10 @@ function enableDebugMode() {
   stage3DebugUnlocked = true;
   progress.money = Math.max(progress.money || 0, 99999);
   for (const stageId of Object.keys(progress.stages || {})) progress.stages[stageId] = true;
+  ui.debugInvincibleLabel?.classList.remove("hidden");
   saveProgress();
   updateProgressUi();
   updateStageDifficultyButtons();
-  ui.debugInvincibleLabel?.classList.remove("hidden");
   showToast("デバッグモード開始: 99999G / ステージ全開放");
 }
 
@@ -6345,14 +6366,8 @@ function selectedDifficulty() {
 }
 
 function selectStage(stageId) {
-  if (stageId === "stage3" && !stage3DebugUnlocked) {
-    selectedStageId = "stage1";
-    showToast("ステージ3はデバッグ中です");
-    updateStageDifficultyButtons();
-    return;
-  }
   if (!isStageProgressUnlocked(stageId)) {
-    showToast("ショップでステージを解放してください");
+    showToast("前のステージをクリアすると解放されます");
     updateStageDifficultyButtons();
     return;
   }
@@ -6368,14 +6383,12 @@ function selectDifficulty(difficultyId) {
 function updateStageDifficultyButtons() {
   for (const root of [ui.stageSelect, ui.roomStageSelect]) {
     for (const button of root?.querySelectorAll("[data-stage]") || []) {
-      const debugLocked = button.dataset.stage === "stage3" && !stage3DebugUnlocked;
-      const progressLocked = !debugLocked && !isStageProgressUnlocked(button.dataset.stage);
-      const locked = debugLocked || progressLocked;
+      const progressLocked = !isStageProgressUnlocked(button.dataset.stage);
       button.classList.toggle("selected", button.dataset.stage === selectedStageId);
-      button.classList.toggle("locked", debugLocked);
+      button.classList.toggle("locked", false);
       button.classList.toggle("progress-locked", progressLocked);
-      button.disabled = locked;
-      button.title = debugLocked ? "デバッグ中: 2秒以内に3キーを3回押すと解放" : progressLocked ? "ショップで解放すると選択できます" : "";
+      button.disabled = progressLocked;
+      button.title = progressLocked ? "前のステージをクリアすると解放されます" : "";
     }
   }
   for (const root of [ui.difficultySelect, ui.roomDifficultySelect]) {
