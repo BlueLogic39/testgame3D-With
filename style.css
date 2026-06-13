@@ -397,6 +397,20 @@ canvas {
   animation: skillBannerPop 1500ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
+.skill-banner.dragon-warning {
+  border-color: rgba(255, 95, 95, 0.9);
+  background:
+    linear-gradient(90deg, rgba(11, 14, 18, 0), rgba(18, 6, 6, 0.96) 16%, rgba(104, 12, 12, 0.94) 52%, rgba(18, 6, 6, 0.96) 84%, rgba(11, 14, 18, 0)),
+    linear-gradient(135deg, rgba(255, 216, 107, 0.18), rgba(255, 38, 38, 0.28));
+  box-shadow:
+    0 0 42px rgba(255, 63, 63, 0.48),
+    0 18px 48px rgba(0, 0, 0, 0.58);
+}
+
+.skill-banner.dragon-warning .skill-banner-label {
+  color: #ffb4a8;
+}
+
 @keyframes skillBannerPop {
   0% {
     opacity: 0;

@@ -48,6 +48,7 @@ const ui = {
   lobbyStatus: document.getElementById("lobbyStatus"),
   toast: document.getElementById("toast"),
   skillBanner: document.getElementById("skillBanner"),
+  skillBannerLabel: document.querySelector(".skill-banner-label"),
   skillBannerName: document.getElementById("skillBannerName"),
   skillBannerPlayer: document.getElementById("skillBannerPlayer"),
   radialMenu: document.getElementById("radialMenu"),
@@ -101,6 +102,7 @@ const WORLD = { half: 34 };
 const keys = new Set();
 let debugSkillPresses = [];
 let debugBossPresses = { mid: [], boss: [] };
+let dragonEntranceUntil = 0;
 const aim = new THREE.Vector3(0, 0, -8);
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
@@ -184,6 +186,8 @@ const AUDIO_FILES = {
   witchIceSpike: "witchicespikesound.mp3",
   saberAttack: "swordsound.mp3",
   saberSkill: "swordskillsound.mp3",
+  ninjaShuriken: "ninja_syuriken.mp3",
+  ninjaSkill: "ninja_skill.mp3",
   victory: "victory.mp3",
   gameover: "gameover.mp3",
   start: "gamestartsound.mp3",
@@ -250,7 +254,7 @@ const fbxModelCache = new Map();
 
 const FBX_ASSETS = {
   bow: { path: "./model_FBX/Bow_Wooden.fbx", size: 1.18, position: [-0.34, 1.26, 0.08], rotation: [0, Math.PI, 0], scale: [1, 1, 1] },
-  arrow: { path: "./model_FBX/Arrow.fbx", size: 1.85, position: [0, 0, 0], rotation: [0, Math.PI, 0], scale: [1, 1, 1] },
+  arrow: { path: "./model_FBX/Arrow.fbx", size: 1.85, position: [0, 0, 0], rotation: [Math.PI / 2, Math.PI, 0], scale: [1, 1, 1] },
   staff: { path: "./model_FBX/WoodenStaff.fbx", size: 1.62, position: [0.58, 0.9, 0.08], rotation: [0, 0, -0.24], scale: [1, 1, 1] },
   sword: { path: "./model_FBX/Sword.fbx", size: 1.45, position: [0.56, 0.76, 0.02], rotation: [0, 0, -0.62], scale: [1, 1, 1] },
   heart: { path: "./model_FBX/Heart.fbx", size: 0.92, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
@@ -700,6 +704,9 @@ function addCastleDecor() {
   for (const [x, z] of [[-24, -24], [24, -24], [-24, 24], [24, 24], [-10, -18], [10, -18]]) addCastleTorch(x, z);
   for (const [x, z, r] of [[-7, 9, 0.25], [7, 9, -0.25], [-18, 2, 0.55], [18, 2, -0.55]]) addCastleStatue(x, z, r);
   for (const [x, z] of [[-22, 19], [20, 20], [-19, -23], [23, -18], [8, 25], [-7, -24]]) addCastleCrate(x, z);
+  for (const [x, z, r] of [[-11, 15, 0.2], [11, 15, -0.2], [-24, 5, Math.PI / 2], [24, 5, -Math.PI / 2]]) addCastleWeaponRack(x, z, r);
+  for (const [x, z] of [[-14, -6], [14, -6], [-14, 6], [14, 6], [-25, -10], [25, -10]]) addCastlePillar(x, z);
+  for (const [x, z, r] of [[-9, -13, 0.1], [9, -13, -0.1], [-20, 14, 0.35], [20, 14, -0.35]]) addCastleBench(x, z, r);
 }
 
 function addCastleWalls() {
@@ -758,18 +765,20 @@ function addCastleFloorDetail() {
 function addCastleCarpet() {
   const redMat = new THREE.MeshStandardMaterial({ color: 0x8f1d2c, roughness: 0.74 });
   const goldMat = new THREE.MeshStandardMaterial({ color: 0xd9a441, roughness: 0.46, metalness: 0.12 });
-  const runner = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.035, 46), redMat);
+  const runnerLength = WORLD.half * 2 - 1.2;
+  const crossLength = WORLD.half * 2 - 8;
+  const runner = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.035, runnerLength), redMat);
   runner.position.y = 0.06;
-  const cross = new THREE.Mesh(new THREE.BoxGeometry(26, 0.034, 2.2), redMat.clone());
+  const cross = new THREE.Mesh(new THREE.BoxGeometry(crossLength, 0.034, 2.2), redMat.clone());
   cross.position.set(0, 0.061, 0);
   stageDecor.add(runner, cross);
   for (const x of [-1.55, 1.55]) {
-    const trim = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.04, 46), goldMat.clone());
+    const trim = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.04, runnerLength), goldMat.clone());
     trim.position.set(x, 0.08, 0);
     stageDecor.add(trim);
   }
   for (const z of [-1.25, 1.25]) {
-    const trim = new THREE.Mesh(new THREE.BoxGeometry(26, 0.04, 0.1), goldMat.clone());
+    const trim = new THREE.Mesh(new THREE.BoxGeometry(crossLength, 0.04, 0.1), goldMat.clone());
     trim.position.set(0, 0.081, z);
     stageDecor.add(trim);
   }
@@ -841,6 +850,63 @@ function addCastleCrate(x, z) {
   stageDecor.add(group);
 }
 
+function addCastleWeaponRack(x, z, rotation = 0) {
+  const group = new THREE.Group();
+  const wood = materials.mineWood.clone();
+  const metal = materials.saberBlade.clone();
+  const frame = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.16, 0.18), wood);
+  frame.position.y = 0.92;
+  const legA = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.07, 1.25, 6), wood.clone());
+  legA.position.set(-0.72, 0.55, 0);
+  const legB = legA.clone();
+  legB.position.x = 0.72;
+  group.add(frame, legA, legB);
+  for (let i = -1; i <= 1; i += 1) {
+    const spear = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.045, 1.7, 6), metal.clone());
+    spear.position.set(i * 0.42, 0.95, 0.08);
+    spear.rotation.z = -0.28 + i * 0.08;
+    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.28, 7), metal.clone());
+    tip.position.set(i * 0.42 - 0.24 + i * 0.08, 1.73, 0.08);
+    tip.rotation.z = spear.rotation.z;
+    group.add(spear, tip);
+  }
+  group.position.set(x, 0, z);
+  group.rotation.y = rotation;
+  stageDecor.add(group);
+}
+
+function addCastlePillar(x, z) {
+  const group = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({ color: 0xc9c4ba, roughness: 0.78 });
+  const base = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.25, 0.9), mat);
+  base.position.y = 0.12;
+  const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.34, 2.35, 10), mat.clone());
+  pillar.position.y = 1.42;
+  const top = base.clone();
+  top.position.y = 2.76;
+  group.add(base, pillar, top);
+  group.position.set(x, 0, z);
+  stageDecor.add(group);
+}
+
+function addCastleBench(x, z, rotation = 0) {
+  const group = new THREE.Group();
+  const wood = materials.mineWood.clone();
+  const seat = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.18, 0.55), wood);
+  seat.position.y = 0.55;
+  const back = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.65, 0.14), wood.clone());
+  back.position.set(0, 0.9, -0.24);
+  for (const lx of [-0.78, 0.78]) {
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.55, 0.16), wood.clone());
+    leg.position.set(lx, 0.27, 0.12);
+    group.add(leg);
+  }
+  group.add(seat, back);
+  group.position.set(x, 0, z);
+  group.rotation.y = rotation;
+  stageDecor.add(group);
+}
+
 function makeOldCastleWall() {
   const group = new THREE.Group();
   const mat = new THREE.MeshStandardMaterial({ color: 0xd8d5cc, roughness: 0.72 });
@@ -886,7 +952,7 @@ function makeOldCastleWell() {
   base.position.y = 0.45;
   base.castShadow = true;
   group.add(base);
-  const roof = new THREE.Mesh(new THREE.ConeGeometry(1.1, 0.8, 4), new THREE.MeshStandardMaterial({ color: 0xd94c5d, roughness: 0.62 }));
+  const roof = new THREE.Mesh(new THREE.ConeGeometry(1.1, 0.8, 4), materials.mineWood.clone());
   roof.position.y = 1.55;
   roof.rotation.y = Math.PI / 4;
   roof.castShadow = true;
@@ -2034,12 +2100,13 @@ function cameraTargetPlayer() {
 }
 
 function shoot(player) {
-  if (player.local || net.mode !== "client") sfx(attackSoundKey(player.character));
   if (player.character === "witch") {
+    if (player.local || net.mode !== "client") sfx(attackSoundKey(player.character));
     shootMagic(player);
     return;
   }
   if (player.character === "saber") {
+    if (player.local || net.mode !== "client") sfx(attackSoundKey(player.character));
     swingSaber(player);
     return;
   }
@@ -2047,6 +2114,7 @@ function shoot(player) {
     attackNinja(player);
     return;
   }
+  if (player.local || net.mode !== "client") sfx(attackSoundKey(player.character));
   shootArrows(player);
 }
 
@@ -2233,6 +2301,7 @@ function fireNinjaShurikenSpread(player, base, count, options = {}) {
 }
 
 function fireNinjaShuriken(player, angle, options = {}) {
+  if (!options.silent && (player.local || net.mode !== "client")) sfx("ninjaShuriken");
   const fuma = player.fumaShuriken || 0;
   const radius = 0.32 + fuma * 0.1;
   const speed = 23 + fuma * 1.2;
@@ -2409,14 +2478,13 @@ function trackDebugBossKey(kind) {
 function attackSoundKey(character) {
   if (character === "witch") return "witchAttack";
   if (character === "saber") return "saberAttack";
-  if (character === "ninja") return "saberAttack";
   return "archerAttack";
 }
 
 function skillSoundKey(character) {
   if (character === "witch") return "witchSkill";
   if (character === "saber") return "saberSkill";
-  if (character === "ninja") return "swordSkill";
+  if (character === "ninja") return "ninjaSkill";
   return "archerSkill";
 }
 
@@ -2525,7 +2593,7 @@ function castNinjaSkill(player, baseAngle) {
     const base = (Math.PI * 2 * i) / 8;
     for (let j = 0; j <= bonusCount; j += 1) {
       const offset = j === 0 ? 0 : (j % 2 === 0 ? -1 : 1) * (0.08 + Math.floor(j / 2) * 0.05);
-      fireNinjaShuriken(player, base + offset, { skill: true, damageScale: 1.18 });
+      fireNinjaShuriken(player, base + offset, { skill: true, damageScale: 1.18, silent: true });
     }
   }
 }
@@ -2637,7 +2705,10 @@ function addEnemy(boss, shooter, bomber = false, role = "") {
     scene.add(enemy.hitboxMesh);
   }
   state.enemies.push(enemy);
-  if (enemy.bossRole === "castleDragon") startBgm();
+  if (enemy.bossRole === "castleDragon") {
+    startBgm();
+    startDragonEntranceCutscene();
+  }
   return enemy;
 }
 
@@ -3831,6 +3902,8 @@ function makeExecutionStrikeMesh(zone = {}) {
   group.userData.warning = warning;
   group.userData.center = center;
   group.userData.core = blade;
+  group.userData.syncLength = length;
+  group.userData.syncWidth = width;
   return group;
 }
 
@@ -5078,7 +5151,7 @@ function addSubstitutionLogEffect(x, z, angle = 0) {
   mesh.position.set(x, 0.08, z);
   mesh.rotation.y = angle;
   scene.add(mesh);
-  state.effects.push({ id: crypto.randomUUID(), kind: "substitutionLog", x, z, angle, mesh, life: 0.9, start: 0.9 });
+  state.effects.push({ id: crypto.randomUUID(), kind: "substitutionLog", x, z, angle, mesh, life: 2.15, start: 2.15 });
 }
 
 function makeSubstitutionLogMesh() {
@@ -5093,12 +5166,13 @@ function makeSubstitutionLogMesh() {
   ringA.rotation.y = Math.PI / 2;
   const ringB = ringA.clone();
   ringB.position.x = 0.68;
-  for (let i = 0; i < 5; i += 1) {
+  for (let i = 0; i < 12; i += 1) {
     const smoke = new THREE.Mesh(
-      new THREE.SphereGeometry(0.18 + i * 0.035, 10, 6),
-      new THREE.MeshBasicMaterial({ color: 0xc7d0d8, transparent: true, opacity: 0.34 - i * 0.035, depthWrite: false })
+      new THREE.SphereGeometry(0.16 + (i % 5) * 0.045, 10, 6),
+      new THREE.MeshBasicMaterial({ color: 0xc7d0d8, transparent: true, opacity: 0.38 - (i % 5) * 0.035, depthWrite: false })
     );
-    smoke.position.set((i - 2) * 0.18, 0.42 + i * 0.08, (Math.random() - 0.5) * 0.32);
+    smoke.position.set((Math.random() - 0.5) * 1.25, 0.4 + Math.random() * 0.9, (Math.random() - 0.5) * 0.8);
+    smoke.userData.floatSeed = Math.random() * Math.PI * 2;
     group.add(smoke);
   }
   group.add(log, ringA, ringB);
@@ -5221,10 +5295,21 @@ function updateEffects(dt) {
   for (const effect of state.effects) {
     effect.life -= dt;
     const t = 1 - effect.life / effect.start;
+    if (effect.kind === "substitutionLog") updateSubstitutionLogEffect(effect, t);
     effect.mesh.scale.setScalar(effect.skill ? 1 + t * 0.8 : 1);
     setEffectOpacity(effect.mesh, Math.max(0, 0.75 * (1 - t)));
   }
   removeDead(state.effects, (effect) => effect.life <= 0);
+}
+
+function updateSubstitutionLogEffect(effect, t) {
+  effect.mesh.rotation.z = Math.sin(t * Math.PI) * 0.08;
+  for (const child of effect.mesh.children) {
+    if (!child.userData?.floatSeed) continue;
+    child.position.y += 0.012;
+    child.position.x += Math.sin(state.elapsed * 2.4 + child.userData.floatSeed) * 0.004;
+    child.scale.setScalar(1 + t * 1.25);
+  }
 }
 
 function setEffectOpacity(mesh, opacity) {
@@ -5676,7 +5761,11 @@ function hideStatus() {
 }
 
 function isGamePaused() {
-  return Boolean(state.paused || net.pausedBy || net.waitingFor);
+  return Boolean(state.paused || net.pausedBy || net.waitingFor || isDragonEntranceActive());
+}
+
+function isDragonEntranceActive() {
+  return performance.now() < dragonEntranceUntil;
 }
 
 function applyPause(playerId) {
@@ -5919,6 +6008,7 @@ function handleHostData(data) {
   }
   if (data.type === "toast") showToast(data.text);
   if (data.type === "skillBanner") showSkillBanner(data.playerName, data.skill);
+  if (data.type === "dragonEntrance") startDragonEntranceCutscene({ remote: true });
   if (data.type === "comm") showToast(`${data.name}: ${data.text}`);
   if (data.type === "levelOffer" && data.playerId === localPlayerId) {
     net.waitingFor = localPlayerId;
@@ -6169,7 +6259,7 @@ function syncBossZones(zones) {
   }
   state.bossZones = zones.map((item) => {
     let mesh = cache.get(item.id);
-    if (mesh && item.kind === "charge" && Math.abs((mesh.userData.syncLength || 0) - (item.length || 0)) > 0.05) {
+    if (mesh && ["charge", "guardCharge", "execution", "executionPlus"].includes(item.kind) && Math.abs((mesh.userData.syncLength || 0) - (item.length || 0)) > 0.05) {
       scene.remove(mesh);
       cache.delete(item.id);
       mesh = null;
@@ -6213,6 +6303,7 @@ function syncEffects(effects) {
     const t = 1 - effect.life / effect.start;
     mesh.position.set(effect.x, 0.12, effect.z);
     if (typeof effect.angle === "number") mesh.rotation.y = effect.angle;
+    if (effect.kind === "substitutionLog") updateSubstitutionLogEffect({ ...effect, mesh }, t);
     mesh.scale.setScalar(effect.skill ? 1 + t * 0.8 : 1);
     setEffectOpacity(mesh, Math.max(0, 0.75 * (1 - t)));
   }
@@ -6932,6 +7023,7 @@ function showSkillBanner(playerName, skill) {
     showToast(`${playerName}: ${skill}`);
     return;
   }
+  if (ui.skillBannerLabel) ui.skillBannerLabel.textContent = "SPECIAL SKILL";
   ui.skillBannerName.textContent = skill || "";
   ui.skillBannerPlayer.textContent = playerName ? `${playerName} 発動` : "固有スキル発動";
   ui.skillBanner.classList.remove("hidden", "flash");
@@ -6939,6 +7031,31 @@ function showSkillBanner(playerName, skill) {
   ui.skillBanner.classList.add("flash");
   clearTimeout(ui.skillBanner._timer);
   ui.skillBanner._timer = setTimeout(() => ui.skillBanner.classList.add("hidden"), 1500);
+}
+
+function startDragonEntranceCutscene(options = {}) {
+  dragonEntranceUntil = Math.max(dragonEntranceUntil, performance.now() + 2300);
+  sfx("dragonRoar", { broadcast: false });
+  showDragonEntranceBanner();
+  if (!options.remote && net.mode === "host") broadcast({ type: "dragonEntrance" });
+}
+
+function showDragonEntranceBanner() {
+  if (!ui.skillBanner) {
+    showToast("ドラゴン襲来");
+    return;
+  }
+  if (ui.skillBannerLabel) ui.skillBannerLabel.textContent = "BOSS ENCOUNTER";
+  ui.skillBannerName.textContent = "ドラゴン襲来";
+  ui.skillBannerPlayer.textContent = "冥冠城塞に翼の影が落ちる";
+  ui.skillBanner.classList.remove("hidden", "flash", "dragon-warning");
+  void ui.skillBanner.offsetWidth;
+  ui.skillBanner.classList.add("flash", "dragon-warning");
+  clearTimeout(ui.skillBanner._timer);
+  ui.skillBanner._timer = setTimeout(() => {
+    ui.skillBanner.classList.add("hidden");
+    ui.skillBanner.classList.remove("dragon-warning");
+  }, 2200);
 }
 
 function updateOnlineBadge() {
