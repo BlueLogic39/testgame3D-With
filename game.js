@@ -217,6 +217,7 @@ const SHOP_ITEMS = [
   { id: "vitality", type: "permanent", name: "体力訓練", desc: "全キャラの最大HPがレベルごとに+10。", baseCost: 110, costStep: 75, max: 5 },
   { id: "speed", type: "permanent", name: "俊足訓練", desc: "全キャラの移動速度がレベルごとに+3%。", baseCost: 130, costStep: 90, max: 5 },
   { id: "magnet", type: "permanent", name: "磁力強化", desc: "経験値を吸い寄せる範囲がレベルごとに+8%。", baseCost: 100, costStep: 70, max: 5 },
+  { id: "learning", type: "permanent", name: "学習術", desc: "取得する経験値がレベルごとに+10%。最大+50%。", baseCost: 150, costStep: 110, max: 5 },
   { id: "witch", type: "character", name: "ウィッチ購入", desc: "元素魔法を操るウィッチを使用可能にする。", cost: 300 },
   { id: "saber", type: "character", name: "セイバー購入", desc: "近距離を薙ぎ払うセイバーを使用可能にする。", cost: 500 },
   { id: "ninja", type: "character", name: "忍者購入", desc: "刀と手裏剣を使い分ける隠密アタッカーを使用可能にする。", cost: 5000, requiresClear: "stage2" },
@@ -3005,16 +3006,24 @@ function addCastleGuardAttack(enemy, target) {
 }
 
 function addCastleGuardCharge(enemy, target, tier = 1) {
-  const charge = addBossChargeLine(enemy, target, 0, null, {
-    length: WORLD.half * 2.2,
+  const chargeCount = Math.max(1, tier);
+  let lastCharge = null;
+  for (let i = 0; i < chargeCount; i += 1) {
+    const delay = i * (1.55 + tier * 0.05);
+    const charge = addBossChargeLine(enemy, target, delay, null, {
+      length: WORLD.half * 2.05,
+      chargeLength: WORLD.half * 2.05,
+      kind: "guardCharge",
+      retargetOnStart: i > 0,
     width: 2.95 + tier * 0.26,
     damage: 42 + tier * 12,
-    impactAt: Math.max(0.52, 0.98 - tier * 0.13),
-    chargeDuration: Math.max(0.3, 0.58 - tier * 0.08),
+      impactAt: Math.max(0.62, 1.08 - tier * 0.1),
+      chargeDuration: Math.max(0.48, 0.78 - tier * 0.06),
     role: enemy.bossRole,
   });
-  charge.kind = "guardCharge";
-  enemy.castleGuardCastingUntil = state.elapsed + charge.impactAt + charge.chargeDuration;
+    lastCharge = charge;
+  }
+  enemy.castleGuardCastingUntil = state.elapsed + (lastCharge?.delay || 0) + (lastCharge?.impactAt || 0.8) + (lastCharge?.chargeDuration || 0.55);
 }
 
 function addCastleShieldBreaker(enemy, target, tier = 1) {
@@ -3034,42 +3043,35 @@ function addCastleShieldBreaker(enemy, target, tier = 1) {
 
 function addCastleShieldShockwaves(enemy, tier = 1, delay = 0) {
   const count = 16;
-  const length = 8.8 + tier * 1.15;
-  const width = 0.78 + tier * 0.05;
+  const speed = 10.8;
+  const life = (10.5 + tier * 1.25) / speed;
+  addRing(enemy.x, enemy.z, 2.5 + tier * 0.2, 0xfacc15);
   for (let i = 0; i < count; i += 1) {
     const angle = (Math.PI * 2 * i) / count;
-    const endX = clamp(enemy.x + Math.sin(angle) * length, -WORLD.half + 1, WORLD.half - 1);
-    const endZ = clamp(enemy.z + Math.cos(angle) * length, -WORLD.half + 1, WORLD.half - 1);
-    const zoneLength = Math.hypot(endX - enemy.x, endZ - enemy.z);
-    const zone = {
+    const bullet = {
       id: crypto.randomUUID(),
+      x: enemy.x + Math.sin(angle) * 1.2,
+      z: enemy.z + Math.cos(angle) * 1.2,
+      vx: Math.sin(angle) * speed,
+      vz: Math.cos(angle) * speed,
+      radius: 0.52 + tier * 0.04,
+      damage: bossScaledDamage(enemy, 17 + tier * 5),
+      life,
       kind: "shockwave",
-      x: enemy.x,
-      z: enemy.z,
-      endX,
-      endZ,
       angle,
-      width,
-      length: zoneLength,
-      damage: bossScaledDamage(enemy, 18 + tier * 5),
-      owner: enemy.id,
-      role: enemy.bossRole,
-      delay,
-      life: 1.34 + delay,
-      start: 1.34 + delay,
-      impactAt: 0.78,
-      impacted: false,
-      mesh: makeBossZoneMesh({ kind: "shockwave", width, length: zoneLength, role: enemy.bossRole }),
+      mesh: makeBulletMesh({ kind: "shockwave" }),
     };
-    scene.add(zone.mesh);
-    state.bossZones.push(zone);
+    bullet.mesh.rotation.y = angle;
+    bullet.mesh.position.set(bullet.x, 1.0, bullet.z);
+    scene.add(bullet.mesh);
+    state.enemyBullets.push(bullet);
   }
 }
 
 function addCastleExecutionStrike(enemy, target, tier = 2) {
   const angle = Math.atan2(target.x - enemy.x, target.z - enemy.z);
-  const length = 18 + tier * 3;
-  const width = 2.35 + tier * 0.25;
+  const length = (18 + tier * 3) * 1.5;
+  const width = (2.35 + tier * 0.25) * 1.5;
   const startX = enemy.x;
   const startZ = enemy.z;
   const endX = clamp(startX + Math.sin(angle) * length, -WORLD.half + 1.5, WORLD.half - 1.5);
@@ -3093,7 +3095,7 @@ function addCastleExecutionStrike(enemy, target, tier = 2) {
     start: 2.25,
     impactAt: 1.55,
     impacted: false,
-    mesh: makeBossZoneMesh({ kind: "execution", width, length: Math.hypot(endX - startX, endZ - startZ), role: enemy.bossRole }),
+    mesh: makeBossZoneMesh({ kind: tier >= 3 ? "executionPlus" : "execution", width, length: Math.hypot(endX - startX, endZ - startZ), role: enemy.bossRole }),
   };
   enemy.castleGuardDefenseUntil = state.elapsed + zone.impactAt;
   enemy.castleGuardCastingUntil = state.elapsed + zone.impactAt + 0.32;
@@ -3234,7 +3236,7 @@ function addBossChargeLine(enemy, target, delay = 0, origin = null, options = {}
   const zoneLength = Math.hypot(endX - startX, endZ - startZ);
   const line = {
     id: crypto.randomUUID(),
-    kind: "charge",
+    kind: options.kind || "charge",
     x: startX,
     z: startZ,
     endX,
@@ -3252,10 +3254,11 @@ function addBossChargeLine(enemy, target, delay = 0, origin = null, options = {}
     chargeDuration: options.chargeDuration || 0.92,
     startX,
     startZ,
+    chargeLength: options.chargeLength || length,
     retargetOnStart: Boolean(options.retargetOnStart),
     retargeted: false,
     impacted: false,
-    mesh: makeBossZoneMesh({ kind: "charge", width, length: zoneLength, role: options.role || enemy.bossRole }),
+    mesh: makeBossZoneMesh({ kind: options.kind || "charge", width, length: zoneLength, role: options.role || enemy.bossRole }),
   };
   scene.add(line.mesh);
   state.bossZones.push(line);
@@ -3358,7 +3361,7 @@ function updateEnemyBullets(dt) {
     if (bullet.kind === "seed") {
       bullet.mesh.rotation.y = bullet.angle ?? Math.atan2(bullet.vx, bullet.vz);
       bullet.mesh.rotation.z += dt * 8;
-    } else if (bullet.kind === "bolt") {
+    } else if (bullet.kind === "bolt" || bullet.kind === "shockwave") {
       bullet.mesh.rotation.y = bullet.angle ?? Math.atan2(bullet.vx, bullet.vz);
     } else {
       bullet.mesh.rotation.y += dt * 6;
@@ -3477,7 +3480,8 @@ function updateGems(dt) {
     gem.mesh.rotation.y += dt * 2.8;
     gem.mesh.rotation.x += dt * 1.4;
     if (d < player.radius + gem.radius) {
-      player.xp += gem.kind === "boss" ? player.xpNext : gem.value;
+      const xpGain = (gem.kind === "boss" ? player.xpNext : gem.value) * xpGainMultiplier();
+      player.xp += xpGain;
       gem.collected = true;
       if (player.local || net.mode === "host") sfx("gem", { broadcast: net.mode === "host" });
       while (player.xp >= player.xpNext) {
@@ -3718,22 +3722,18 @@ function updateBossZones(dt) {
       continue;
     }
     if (zone.mesh) zone.mesh.visible = true;
-    if (zone.kind === "charge" && zone.retargetOnStart && !zone.retargeted) retargetBossCharge(zone);
+    if ((zone.kind === "charge" || zone.kind === "guardCharge") && zone.retargetOnStart && !zone.retargeted) retargetBossCharge(zone);
     updateBossZoneMesh(zone, zoneElapsed);
     if ((zone.kind === "charge" || zone.kind === "guardCharge") && zone.impacted) updateBossChargeMotion(zone, zoneElapsed);
     if (zone.impacted || zoneElapsed < zone.impactAt) continue;
     zone.impacted = true;
     if (zone.kind === "charge" || zone.kind === "guardCharge") {
-      resolveBossChargeDamage(zone);
+      if (zone.kind === "charge") resolveBossChargeDamage(zone);
       updateBossChargeMotion(zone, zoneElapsed);
       continue;
     }
     if (zone.kind === "breath") {
       resolveDragonBreathDamage(zone);
-      continue;
-    }
-    if (zone.kind === "shockwave") {
-      resolveExecutionStrikeDamage(zone);
       continue;
     }
     if (zone.kind === "shieldBreaker") {
@@ -3742,11 +3742,6 @@ function updateBossZones(dt) {
     }
     if (zone.kind === "execution" || zone.kind === "executionPlus") {
       resolveExecutionStrikeDamage(zone);
-      if (zone.kind === "executionPlus") {
-        const midX = (zone.x + zone.endX) / 2;
-        const midZ = (zone.z + zone.endZ) / 2;
-        spawnRockfallAt(midX, midZ, { radius: 3.0, damage: zone.damage * 0.55, enemyDamage: 0, hurtsEnemies: false, crystal: true, life: 1.4, impactAt: 0.65 });
-      }
       continue;
     }
     addRing(zone.x, zone.z, zone.radius, isCastleBossRole(zone.role) ? 0xfacc15 : isForestBossRole(zone.role) ? 0x8bdc65 : zone.role === "crystalGolem" ? 0xa78bfa : 0xff5f5f);
@@ -3814,7 +3809,7 @@ function retargetBossCharge(zone) {
   const startX = boss.x;
   const startZ = boss.z;
   const angle = Math.atan2(target.x - startX, target.z - startZ);
-  const length = 24;
+  const length = zone.chargeLength || zone.length || 24;
   const endX = clamp(startX + Math.sin(angle) * length, -WORLD.half + boss.radius, WORLD.half - boss.radius);
   const endZ = clamp(startZ + Math.cos(angle) * length, -WORLD.half + boss.radius, WORLD.half - boss.radius);
   zone.x = startX;
@@ -3828,7 +3823,7 @@ function retargetBossCharge(zone) {
   zone.retargeted = true;
   if (zone.mesh) {
     scene.remove(zone.mesh);
-    zone.mesh = makeBossZoneMesh({ kind: "charge", width: zone.width, length: zone.length, role: zone.role });
+    zone.mesh = makeBossZoneMesh({ kind: zone.kind || "charge", width: zone.width, length: zone.length, role: zone.role });
     scene.add(zone.mesh);
   }
 }
@@ -3862,6 +3857,15 @@ function updateBossChargeMotion(zone, elapsed) {
   boss.z = THREE.MathUtils.lerp(zone.startZ ?? zone.z, zone.endZ, eased);
   boss.mesh.position.set(boss.x, boss.bossRole === "castleGuard" ? 0 : boss.radius, boss.z);
   boss.mesh.rotation.y = zone.angle || boss.mesh.rotation.y;
+  if (zone.kind === "guardCharge") {
+    zone.hitPlayers ||= new Set();
+    for (const player of state.players) {
+      if (player.dead || player.hp <= 0 || zone.hitPlayers.has(player.id)) continue;
+      if (distance(player, boss) > player.radius + boss.radius + zone.width * 0.18) continue;
+      zone.hitPlayers.add(player.id);
+      damagePlayer(player, zone.damage);
+    }
+  }
 }
 
 function distancePointToSegment(px, pz, ax, az, bx, bz) {
@@ -4078,10 +4082,23 @@ function makeExecutionStrikeMesh(zone = {}) {
   center.position.set(0, 0.14, length / 2);
   const blade = new THREE.Mesh(new THREE.BoxGeometry(width * 0.55, 0.18, length * 0.96), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.32, depthWrite: false, blending: THREE.AdditiveBlending }));
   blade.position.set(0, 0.28, length / 2);
-  group.add(warning, center, blade);
+  const giantSword = new THREE.Group();
+  const swordMat = new THREE.MeshBasicMaterial({ color: 0xfff7c2, transparent: true, opacity: 0.82, depthWrite: false, blending: THREE.AdditiveBlending });
+  const swordBlade = new THREE.Mesh(new THREE.BoxGeometry(width * 0.38, 0.18, length * 0.72), swordMat.clone());
+  swordBlade.position.z = length * 0.34;
+  const swordTip = new THREE.Mesh(new THREE.ConeGeometry(width * 0.27, length * 0.18, 4), swordMat.clone());
+  swordTip.rotation.x = Math.PI / 2;
+  swordTip.position.z = length * 0.74;
+  const swordGuard = new THREE.Mesh(new THREE.BoxGeometry(width * 1.35, 0.16, 0.34), swordMat.clone());
+  swordGuard.position.z = length * 0.02;
+  giantSword.add(swordBlade, swordTip, swordGuard);
+  giantSword.position.set(0, 3.2, length * 0.12);
+  giantSword.rotation.x = -1.05;
+  group.add(warning, center, blade, giantSword);
   group.userData.warning = warning;
   group.userData.center = center;
   group.userData.core = blade;
+  group.userData.giantSword = giantSword;
   group.userData.syncLength = length;
   group.userData.syncWidth = width;
   return group;
@@ -4117,6 +4134,12 @@ function updateBossZoneMesh(zone, elapsed) {
     if (mesh.userData.mouthBurst) {
       mesh.userData.mouthBurst.scale.setScalar(0.5 + danger * 1.1 + Math.sin(state.elapsed * 18) * 0.08);
       mesh.userData.mouthBurst.material.opacity = (zone.impacted ? 0.62 : 0.28 + danger * 0.35) * fade;
+    }
+    if (mesh.userData.giantSword) {
+      const swing = zone.impacted ? 1 : clamp(danger, 0, 1);
+      mesh.userData.giantSword.rotation.x = -1.2 + swing * 1.45;
+      mesh.userData.giantSword.position.y = 3.5 - swing * 2.75;
+      setEffectOpacity(mesh.userData.giantSword, (0.35 + swing * 0.55) * fade);
     }
     return;
   }
@@ -5126,9 +5149,25 @@ function makeBulletMesh(item = {}) {
   if (item.kind === "seed") return makeSeedBulletMesh();
   if (item.kind === "bolt") return makeBoltBulletMesh();
   if (item.kind === "mage") return makeMageBulletMesh();
+  if (item.kind === "shockwave") return makeShieldShockwaveBulletMesh();
   const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.26, 12, 8), materials.bullet);
   mesh.castShadow = true;
   return mesh;
+}
+
+function makeShieldShockwaveBulletMesh() {
+  const group = new THREE.Group();
+  const mat = new THREE.MeshBasicMaterial({ color: 0xfacc15, transparent: true, opacity: 0.72, depthWrite: false, blending: THREE.AdditiveBlending });
+  const core = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.08, 1.25), mat.clone());
+  core.position.y = 0.18;
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.035, 8, 28), mat.clone());
+  ring.rotation.x = Math.PI / 2;
+  ring.position.set(0, 0.2, -0.18);
+  const trail = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.9, 12), mat.clone());
+  trail.rotation.x = Math.PI / 2;
+  trail.position.set(0, 0.15, 0.62);
+  group.add(core, ring, trail);
+  return group;
 }
 
 function makeMageBulletMesh() {
@@ -6845,7 +6884,7 @@ function defaultProgress() {
     characters: { archer: true, witch: false, saber: false, ninja: false },
     stages: { stage1: true, stage2: false, stage3: false },
     cleared: { stage1: false, stage2: false, stage3: false },
-    permanent: { power: 0, vitality: 0, speed: 0, magnet: 0 },
+    permanent: { power: 0, vitality: 0, speed: 0, magnet: 0, learning: 0 },
   };
 }
 
@@ -7009,6 +7048,10 @@ function applyPermanentBonuses(player) {
   player.damage *= damageBonus;
   player.speed *= speedBonus;
   player.magnet *= magnetBonus;
+}
+
+function xpGainMultiplier() {
+  return 1 + ((progress.permanent?.learning || 0) * 0.1);
 }
 
 function awardMoney(won, stats = {}) {
