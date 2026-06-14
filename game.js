@@ -308,7 +308,7 @@ const CHARACTER_CODEX = [
     weapon: "手裏剣を投げた1秒後に刀で斬り、さらに1秒後に手裏剣へ戻る交互攻撃です。",
     passive: "旋風: 移動速度が15%高い。忍具精通: 5レベルごとに手裏剣+1、手裏剣貫通+1。最大4段階。",
     skill: "飛影八閃: 15秒ごとにマウス方向へワープし、八方向へ手裏剣を放ちます。",
-    upgrades: ["風魔手裏剣", "影分身", "口寄せの術"],
+    upgrades: ["風魔手裏剣", "影分身の術", "口寄せの術"],
   },
 ];
 
@@ -372,7 +372,7 @@ upgrades.push(
   { name: "飛燕斬", desc: "通常攻撃と同時に飛ぶ斬撃を放つ。初回は威力67%、貫通0。以後は1回ごとに威力+12%、大きさ+0.08、貫通+2。", classes: ["saber"], apply: (p) => (p.flyingSlash += 1) },
   { name: "二連斬り", desc: "薙ぎ払いの直後に、少しずらした追加の斬撃を放つ。", classes: ["saber"], apply: (p) => (p.doubleSlash += 1) },
   { name: "風魔手裏剣", desc: "手裏剣が風をまとい、取得するたび威力+15%、大きさ+0.1、飛距離が少し伸びる。命中した敵を真空の刃で切り刻む。", classes: ["ninja"], apply: (p) => (p.fumaShuriken += 1) },
-  { name: "影分身", desc: "通常攻撃時に分身が追加の手裏剣を投げる。取得するたび分身が増える。", classes: ["ninja"], apply: (p) => (p.shadowClone += 1) },
+  { name: "影分身の術", desc: "離れた場所に分身を召喚し、火遁、雷遁、水遁、土遁を順番に放つ。Lv3とLv5で分身が増える。", classes: ["ninja"], apply: (p) => (p.shadowClone += 1) },
   { name: "口寄せの術", desc: "3種類の生物からランダムに1匹を呼び出し範囲攻撃を行う。取得するたび持続時間、範囲、威力が少し伸びる。", classes: ["ninja"], apply: (p) => (p.summonJutsu += 1) }
 );
 
@@ -1088,6 +1088,8 @@ function makePlayer(id, name, x, z, local, character = "archer") {
     spinSlashVisual: 0,
     fumaShuriken: 0,
     shadowClone: 0,
+    shadowCloneTimer: 3.8,
+    shadowCloneCycle: 0,
     summonJutsu: 0,
     summonTimer: 4.2,
     summonIndex: 0,
@@ -1882,6 +1884,7 @@ function updatePlayers(dt) {
     updatePlayerIceSpike(player, dt);
     updatePlayerThunderCircle(player, dt);
     updateNinjaSummonJutsu(player, dt);
+    updateNinjaShadowCloneJutsu(player, dt);
   }
 }
 
@@ -1962,6 +1965,92 @@ function damageEnemiesOnLine(startX, startZ, endX, endZ, width, damage, owner = 
     if (distancePointToSegment(enemy.x, enemy.z, startX, startZ, endX, endZ) > width + enemyHitRadius(enemy)) continue;
     damageEnemy(enemy, damage, owner);
   }
+}
+
+function updateNinjaShadowCloneJutsu(player, dt) {
+  const level = player.shadowClone || 0;
+  if (player.character !== "ninja" || level <= 0) return;
+  player.shadowCloneTimer = (player.shadowCloneTimer || 0) - dt;
+  if (player.shadowCloneTimer > 0) return;
+  castShadowCloneJutsu(player, level);
+  player.shadowCloneTimer = Math.max(3.2, 6.2 - level * 0.28);
+}
+
+function shadowCloneCount(level) {
+  return 1 + (level >= 3 ? 1 : 0) + (level >= 5 ? 1 : 0);
+}
+
+function castShadowCloneJutsu(player, level) {
+  const cycle = player.shadowCloneCycle || 0;
+  const jutsu = ["fire", "thunder", "water", "earth"][cycle % 4];
+  player.shadowCloneCycle = cycle + 1;
+  const count = shadowCloneCount(level);
+  for (let i = 0; i < count; i += 1) {
+    const angle = ((Math.PI * 2) / count) * i + state.elapsed * 0.7;
+    const x = clamp(player.x + Math.sin(angle) * (5.2 + i * 0.7), -WORLD.half + 2, WORLD.half - 2);
+    const z = clamp(player.z + Math.cos(angle) * (5.2 + i * 0.7), -WORLD.half + 2, WORLD.half - 2);
+    addNinjaCloneEffect(x, z, angle);
+    if (jutsu === "fire") castCloneFireJutsu(player, level, x, z);
+    else if (jutsu === "thunder") castCloneThunderJutsu(player, level, x, z);
+    else if (jutsu === "water") castCloneWaterJutsu(player, level, x, z);
+    else castCloneEarthJutsu(player, level, x, z);
+  }
+}
+
+function castCloneFireJutsu(player, level, x, z) {
+  const target = nearestEnemy({ x, z }, 18);
+  if (!target) {
+    addRing(x, z, 1.2, 0xff6b2c);
+    return;
+  }
+  const radius = 1.25 + level * 0.18;
+  const damage = player.damage * (0.78 + level * 0.1);
+  magicExplosion(target.x, target.z, radius, damage, 0, player.id, new Set());
+  addNinjaJutsuEffect("fire", target.x, target.z, radius, 0);
+}
+
+function castCloneThunderJutsu(player, level, x, z) {
+  const radius = 2.5 + level * 0.42;
+  const circle = {
+    id: crypto.randomUUID(),
+    x,
+    z,
+    radius,
+    life: 1.7,
+    duration: 1.7,
+    tick: 0.05,
+    zap: 0.02,
+    owner: player.id,
+    damage: player.damage * (0.34 + level * 0.07),
+    mesh: makeMagicCircleMesh({ radius }),
+  };
+  circle.mesh.position.set(circle.x, 0.1, circle.z);
+  scene.add(circle.mesh);
+  state.magicCircles.push(circle);
+  addRing(x, z, radius, 0xfacc15);
+}
+
+function castCloneWaterJutsu(player, level, x, z) {
+  const target = [...state.enemies].filter((enemy) => enemy.hp > 0 && !isGhostIntangible(enemy)).sort((a, b) => b.hp - a.hp)[0];
+  if (!target) {
+    addRing(x, z, 1.2, 0x60a5fa);
+    return;
+  }
+  const damage = player.damage * (1.05 + level * 0.14);
+  damageEnemy(target, damage, player.id);
+  addNinjaJutsuEffect("water", target.x, target.z, 2.0 + level * 0.14, 0);
+}
+
+function castCloneEarthJutsu(player, level, x, z) {
+  const radius = 2.7 + level * 0.42;
+  const slow = Math.min(0.7, 0.2 + level * 0.1);
+  for (const enemy of state.enemies) {
+    if (enemy.hp <= 0 || distance({ x, z }, enemy) > radius + enemyHitRadius(enemy)) continue;
+    enemy.slowUntil = Math.max(enemy.slowUntil || 0, state.elapsed + 2.2);
+    enemy.attackSlowUntil = Math.max(enemy.attackSlowUntil || 0, state.elapsed + 2.2);
+    enemy.attackSlowFactor = Math.max(enemy.attackSlowFactor || 0, slow);
+  }
+  addNinjaJutsuEffect("earth", x, z, radius, 0);
 }
 
 function attackIntervalMultiplier(player) {
@@ -2140,7 +2229,7 @@ function updateCamera() {
       const outward = new THREE.Vector3((focus.dragonBodyX ?? focus.x) - focus.x, 0, (focus.dragonBodyZ ?? focus.z) - focus.z);
       if (outward.lengthSq() < 0.01) outward.set(0, 0, 1);
       outward.normalize();
-      const camPos = face.clone().add(outward.multiplyScalar(6.8));
+      const camPos = face.clone().add(outward.multiplyScalar(-7.2));
       camPos.y = 7.4;
       camera.position.lerp(camPos, 0.5);
       camera.lookAt(face.x, face.y - 0.35, face.z);
@@ -2168,7 +2257,7 @@ function focusDragonEntranceCameraNow(focus = dragonEntranceFocus) {
   const outward = new THREE.Vector3((focus.dragonBodyX ?? focus.x) - focus.x, 0, (focus.dragonBodyZ ?? focus.z) - focus.z);
   if (outward.lengthSq() < 0.01) outward.set(0, 0, 1);
   outward.normalize();
-  const camPos = face.clone().add(outward.multiplyScalar(6.8));
+  const camPos = face.clone().add(outward.multiplyScalar(-7.2));
   camPos.y = 7.4;
   camera.position.copy(camPos);
   camera.lookAt(face.x, face.y - 0.35, face.z);
@@ -2367,16 +2456,6 @@ function attackNinja(player) {
     return;
   }
   applyNinjaSlash(player, base);
-  const clones = Math.min(4, player.shadowClone || 0);
-  for (let i = 0; i < clones; i += 1) {
-    const side = i % 2 === 0 ? -1 : 1;
-    const row = Math.floor(i / 2) + 1;
-    const offsetAngle = base + side * (0.32 + row * 0.12);
-    const ox = Math.sin(base + side * Math.PI / 2) * (0.9 + row * 0.25);
-    const oz = Math.cos(base + side * Math.PI / 2) * (0.9 + row * 0.25);
-    addNinjaCloneEffect(player.x + ox, player.z + oz, base);
-    fireNinjaShurikenSpread(player, offsetAngle, 1, { damageScale: 0.56, clone: true, originX: player.x + ox, originZ: player.z + oz });
-  }
   player.ninjaAttackMode = "shuriken";
 }
 
@@ -2815,6 +2894,7 @@ function updateEnemies(dt) {
     const keepDistance = enemy.shooter && distance(enemy, target) < (enemy.enemyType === "castleMage" ? 13 : 10);
     const dir = keepDistance ? -1 : 1;
     const slow = state.elapsed < (enemy.slowUntil || 0) ? 0.48 : 1;
+    const attackSlow = state.elapsed < (enemy.attackSlowUntil || 0) ? Math.max(0.2, 1 - (enemy.attackSlowFactor || 0.2)) : 1;
     const canMove = !enemy.castleGuardCastingUntil || state.elapsed >= enemy.castleGuardCastingUntil;
     if (enemy.bossRole !== "castleDragon" && canMove) {
       enemy.x += Math.sin(angle) * enemy.speed * slow * dir * dt;
@@ -2841,7 +2921,7 @@ function updateEnemies(dt) {
     updateBossHealthVisual(enemy);
 
     if (enemy.shooter) {
-      enemy.shotTimer -= dt * slow;
+      enemy.shotTimer -= dt * slow * attackSlow;
       if (enemy.shotTimer <= 0) {
         shootEnemyBullet(enemy, target);
         enemy.shotTimer = enemy.enemyType === "castleMage" ? 2.2 + Math.random() * 0.85 : (1.65 + Math.random() * 0.7) * 1.5;
@@ -2893,14 +2973,14 @@ function updateBossEnemy(enemy, target, dt) {
   if (enemy.bossAttackTimer <= 0) {
     if (enemy.bossRole === "castleDragon") {
       moveDragonPerch(enemy);
-      enemy.dragonPattern = ((enemy.dragonPattern || 0) + 1) % 3;
-      if (enemy.dragonPattern === 0) {
-        addDragonBreath(enemy, target);
-      } else if (enemy.dragonPattern === 1) {
-        addDragonTailSweep(enemy);
-      } else {
-        addDragonFireRain(enemy);
-      }
+      enemy.dragonPattern = ((enemy.dragonPattern || 0) + 1) % 7;
+      if (enemy.dragonPattern === 0) addDragonBreath(enemy, target);
+      else if (enemy.dragonPattern === 1) addDragonTailSweep(enemy);
+      else if (enemy.dragonPattern === 2) addDragonFireRain(enemy);
+      else if (enemy.dragonPattern === 3) addDragonTripleBreath(enemy, target);
+      else if (enemy.dragonPattern === 4) addDragonClawSweep(enemy, target);
+      else if (enemy.dragonPattern === 5) addDragonFlameWall(enemy);
+      else addDragonMeteorRing(enemy);
       enemy.bossAttackTimer = bossAttackCooldown(enemy, 6.8);
     } else if (enemy.bossRole === "crystalGolem") {
       enemy.bossPattern = ((enemy.bossPattern || 0) + 1) % 2;
@@ -3169,11 +3249,14 @@ function playDragonMoveSound() {
 }
 
 function addDragonBreath(enemy, target) {
+  addDragonBreathAtAngle(enemy, Math.atan2(target.x - enemy.x, target.z - enemy.z));
+}
+
+function addDragonBreathAtAngle(enemy, angle, options = {}) {
   sfx("dragonBreathA", { broadcast: net.mode === "host" });
   sfx("dragonBreathB", { broadcast: net.mode === "host" });
-  const angle = Math.atan2(target.x - enemy.x, target.z - enemy.z);
-  const length = 72;
-  const width = 16.4;
+  const length = 72 * (options.lengthScale || 1);
+  const width = 16.4 * (options.widthScale || 1);
   const endX = clamp(enemy.x + Math.sin(angle) * length, -WORLD.half + 2, WORLD.half - 2);
   const endZ = clamp(enemy.z + Math.cos(angle) * length, -WORLD.half + 2, WORLD.half - 2);
   const zoneLength = Math.hypot(endX - enemy.x, endZ - enemy.z);
@@ -3187,7 +3270,7 @@ function addDragonBreath(enemy, target) {
     angle,
     width,
     length: zoneLength,
-    damage: bossScaledDamage(enemy, 46),
+    damage: bossScaledDamage(enemy, 46 * (options.damageScale || 1)),
     owner: enemy.id,
     role: enemy.bossRole,
     life: 2.15,
@@ -3199,6 +3282,48 @@ function addDragonBreath(enemy, target) {
   };
   scene.add(line.mesh);
   state.bossZones.push(line);
+}
+
+function addDragonTripleBreath(enemy, target) {
+  const baseAngle = Math.atan2(target.x - enemy.x, target.z - enemy.z);
+  for (const offset of [-0.34, 0, 0.34]) {
+    addDragonBreathAtAngle(enemy, baseAngle + offset, { widthScale: 0.74, damageScale: 0.82 });
+  }
+}
+
+function addDragonClawSweep(enemy, target) {
+  const angle = Math.atan2(target.x - enemy.x, target.z - enemy.z);
+  addBossConeZone(enemy.x, enemy.z, angle, 17.5, THREE.MathUtils.degToRad(118), bossScaledDamage(enemy, 44), enemy.id, enemy.bossRole, {
+    kind: "dragonClaw",
+    impactAt: 0.92,
+    life: 1.72,
+  });
+}
+
+function addDragonFlameWall(enemy) {
+  const horizontal = Math.random() < 0.5;
+  const lineAt = randomFieldPoint();
+  const count = bossProjectileCount(enemy, 6, 8, 10);
+  for (let i = 0; i < count; i += 1) {
+    const t = count <= 1 ? 0.5 : i / (count - 1);
+    const pos = -WORLD.half + 4 + t * (WORLD.half * 2 - 8);
+    const x = horizontal ? pos : lineAt;
+    const z = horizontal ? lineAt : pos;
+    spawnRockfallAt(x, z, { radius: 3.15, damage: bossScaledDamage(enemy, 34), enemyDamage: 0, hurtsEnemies: false, life: 2.05, impactAt: 1.02, fire: true });
+  }
+}
+
+function addDragonMeteorRing(enemy) {
+  for (const player of livingPlayers()) {
+    const count = bossProjectileCount(enemy, 5, 6, 8);
+    for (let i = 0; i < count; i += 1) {
+      const angle = (Math.PI * 2 * i) / count + state.elapsed * 0.2;
+      const radius = 4.2 + (i % 2) * 1.2;
+      const x = clamp(player.x + Math.sin(angle) * radius, -WORLD.half + 2, WORLD.half - 2);
+      const z = clamp(player.z + Math.cos(angle) * radius, -WORLD.half + 2, WORLD.half - 2);
+      spawnRockfallAt(x, z, { radius: 2.6, damage: bossScaledDamage(enemy, 28), enemyDamage: 0, hurtsEnemies: false, life: 1.9, impactAt: 0.95, fire: true });
+    }
+  }
 }
 
 function addDragonTailSweep(enemy) {
@@ -5401,6 +5526,14 @@ function addNinjaSummonEffect(summonKind, x, z, radius, angle = 0, duration = 0.
   state.effects.push({ id: crypto.randomUUID(), kind: "ninjaSummon", summonKind, x, z, radius, angle, length: options.length || radius * 2.2, mesh, life: duration, start: duration });
 }
 
+function addNinjaJutsuEffect(jutsuKind, x, z, radius, angle = 0, duration = 0.7) {
+  const mesh = makeNinjaJutsuMesh({ jutsuKind, radius });
+  mesh.position.set(x, 0.14, z);
+  mesh.rotation.y = angle;
+  scene.add(mesh);
+  state.effects.push({ id: crypto.randomUUID(), kind: "ninjaJutsu", jutsuKind, x, z, radius, angle, mesh, life: duration, start: duration });
+}
+
 function addSubstitutionLogEffect(x, z, angle = 0) {
   const mesh = makeSubstitutionLogMesh();
   mesh.position.set(x, 0.08, z);
@@ -5533,6 +5666,45 @@ function makeNinjaSummonMesh(effect = {}) {
   return group;
 }
 
+function makeNinjaJutsuMesh(effect = {}) {
+  const kind = effect.jutsuKind || "fire";
+  const radius = effect.radius || 2;
+  const color = kind === "fire" ? 0xff6b2c : kind === "thunder" ? 0xfacc15 : kind === "water" ? 0x60a5fa : 0x8b5a2b;
+  const group = new THREE.Group();
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(radius, 0.055, 8, 64), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.72, depthWrite: false, blending: THREE.AdditiveBlending }));
+  ring.rotation.x = Math.PI / 2;
+  group.add(ring);
+  if (kind === "water") {
+    for (let i = 0; i < 5; i += 1) {
+      const column = new THREE.Mesh(new THREE.CylinderGeometry(radius * 0.12, radius * 0.18, 2.4 + i * 0.28, 12), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.42, depthWrite: false, blending: THREE.AdditiveBlending }));
+      column.position.set(Math.sin(i * 1.3) * radius * 0.28, 1.1 + i * 0.08, Math.cos(i * 1.3) * radius * 0.28);
+      group.add(column);
+    }
+  } else if (kind === "earth") {
+    const mud = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, 0.055, 48), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.32, depthWrite: false }));
+    mud.position.y = 0.02;
+    group.add(mud);
+    for (let i = 0; i < 7; i += 1) {
+      const bubble = new THREE.Mesh(new THREE.SphereGeometry(radius * 0.08, 8, 6), new THREE.MeshBasicMaterial({ color: 0x5a3b24, transparent: true, opacity: 0.6, depthWrite: false }));
+      bubble.position.set((Math.random() - 0.5) * radius * 1.4, 0.12, (Math.random() - 0.5) * radius * 1.4);
+      group.add(bubble);
+    }
+  } else {
+    const core = new THREE.Mesh(new THREE.SphereGeometry(radius * (kind === "fire" ? 0.36 : 0.22), 16, 10), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.58, depthWrite: false, blending: THREE.AdditiveBlending }));
+    core.position.y = kind === "thunder" ? 1.4 : 0.55;
+    group.add(core);
+    if (kind === "thunder") {
+      for (let i = 0; i < 4; i += 1) {
+        const bolt = makeThunderBoltMesh();
+        bolt.position.set((Math.random() - 0.5) * radius, 0, (Math.random() - 0.5) * radius);
+        group.add(bolt);
+      }
+    }
+  }
+  group.userData.ring = ring;
+  return group;
+}
+
 function makeNinjaSlashMesh(effect = {}) {
   const radius = effect.radius || 3.75;
   const arc = effect.arc || Math.PI;
@@ -5639,7 +5811,8 @@ function updateEffects(dt) {
     const t = 1 - effect.life / effect.start;
     if (effect.kind === "substitutionLog") updateSubstitutionLogEffect(effect, t);
     if (effect.kind === "ninjaSummon") updateNinjaSummonEffect(effect, t);
-    effect.mesh.scale.setScalar(effect.skill ? 1 + t * 0.8 : 1);
+    if (effect.kind === "ninjaJutsu") updateNinjaJutsuEffect(effect, t);
+    if (effect.kind !== "ninjaJutsu") effect.mesh.scale.setScalar(effect.skill ? 1 + t * 0.8 : 1);
     setEffectOpacity(effect.mesh, Math.max(0, 0.75 * (1 - t)));
   }
   removeDead(state.effects, (effect) => effect.life <= 0);
@@ -5652,6 +5825,11 @@ function updateNinjaSummonEffect(effect, t) {
   if (effect.summonKind === "hawk") effect.mesh.position.y = 0.12 + Math.sin(state.elapsed * 16) * 0.18;
   if (effect.summonKind === "wolf") effect.mesh.position.x += Math.sin(state.elapsed * 18) * 0.004;
   if (effect.mesh.userData.aura) effect.mesh.userData.aura.scale.setScalar(pulse);
+}
+
+function updateNinjaJutsuEffect(effect, t) {
+  if (effect.mesh.userData.ring) effect.mesh.userData.ring.rotation.z += 0.12;
+  effect.mesh.scale.setScalar(1 + Math.sin(t * Math.PI) * 0.25);
 }
 
 function updateSubstitutionLogEffect(effect, t) {
@@ -6073,7 +6251,8 @@ function formatBuildSummary(player) {
   addCount("飛燕斬");
   addCount("二連斬り");
   addCount("風魔手裏剣");
-  addCount("影分身");
+  addCount("影分身の術");
+  addCount("影分身", "影分身の術");
   addCount("口寄せの術");
   for (const [name, count] of counts) {
     if (handled.has(name)) continue;
@@ -6481,7 +6660,7 @@ function sendHostSnapshot(force = false) {
       radius: z.radius, width: z.width, length: z.length, arc: z.arc, life: z.life, start: z.start,
       impactAt: z.impactAt, impacted: z.impacted, role: z.role, delay: z.delay, startX: z.startX, startZ: z.startZ, chargeDuration: z.chargeDuration, retargetOnStart: z.retargetOnStart, retargeted: z.retargeted,
     })),
-    effects: state.effects.map((fx) => ({ id: fx.id, kind: fx.kind, summonKind: fx.summonKind, owner: fx.owner, skill: fx.skill, x: fx.x, z: fx.z, radius: fx.radius, arc: fx.arc, angle: fx.angle, length: fx.length, color: fx.color, life: fx.life, start: fx.start })),
+    effects: state.effects.map((fx) => ({ id: fx.id, kind: fx.kind, summonKind: fx.summonKind, jutsuKind: fx.jutsuKind, owner: fx.owner, skill: fx.skill, x: fx.x, z: fx.z, radius: fx.radius, arc: fx.arc, angle: fx.angle, length: fx.length, color: fx.color, life: fx.life, start: fx.start })),
   });
 }
 
@@ -6645,7 +6824,7 @@ function syncEffects(effects) {
   for (const effect of effects) {
     let mesh = cache.get(effect.id);
     if (!mesh) {
-      mesh = effect.kind === "slash" ? makeSlashMesh(effect) : effect.kind === "ninjaSlash" ? makeNinjaSlashMesh(effect) : effect.kind === "thunder" ? makeThunderBoltMesh(effect) : effect.kind === "ice" ? makeIceSpikeMesh(effect) : effect.kind === "ninjaClone" ? makeNinjaCloneMesh(effect) : effect.kind === "ninjaSummon" ? makeNinjaSummonMesh(effect) : effect.kind === "substitutionLog" ? makeSubstitutionLogMesh(effect) : makeRingMesh(effect);
+      mesh = effect.kind === "slash" ? makeSlashMesh(effect) : effect.kind === "ninjaSlash" ? makeNinjaSlashMesh(effect) : effect.kind === "thunder" ? makeThunderBoltMesh(effect) : effect.kind === "ice" ? makeIceSpikeMesh(effect) : effect.kind === "ninjaClone" ? makeNinjaCloneMesh(effect) : effect.kind === "ninjaSummon" ? makeNinjaSummonMesh(effect) : effect.kind === "ninjaJutsu" ? makeNinjaJutsuMesh(effect) : effect.kind === "substitutionLog" ? makeSubstitutionLogMesh(effect) : makeRingMesh(effect);
       scene.add(mesh);
       cache.set(effect.id, mesh);
       if (effect.kind === "slash" && effect.owner && !effect.skill) sfx("saberAttack");
@@ -6657,7 +6836,8 @@ function syncEffects(effects) {
     if (typeof effect.angle === "number") mesh.rotation.y = effect.angle;
     if (effect.kind === "substitutionLog") updateSubstitutionLogEffect({ ...effect, mesh }, t);
     if (effect.kind === "ninjaSummon") updateNinjaSummonEffect({ ...effect, mesh }, t);
-    mesh.scale.setScalar(effect.skill ? 1 + t * 0.8 : 1);
+    if (effect.kind === "ninjaJutsu") updateNinjaJutsuEffect({ ...effect, mesh }, t);
+    if (effect.kind !== "ninjaJutsu") mesh.scale.setScalar(effect.skill ? 1 + t * 0.8 : 1);
     setEffectOpacity(mesh, Math.max(0, 0.75 * (1 - t)));
   }
 }
