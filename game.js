@@ -1081,6 +1081,7 @@ function makePlayer(id, name, x, z, local, character = "archer") {
     dead: false,
     reviveAt: 0,
     invincibleUntil: 0,
+    debugInvincible: false,
     hitFlash: 0,
     pendingChoices: [],
     magicBolts: 1,
@@ -2465,14 +2466,14 @@ function updateCamera() {
     const dragon = dragons.find((enemy) => (dragonEntranceFocusId ? enemy.id === dragonEntranceFocusId : enemy.bossRole === "castleDragon") && enemy.hp > 0);
     const focus = dragon || dragonEntranceFocus;
     if (focus) {
-      const face = new THREE.Vector3(focus.x, 7.6, focus.z);
+      const face = new THREE.Vector3(focus.x, 8.8, focus.z);
       const outward = new THREE.Vector3((focus.dragonBodyX ?? focus.x) - focus.x, 0, (focus.dragonBodyZ ?? focus.z) - focus.z);
       if (outward.lengthSq() < 0.01) outward.set(0, 0, 1);
       outward.normalize();
       const camPos = face.clone().add(outward.multiplyScalar(-7.2));
-      camPos.y = 12.4;
+      camPos.y = 16.2;
       camera.position.lerp(camPos, 0.5);
-      camera.lookAt(face.x, face.y + 0.75, face.z);
+      camera.lookAt(face.x, face.y + 1.35, face.z);
       updateCastleWallVisibility();
       return;
     }
@@ -2493,14 +2494,14 @@ function updateCamera() {
 
 function focusDragonEntranceCameraNow(focus = dragonEntranceFocus) {
   if (!focus || !camera) return;
-  const face = new THREE.Vector3(focus.x, 7.6, focus.z);
+  const face = new THREE.Vector3(focus.x, 8.8, focus.z);
   const outward = new THREE.Vector3((focus.dragonBodyX ?? focus.x) - focus.x, 0, (focus.dragonBodyZ ?? focus.z) - focus.z);
   if (outward.lengthSq() < 0.01) outward.set(0, 0, 1);
   outward.normalize();
   const camPos = face.clone().add(outward.multiplyScalar(-7.2));
-  camPos.y = 12.4;
+  camPos.y = 16.2;
   camera.position.copy(camPos);
-  camera.lookAt(face.x, face.y + 0.75, face.z);
+  camera.lookAt(face.x, face.y + 1.35, face.z);
   updateCastleWallVisibility();
 }
 
@@ -3952,7 +3953,7 @@ function updateEnemyBullets(dt) {
 }
 
 function damagePlayer(player, damage) {
-  if (debugModeEnabled && debugInvincible && player.local) return;
+  if ((debugModeEnabled && debugInvincible && player.local) || player.debugInvincible) return;
   if (player.dead || state.elapsed < (player.invincibleUntil || 0)) return;
   player.hp -= damage;
   player.hitFlash = 0.45;
@@ -7103,7 +7104,10 @@ function handleClientData(conn, data) {
   }
   if (data.type === "input" && state?.running) {
     const player = state.players.find((p) => p.id === data.id);
-    if (player) player.input = data.input;
+    if (player) {
+      player.input = data.input;
+      player.debugInvincible = Boolean(data.debugInvincible);
+    }
   }
   if (data.type === "pause") {
     if (data.paused) applyPause(data.id);
@@ -7265,7 +7269,7 @@ function sendClientInput() {
   if (!net.conn || !net.conn.open || net.phase !== "playing") return;
   net.lastSend += 1;
   if (net.lastSend % 3 !== 0) return;
-  sendToHost({ type: "input", id: localPlayerId, input: getLocalInput(), name: playerName() });
+  sendToHost({ type: "input", id: localPlayerId, input: getLocalInput(), debugInvincible: debugModeEnabled && debugInvincible, name: playerName() });
 }
 
 function sendHostSnapshot(force = false) {
@@ -7283,6 +7287,7 @@ function sendHostSnapshot(force = false) {
       character: p.character,
       level: p.level, xp: p.xp, xpNext: p.xpNext, dead: p.dead, reviveAt: p.reviveAt,
       invincibleUntil: p.invincibleUntil, hitFlash: p.hitFlash, input: p.input,
+      debugInvincible: Boolean(p.debugInvincible),
       angle: isSaberSpinning(p) ? (p.spinSlashAngle || 0) + state.elapsed * 18 : Math.atan2((p.input?.aimX ?? p.x) - p.x, (p.input?.aimZ ?? p.z - 1) - p.z),
       skillCharge: p.skillCharge, skillCooldown: p.skillCooldown,
       spinSlashUntil: p.spinSlashUntil, spinSlashAngle: p.spinSlashAngle,
@@ -7814,8 +7819,6 @@ function loadProgress() {
       permanent: { ...base.permanent, ...(saved.permanent || {}) },
       highScores: { ...base.highScores, ...(saved.highScores || {}) },
     };
-    if (saved.stages?.stage2) loaded.cleared.stage1 = true;
-    if (saved.stages?.stage3) loaded.cleared.stage2 = true;
     return loaded;
   } catch {
     return defaultProgress();
@@ -7922,8 +7925,8 @@ function isCharacterUnlocked(character) {
 }
 
 function isStageProgressUnlocked(stageId) {
-  if (stageId === "extra") return Boolean((progress.cleared?.stage1 && progress.cleared?.stage2 && progress.cleared?.stage3) || progress.stages?.extra || debugModeEnabled);
-  if (stageId === "stage3") return Boolean(progress.stages.stage3 || stage3DebugUnlocked || debugModeEnabled);
+  if (stageId === "extra") return Boolean(progress.cleared?.stage3 || progress.stages?.extra || debugModeEnabled);
+  if (stageId === "stage3") return Boolean(progress.cleared?.stage2 || progress.stages.stage3 || stage3DebugUnlocked || debugModeEnabled);
   return Boolean(progress.stages[stageId]);
 }
 
@@ -8065,6 +8068,10 @@ function leaveDebugModeForReload() {
 
 function resetProgressMemory() {
   progress = defaultProgress();
+  progress.stages.stage3 = false;
+  progress.stages.extra = false;
+  progress.cleared.stage2 = false;
+  progress.cleared.stage3 = false;
   localStorage.setItem(PROGRESS_KEY, JSON.stringify(progress));
   selectedStageId = "stage1";
   selectedCharacterId = "archer";
