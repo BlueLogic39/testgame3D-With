@@ -8076,12 +8076,18 @@ function resetProgressMemory() {
   selectedStageId = "stage1";
   selectedCharacterId = "archer";
   stage3DebugUnlocked = false;
+  debugModeEnabled = false;
+  debugInvincible = false;
+  debugOriginalProgressJson = "";
+  debugSkillPresses = [];
+  debugBossPresses = { mid: [], boss: [] };
+  if (ui.debugInvincibleToggle) ui.debugInvincibleToggle.checked = false;
   updateProgressUi();
   if (!ui.characterCodex?.classList.contains("hidden")) {
     buildCodexCards();
     selectCodexCharacter("archer");
   }
-  showToast("記憶情報を初期化しました");
+  showToast("記憶情報を初期化し、デバッグモードを解除しました");
 }
 
 function trackDebugModeKey(key) {
@@ -8141,6 +8147,9 @@ function updateStageDifficultyButtons() {
   for (const root of [ui.stageSelect, ui.roomStageSelect]) {
     for (const button of root?.querySelectorAll("[data-stage]") || []) {
       const progressLocked = !isStageProgressUnlocked(button.dataset.stage);
+      const hiddenExtra = button.dataset.stage === "extra" && progressLocked;
+      button.hidden = hiddenExtra;
+      button.classList.toggle("hidden", hiddenExtra);
       button.classList.toggle("selected", button.dataset.stage === selectedStageId);
       button.classList.toggle("locked", false);
       button.classList.toggle("progress-locked", progressLocked);
