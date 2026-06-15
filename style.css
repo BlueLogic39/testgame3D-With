@@ -782,6 +782,13 @@ h2 {
   background: #1d2328;
 }
 
+.stage-select button[hidden],
+.stage-select button.hidden,
+.difficulty-select button[hidden],
+.difficulty-select button.hidden {
+  display: none !important;
+}
+
 .stage-select button {
   scroll-snap-align: center;
 }

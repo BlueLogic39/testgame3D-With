@@ -7925,7 +7925,7 @@ function isCharacterUnlocked(character) {
 }
 
 function isStageProgressUnlocked(stageId) {
-  if (stageId === "extra") return Boolean(progress.cleared?.stage3 || progress.stages?.extra || debugModeEnabled);
+  if (stageId === "extra") return Boolean(progress.cleared?.stage3);
   if (stageId === "stage3") return Boolean(progress.cleared?.stage2 || progress.stages.stage3 || stage3DebugUnlocked || debugModeEnabled);
   return Boolean(progress.stages[stageId]);
 }
