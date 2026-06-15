@@ -2226,14 +2226,14 @@ function updateCamera() {
     const dragon = dragons.find((enemy) => (dragonEntranceFocusId ? enemy.id === dragonEntranceFocusId : enemy.bossRole === "castleDragon") && enemy.hp > 0);
     const focus = dragon || dragonEntranceFocus;
     if (focus) {
-      const face = new THREE.Vector3(focus.x, 6.2, focus.z);
+      const face = new THREE.Vector3(focus.x, 7.6, focus.z);
       const outward = new THREE.Vector3((focus.dragonBodyX ?? focus.x) - focus.x, 0, (focus.dragonBodyZ ?? focus.z) - focus.z);
       if (outward.lengthSq() < 0.01) outward.set(0, 0, 1);
       outward.normalize();
       const camPos = face.clone().add(outward.multiplyScalar(-7.2));
-      camPos.y = 9.2;
+      camPos.y = 12.4;
       camera.position.lerp(camPos, 0.5);
-      camera.lookAt(face.x, face.y + 0.35, face.z);
+      camera.lookAt(face.x, face.y + 0.75, face.z);
       updateCastleWallVisibility();
       return;
     }
@@ -2254,14 +2254,14 @@ function updateCamera() {
 
 function focusDragonEntranceCameraNow(focus = dragonEntranceFocus) {
   if (!focus || !camera) return;
-  const face = new THREE.Vector3(focus.x, 6.2, focus.z);
+  const face = new THREE.Vector3(focus.x, 7.6, focus.z);
   const outward = new THREE.Vector3((focus.dragonBodyX ?? focus.x) - focus.x, 0, (focus.dragonBodyZ ?? focus.z) - focus.z);
   if (outward.lengthSq() < 0.01) outward.set(0, 0, 1);
   outward.normalize();
   const camPos = face.clone().add(outward.multiplyScalar(-7.2));
-  camPos.y = 9.2;
+  camPos.y = 12.4;
   camera.position.copy(camPos);
-  camera.lookAt(face.x, face.y + 0.35, face.z);
+  camera.lookAt(face.x, face.y + 0.75, face.z);
   updateCastleWallVisibility();
 }
 
@@ -5224,7 +5224,8 @@ function updateBossHealthVisual(enemy) {
 function updateDragonRoarPhase(enemy) {
   if (enemy.bossRole !== "castleDragon") return;
   const ratio = enemy.hp / enemy.maxHp;
-  const phase = ratio <= 0.25 ? 2 : ratio <= 0.5 ? 1 : 0;
+  const thresholds = [0.85, 0.7, 0.55, 0.4, 0.25];
+  const phase = thresholds.filter((threshold) => ratio <= threshold).length;
   if (phase > (enemy.dragonRoarPhase || 0)) {
     enemy.dragonRoarPhase = phase;
     sfx("dragonRoar", { broadcast: net.mode === "host" });
@@ -7458,7 +7459,6 @@ function loadProgress() {
     };
     if (saved.stages?.stage2) loaded.cleared.stage1 = true;
     if (saved.stages?.stage3) loaded.cleared.stage2 = true;
-    loaded.stages.stage3 = false;
     return loaded;
   } catch {
     return defaultProgress();
@@ -7466,7 +7466,6 @@ function loadProgress() {
 }
 
 function saveProgress() {
-  if (debugModeEnabled) return;
   localStorage.setItem(PROGRESS_KEY, JSON.stringify(progress));
 }
 
@@ -7566,7 +7565,7 @@ function isCharacterUnlocked(character) {
 }
 
 function isStageProgressUnlocked(stageId) {
-  if (stageId === "stage3") return Boolean(stage3DebugUnlocked || (debugModeEnabled && progress.stages.stage3));
+  if (stageId === "stage3") return Boolean(progress.stages.stage3 || stage3DebugUnlocked || debugModeEnabled);
   return Boolean(progress.stages[stageId]);
 }
 
@@ -7634,6 +7633,10 @@ function unlockStageClearRewards(stageId) {
     progress.stages.stage2 = true;
     showToast("ステージ2 黒晶鉱山が解放されました");
   }
+  if (stageId === "stage2" && !progress.stages.stage3) {
+    progress.stages.stage3 = true;
+    showToast("ステージ3 冥冠城塞が解放されました");
+  }
   if (stageId === "stage2" && !progress.characters.ninja) {
     showToast("ショップに忍者が入荷しました");
   }
@@ -7686,6 +7689,7 @@ function enableDebugMode() {
   stage3DebugUnlocked = true;
   progress.money = Math.max(progress.money || 0, 99999);
   for (const stageId of Object.keys(progress.stages || {})) progress.stages[stageId] = true;
+  saveProgress();
   if (ui.debugInvincibleLabel) ui.debugInvincibleLabel.hidden = false;
   ui.debugInvincibleLabel?.classList.remove("hidden");
   updateProgressUi();
@@ -7694,9 +7698,21 @@ function enableDebugMode() {
 }
 
 function leaveDebugModeForReload() {
-  if (!debugModeEnabled) return;
-  if (debugOriginalProgressJson) localStorage.setItem(PROGRESS_KEY, debugOriginalProgressJson);
-  else localStorage.removeItem(PROGRESS_KEY);
+  saveProgress();
+}
+
+function resetProgressMemory() {
+  progress = defaultProgress();
+  localStorage.setItem(PROGRESS_KEY, JSON.stringify(progress));
+  selectedStageId = "stage1";
+  selectedCharacterId = "archer";
+  stage3DebugUnlocked = false;
+  updateProgressUi();
+  if (!ui.characterCodex?.classList.contains("hidden")) {
+    buildCodexCards();
+    selectCodexCharacter("archer");
+  }
+  showToast("記憶情報を初期化しました");
 }
 
 function trackDebugModeKey(key) {
@@ -7704,9 +7720,16 @@ function trackDebugModeKey(key) {
   const letter = String(key || "").toLowerCase();
   if (!/^[a-z]$/.test(letter)) return;
   const now = performance.now();
-  debugInputSequence = debugInputSequence.filter((entry) => now - entry.time <= 2000);
+  debugInputSequence = debugInputSequence.filter((entry) => now - entry.time <= 3000);
   debugInputSequence.push({ key: letter, time: now });
   const typed = debugInputSequence.map((entry) => entry.key).join("");
+  if ("syokika".startsWith(typed)) {
+    if (typed === "syokika") {
+      debugInputSequence = [];
+      resetProgressMemory();
+    }
+    return;
+  }
   if ("debug".startsWith(typed)) {
     if (typed === "debug") {
       debugInputSequence = [];
@@ -7714,7 +7737,7 @@ function trackDebugModeKey(key) {
     }
     return;
   }
-  debugInputSequence = letter === "d" ? [{ key: "d", time: now }] : [];
+  debugInputSequence = letter === "d" || letter === "s" ? [{ key: letter, time: now }] : [];
 }
 
 function selectedCharacter() {
@@ -7732,7 +7755,7 @@ function selectedDifficulty() {
 
 function selectStage(stageId) {
   if (!isStageProgressUnlocked(stageId)) {
-    showToast(stageId === "stage3" ? "ステージ3は制作中です" : "前のステージをクリアすると解放されます");
+    showToast("前のステージをクリアすると解放されます");
     updateStageDifficultyButtons();
     return;
   }
@@ -7753,7 +7776,7 @@ function updateStageDifficultyButtons() {
       button.classList.toggle("locked", false);
       button.classList.toggle("progress-locked", progressLocked);
       button.disabled = progressLocked;
-      button.title = progressLocked ? (button.dataset.stage === "stage3" ? "制作中" : "前のステージをクリアすると解放されます") : "";
+      button.title = progressLocked ? "前のステージをクリアすると解放されます" : "";
     }
   }
   for (const root of [ui.difficultySelect, ui.roomDifficultySelect]) {
