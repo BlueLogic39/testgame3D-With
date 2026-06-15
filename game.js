@@ -11,6 +11,9 @@ const ui = {
   skillText: document.getElementById("skillText"),
   skillFill: document.getElementById("skillFill"),
   skillReadyHint: document.getElementById("skillReadyHint"),
+  linkText: document.getElementById("linkText"),
+  linkFill: document.getElementById("linkFill"),
+  linkReadyHint: document.getElementById("linkReadyHint"),
   bossCameraHint: document.getElementById("bossCameraHint"),
   xpFill: document.getElementById("xpFill"),
   build: document.getElementById("build"),
@@ -212,6 +215,8 @@ const SUPABASE_KEY = "sb_publishable_dGQHfQBP0GXAv1ILQXn3lA_I_SSPrcz";
 const ONLINE_ROOM_TTL_SECONDS = 45;
 const PROGRESS_KEY = "vansabaProgress";
 const UPGRADE_MAX_LEVEL = 5;
+const LINK_SKILL_CHARGE_SECONDS = 10;
+const LINK_SKILL_RANGE = 6.2;
 
 const SHOP_ITEMS = [
   { id: "power", type: "permanent", name: "筋力訓練", desc: "全キャラの攻撃力がレベルごとに+5%。", costs: [500, 1000, 1500, 2000, 2500], max: 5 },
@@ -237,6 +242,7 @@ const STAGES = {
   stage1: { label: "迷いの森", description: "木々に囲まれた森の3分ステージ", duration: 180, bossTime: 150, midBossTimes: [90] },
   stage2: { label: "黒晶鉱山", description: "落石が敵も味方も巻き込む6分ステージ", duration: 360, bossTime: 330, midBossTimes: [120, 240], rockfalls: true, bomberEnemies: true },
   stage3: { label: "冥冠城塞", description: "城壁に囲まれた10分ステージ", duration: 600, bossTime: 570, midBossTimes: [150, 300, 450], castle: true },
+  extra: { label: "無限試練", description: "3ステージ制覇後のエンドレススコアアタック", duration: Infinity, bossTime: 180, midBossTimes: [90, 180, 270, 360, 450], rockfalls: true, bomberEnemies: true, castle: true, scoreAttack: true },
 };
 
 const DIFFICULTIES = {
@@ -1007,6 +1013,7 @@ function newState(playerInfos, options = {}) {
     elapsed: 0,
     spawnTimer: 0,
     bossSpawned: false,
+    nextBossTime: STAGES[options.stageId]?.bossTime ?? 150,
     midBossSpawned: {},
     heartTimer: 8 + Math.random() * 12,
     magnetTimer: 24 + Math.random() * 24,
@@ -1026,6 +1033,12 @@ function newState(playerInfos, options = {}) {
     rockfalls: [],
     bossZones: [],
     effects: [],
+    linkPair: null,
+    linkCharge: 0,
+    linkReady: false,
+    linkRequests: {},
+    linkCutsceneUntil: 0,
+    score: 0,
     kills: 0,
     thunderSoundAt: 0,
     castleSigilTimer: 5.5,
@@ -1790,6 +1803,7 @@ function startGame(mode = "solo") {
   ui.levelUp.classList.add("hidden");
   ui.gameOver.classList.add("hidden");
   ui.skillText.closest(".skill-hud")?.classList.remove("hidden");
+  ui.linkText?.closest(".link-hud")?.classList.add("hidden");
   hideStatus();
   updateUi();
   updateOnlineBadge();
@@ -1834,7 +1848,14 @@ function loop(now) {
 
 function update(dt) {
   state.elapsed += dt;
+  if (state.linkCutsceneUntil > state.elapsed) {
+    updateEffects(dt);
+    updateUi();
+    return;
+  }
+  if (STAGES[state.stageId]?.scoreAttack) state.score += dt * (12 + Math.min(60, state.elapsed / 12));
   updatePlayers(dt);
+  updateLinkSkill(dt);
   updateCamera();
   spawnEnemies(dt);
   updateArrows(dt);
@@ -1912,6 +1933,224 @@ function updateNinjaSummonJutsu(player, dt) {
   if (player.summonTimer > 0) return;
   castNinjaSummon(player, level);
   player.summonTimer = Math.max(3.65, (7.4 - level * 0.28) / 1.2);
+}
+
+function updateLinkSkill(dt) {
+  if (!state?.running || net.mode === "client") return;
+  const pair = findBestLinkPair();
+  if (!pair) {
+    state.linkPair = null;
+    state.linkCharge = Math.max(0, (state.linkCharge || 0) - dt * 1.6);
+    state.linkReady = false;
+    state.linkRequests = {};
+    return;
+  }
+  const key = linkPairKey(pair[0], pair[1]);
+  if (state.linkPair !== key) {
+    state.linkPair = key;
+    state.linkCharge = 0;
+    state.linkReady = false;
+    state.linkRequests = {};
+  }
+  state.linkCharge = Math.min(LINK_SKILL_CHARGE_SECONDS, (state.linkCharge || 0) + dt);
+  state.linkReady = state.linkCharge >= LINK_SKILL_CHARGE_SECONDS;
+  for (const [id, time] of Object.entries(state.linkRequests || {})) {
+    if (state.elapsed - time > 2.2) delete state.linkRequests[id];
+  }
+  if (state.linkReady && pair.every((player) => state.linkRequests?.[player.id])) activateLinkSkill(pair[0], pair[1]);
+}
+
+function findBestLinkPair() {
+  const ready = state.players.filter((player) =>
+    !player.dead &&
+    player.hp > 0 &&
+    (player.skillCharge || 0) >= (player.skillCooldown || 30)
+  );
+  let best = null;
+  let bestDistance = LINK_SKILL_RANGE;
+  for (let i = 0; i < ready.length; i += 1) {
+    for (let j = i + 1; j < ready.length; j += 1) {
+      const d = distance(ready[i], ready[j]);
+      if (d > bestDistance) continue;
+      best = [ready[i], ready[j]];
+      bestDistance = d;
+    }
+  }
+  return best;
+}
+
+function linkPairKey(a, b) {
+  return [a.id, b.id].sort().join("+");
+}
+
+function requestLinkSkill(playerId = localPlayerId) {
+  if (net.mode === "client") {
+    sendToHost({ type: "linkRequest", id: playerId });
+    return true;
+  }
+  if (!state.linkReady || !state.linkPair) return false;
+  const pair = findBestLinkPair();
+  if (!pair || !pair.some((player) => player.id === playerId)) return false;
+  state.linkRequests ||= {};
+  state.linkRequests[playerId] = state.elapsed;
+  if (pair.every((player) => state.linkRequests[player.id])) activateLinkSkill(pair[0], pair[1]);
+  return true;
+}
+
+function activateLinkSkill(a, b) {
+  const pair = [a, b].sort((left, right) => left.character.localeCompare(right.character));
+  const type = linkSkillType(pair[0].character, pair[1].character);
+  const label = linkSkillName(type);
+  a.skillCharge = 0;
+  b.skillCharge = 0;
+  state.linkCharge = 0;
+  state.linkReady = false;
+  state.linkRequests = {};
+  state.linkCutsceneUntil = state.elapsed + 1.15;
+  showLinkCutin(a, b, label);
+  castLinkSkill(type, a, b);
+  if (net.mode === "host") {
+    broadcast({ type: "linkSkill", a: a.id, b: b.id, label });
+    sendHostSnapshot(true);
+  }
+}
+
+function linkSkillType(a, b) {
+  const key = [a, b].sort().join("+");
+  if (key === "archer+witch") return "bombArrow";
+  if (key === "saber+witch") return "thunderSpin";
+  if (key === "archer+saber") return "crossJudgement";
+  if (key === "archer+ninja") return "shadowArrow";
+  if (key === "ninja+witch") return "mistStorm";
+  if (key === "ninja+saber") return "twinIaido";
+  return "resonance";
+}
+
+function linkSkillName(type) {
+  return {
+    bombArrow: "爆弾矢",
+    thunderSpin: "雷旋斬",
+    crossJudgement: "穿月十字斬",
+    shadowArrow: "矢影一閃",
+    mistStorm: "魔影霧雷",
+    twinIaido: "双影居合",
+    resonance: "共鳴連携",
+  }[type] || "リンクスキル";
+}
+
+function showLinkCutin(a, b, label) {
+  sfx(skillSoundKey(a.character), { broadcast: net.mode === "host" });
+  sfx(skillSoundKey(b.character), { broadcast: net.mode === "host" });
+  showSkillBanner(`${a.name} × ${b.name}`, label);
+  addScreenFlash(0x0f172a, 0.28, 0.7);
+}
+
+function castLinkSkill(type, a, b) {
+  const center = { x: (a.x + b.x) / 2, z: (a.z + b.z) / 2 };
+  if (type === "bombArrow") castBombArrowLink(a, b, center);
+  else if (type === "thunderSpin") castThunderSpinLink(a, b, center);
+  else if (type === "crossJudgement") castCrossJudgementLink(a, b, center);
+  else if (type === "shadowArrow") castShadowArrowLink(a, b, center);
+  else if (type === "mistStorm") castMistStormLink(a, b, center);
+  else if (type === "twinIaido") castTwinIaidoLink(a, b, center);
+  else {
+    damageEnemiesInCircle(center.x, center.z, 10, (a.damage + b.damage) * 2.4, a.id);
+    addLinkEffect("resonance", center.x, center.z, 10, 0, 1.1);
+  }
+}
+
+function castBombArrowLink(a, b, center) {
+  const radius = 11;
+  sfx("archerSkill", { broadcast: net.mode === "host" });
+  sfx("witchSkill", { broadcast: net.mode === "host" });
+  addLinkEffect("bombArrow", center.x, center.z, radius, 0, 1.25);
+  for (let i = 0; i < 20; i += 1) {
+    const angle = (Math.PI * 2 * i) / 20;
+    const x = center.x + Math.sin(angle) * (3 + (i % 4) * 1.7);
+    const z = center.z + Math.cos(angle) * (3 + (i % 4) * 1.7);
+    magicExplosion(x, z, 2.2, (a.damage + b.damage) * 0.95, 1, a.id, new Set());
+  }
+}
+
+function castThunderSpinLink(a, b, center) {
+  sfx("saberSkill", { broadcast: net.mode === "host" });
+  thunderSfx();
+  addLinkEffect("thunderSpin", center.x, center.z, 10.5, 0, 1.3);
+  damageEnemiesInCircle(center.x, center.z, 10.5, (a.damage + b.damage) * 2.8, a.id);
+  for (let i = 0; i < 18; i += 1) {
+    const angle = (Math.PI * 2 * i) / 18;
+    addThunderBolt(center.x + Math.sin(angle) * (2 + (i % 3) * 2.1), center.z + Math.cos(angle) * (2 + (i % 3) * 2.1));
+  }
+}
+
+function castCrossJudgementLink(a, b, center) {
+  sfx("archerSkill", { broadcast: net.mode === "host" });
+  sfx("saberSkill", { broadcast: net.mode === "host" });
+  for (const angle of [0, Math.PI / 2, Math.PI / 4, -Math.PI / 4]) {
+    const length = 30;
+    damageEnemiesOnLine(center.x - Math.sin(angle) * length, center.z - Math.cos(angle) * length, center.x + Math.sin(angle) * length, center.z + Math.cos(angle) * length, 2.1, (a.damage + b.damage) * 2.0, a.id);
+    addLinkEffect("crossJudgement", center.x, center.z, length, angle, 1.05);
+  }
+}
+
+function castShadowArrowLink(a, b, center) {
+  sfx("archerSkill", { broadcast: net.mode === "host" });
+  sfx("ninjaSkill", { broadcast: net.mode === "host" });
+  for (let i = 0; i < 28; i += 1) {
+    const angle = (Math.PI * 2 * i) / 28;
+    fireLinkProjectile(center.x, center.z, angle, (a.damage + b.damage) * 1.15, a.id, "shadowArrow");
+  }
+  addLinkEffect("shadowArrow", center.x, center.z, 9.5, 0, 1.0);
+}
+
+function castMistStormLink(a, b, center) {
+  sfx("witchSkill", { broadcast: net.mode === "host" });
+  sfx("ninjaSkill", { broadcast: net.mode === "host" });
+  const radius = 12.5;
+  addLinkEffect("mistStorm", center.x, center.z, radius, 0, 1.35);
+  for (const enemy of state.enemies) {
+    if (enemy.hp <= 0 || distance(center, enemy) > radius + enemyHitRadius(enemy)) continue;
+    enemy.slowUntil = Math.max(enemy.slowUntil || 0, state.elapsed + 3.5);
+    enemy.attackSlowUntil = Math.max(enemy.attackSlowUntil || 0, state.elapsed + 3.5);
+    enemy.attackSlowFactor = Math.max(enemy.attackSlowFactor || 0, 0.55);
+    damageEnemy(enemy, (a.damage + b.damage) * 2.2, a.id);
+  }
+}
+
+function castTwinIaidoLink(a, b, center) {
+  sfx("saberSkill", { broadcast: net.mode === "host" });
+  sfx("ninjaSkill", { broadcast: net.mode === "host" });
+  for (const angle of [0, Math.PI / 3, -Math.PI / 3, Math.PI]) {
+    const length = 24;
+    damageEnemiesOnLine(center.x - Math.sin(angle) * length * 0.5, center.z - Math.cos(angle) * length * 0.5, center.x + Math.sin(angle) * length * 0.5, center.z + Math.cos(angle) * length * 0.5, 2.8, (a.damage + b.damage) * 2.35, a.id);
+    addLinkEffect("twinIaido", center.x, center.z, length, angle, 0.95);
+  }
+}
+
+function fireLinkProjectile(x, z, angle, damage, owner, kind = "link") {
+  const arrow = {
+    id: crypto.randomUUID(),
+    x,
+    z,
+    startX: x,
+    startZ: z,
+    vx: Math.sin(angle) * 34,
+    vz: Math.cos(angle) * 34,
+    radius: 0.34,
+    life: 2.2,
+    damage,
+    pierce: 999,
+    owner,
+    kind: "magic",
+    skill: true,
+    angle,
+    hit: new Set(),
+    mesh: makeProjectileMesh({ kind: "magic", radius: 0.44 }),
+  };
+  arrow.mesh.rotation.y = angle;
+  arrow.mesh.position.set(x, 1.1, z);
+  scene.add(arrow.mesh);
+  state.arrows.push(arrow);
 }
 
 function castNinjaSummon(player, level) {
@@ -2578,6 +2817,7 @@ function updateSaberSpinSlash(player, dt) {
 function requestSkillUse() {
   const player = localPlayer();
   if (!canUseSkill(player)) return;
+  if (state.linkReady && state.linkPair && requestLinkSkill(localPlayerId)) return;
   if (net.mode === "client") {
     sendToHost({ type: "skill", id: localPlayerId });
     return;
@@ -2789,14 +3029,20 @@ function spawnEnemies(dt) {
   }
   spawnStageMidBosses();
   const bossTime = STAGES[state.stageId]?.bossTime ?? 150;
-  if (state.elapsed > bossTime && !state.bossSpawned) {
+  if (STAGES[state.stageId]?.scoreAttack) {
+    if (state.elapsed > (state.nextBossTime || bossTime) && !state.enemies.some((enemy) => enemy.boss)) {
+      state.bossSpawned = true;
+      state.nextBossTime = (state.nextBossTime || bossTime) + 180;
+      addEnemy(true, false, false, "boss");
+    }
+  } else if (state.elapsed > bossTime && !state.bossSpawned) {
     state.bossSpawned = true;
     addEnemy(true, false, false, "boss");
   }
 }
 
 function stage3SpawnRole(shooter, bomber) {
-  if (state.stageId !== "stage3" || shooter || bomber) return "";
+  if (!STAGES[state.stageId]?.castle || shooter || bomber) return "";
   if (state.elapsed >= 360 && Math.random() < Math.min(0.12, 0.045 + state.elapsed / 4200)) return "castleMage";
   if (state.elapsed >= 180 && Math.random() < Math.min(0.16, 0.055 + state.elapsed / 3600)) return "castleGhost";
   if (state.elapsed > 45 && Math.random() < Math.min(0.16, 0.045 + state.elapsed / 2600)) return "castleShield";
@@ -2804,6 +3050,7 @@ function stage3SpawnRole(shooter, bomber) {
 }
 
 function castleGuardTierFromTime() {
+  if (STAGES[state.stageId]?.scoreAttack) return Math.min(3, 1 + Math.floor(state.elapsed / 180));
   if (state.elapsed >= 430) return 3;
   if (state.elapsed >= 280) return 2;
   return 1;
@@ -2833,17 +3080,18 @@ function addEnemy(boss, shooter, bomber = false, role = "") {
   const castleGhost = role === "castleGhost";
   const castleMage = role === "castleMage";
   const isMidRole = role === "mid" || role === "midMax";
-  const castleGuardTier = isMidRole && state.stageId === "stage3" ? (role === "midMax" ? 3 : castleGuardTierFromTime()) : 0;
-  const enemyType = castleShield ? "castleShield" : castleGhost ? "castleGhost" : castleMage ? "castleMage" : state.stageId === "stage3" && !boss && !bomber && !role ? (shooter ? "castleArbalest" : "castleSoldier") : "";
-  const midHpBase = state.stageId === "stage3" ? 1600 * (castleGuardTier === 3 ? 1.85 : castleGuardTier === 2 ? 1.38 : 1) : 720;
-  const midSpeedBase = state.stageId === "stage3" ? (castleGuardTier === 3 ? 3.65 : castleGuardTier === 2 ? 3.22 : 2.75) : 2.65;
+  const castleStage = Boolean(STAGES[state.stageId]?.castle);
+  const castleGuardTier = isMidRole && castleStage ? (role === "midMax" ? 3 : castleGuardTierFromTime()) : 0;
+  const enemyType = castleShield ? "castleShield" : castleGhost ? "castleGhost" : castleMage ? "castleMage" : castleStage && !boss && !bomber && !role ? (shooter ? "castleArbalest" : "castleSoldier") : "";
+  const midHpBase = castleStage ? 1600 * (castleGuardTier === 3 ? 1.85 : castleGuardTier === 2 ? 1.38 : 1) : 720;
+  const midSpeedBase = castleStage ? (castleGuardTier === 3 ? 3.65 : castleGuardTier === 2 ? 3.22 : 2.75) : 2.65;
   const enemy = {
     id: crypto.randomUUID(),
     x: pos.x,
     z: pos.z,
     radius: boss ? 2.2 : isMidRole ? 1.75 : castleShield ? 1.12 : castleGhost ? 0.98 : castleMage ? 1.0 : shooter ? 1.05 : bomber ? 0.82 : 0.72 + Math.random() * 0.28,
-    hp: boss ? (state.stageId === "stage3" ? 23200 : state.stageId === "stage2" ? 2900 : 1960) : isMidRole ? midHpBase * scale : castleShield ? 112 * scale : castleGhost ? 58 * scale : castleMage ? 76 * scale : shooter ? 46 * scale : bomber ? 34 * scale : 28 * scale,
-    maxHp: boss ? (state.stageId === "stage3" ? 23200 : state.stageId === "stage2" ? 2900 : 1960) : isMidRole ? midHpBase * scale : castleShield ? 112 * scale : castleGhost ? 58 * scale : castleMage ? 76 * scale : shooter ? 46 * scale : bomber ? 34 * scale : 28 * scale,
+    hp: boss ? (castleStage ? 23200 : state.stageId === "stage2" ? 2900 : 1960) : isMidRole ? midHpBase * scale : castleShield ? 112 * scale : castleGhost ? 58 * scale : castleMage ? 76 * scale : shooter ? 46 * scale : bomber ? 34 * scale : 28 * scale,
+    maxHp: boss ? (castleStage ? 23200 : state.stageId === "stage2" ? 2900 : 1960) : isMidRole ? midHpBase * scale : castleShield ? 112 * scale : castleGhost ? 58 * scale : castleMage ? 76 * scale : shooter ? 46 * scale : bomber ? 34 * scale : 28 * scale,
     speed: boss ? 2.15 : isMidRole ? midSpeedBase : castleShield ? 2.35 + state.elapsed * 0.004 : castleGhost ? 3.15 + state.elapsed * 0.004 : castleMage ? 2.25 + state.elapsed * 0.004 : shooter ? 2.1 + state.elapsed * 0.006 : bomber ? 4.5 + state.elapsed * 0.008 : 2.8 + Math.random() * 1.7 + state.elapsed * 0.005,
     damage: boss ? 24 : isMidRole ? 30 + castleGuardTier * 6 : castleShield ? 12 : castleGhost ? 14 : castleMage ? 13 : shooter ? 12 : bomber ? 40 : 9,
     touchTimer: 0,
@@ -2855,9 +3103,9 @@ function addEnemy(boss, shooter, bomber = false, role = "") {
     bomber,
     enemyType,
     midBoss: isMidRole,
-    bossRole: boss ? (state.stageId === "stage3" ? "castleDragon" : state.stageId === "stage2" ? "crystalGolem" : "forestTree") : isMidRole && state.stageId === "stage3" ? "castleGuard" : isMidRole && state.stageId === "stage2" ? "crystalMid" : isMidRole && state.stageId === "stage1" ? "forestTreeMid" : role,
+    bossRole: boss ? (castleStage ? "castleDragon" : state.stageId === "stage2" ? "crystalGolem" : "forestTree") : isMidRole && castleStage ? "castleGuard" : isMidRole && state.stageId === "stage2" ? "crystalMid" : isMidRole && state.stageId === "stage1" ? "forestTreeMid" : role,
     bossAttackTimer: isMidRole ? 2.15 : boss ? 2.8 : 0,
-    bossShotTimer: boss && (state.stageId === "stage2" || state.stageId === "stage3") ? 3.6 : 0,
+    bossShotTimer: boss && (state.stageId === "stage2" || castleStage) ? 3.6 : 0,
     castleGuardTier,
     ghostPhaseSeed: Math.random() * Math.PI * 2,
   };
@@ -2945,6 +3193,7 @@ function updateEnemies(dt) {
   const dead = state.enemies.filter((enemy) => enemy.hp <= 0);
   for (const enemy of dead) {
     state.kills += 1;
+    if (STAGES[state.stageId]?.scoreAttack) state.score += enemy.boss ? 5000 : enemy.midBoss ? 1800 : enemy.enemyType === "castleMage" ? 180 : enemy.bomber ? 150 : enemy.shooter ? 120 : 80;
     const owner = state.players.find((p) => p.id === enemy.lastHitBy) || localPlayer();
     dropGem(enemy.x, enemy.z, enemy.xp, enemy.boss || enemy.midBoss ? "boss" : enemy.enemyType === "castleMage" ? "orange" : enemy.bomber || enemy.enemyType === "castleShield" || enemy.enemyType === "castleGhost" ? "bomber" : enemy.shooter ? "shooter" : "normal");
     if (owner) {
@@ -5793,6 +6042,14 @@ function addNinjaJutsuEffect(jutsuKind, x, z, radius, angle = 0, duration = 0.7)
   state.effects.push({ id: crypto.randomUUID(), kind: "ninjaJutsu", jutsuKind, x, z, radius, angle, mesh, life: duration, start: duration });
 }
 
+function addLinkEffect(linkKind, x, z, radius, angle = 0, duration = 1.0) {
+  const mesh = makeLinkEffectMesh({ linkKind, radius });
+  mesh.position.set(x, 0.16, z);
+  mesh.rotation.y = angle;
+  scene.add(mesh);
+  state.effects.push({ id: crypto.randomUUID(), kind: "linkSkill", linkKind, x, z, radius, angle, mesh, life: duration, start: duration });
+}
+
 function addSubstitutionLogEffect(x, z, angle = 0) {
   const mesh = makeSubstitutionLogMesh();
   mesh.position.set(x, 0.08, z);
@@ -5994,6 +6251,52 @@ function makeNinjaJutsuMesh(effect = {}) {
   return group;
 }
 
+function makeLinkEffectMesh(effect = {}) {
+  const kind = effect.linkKind || "resonance";
+  const radius = effect.radius || 8;
+  const color = {
+    bombArrow: 0xff8a22,
+    thunderSpin: 0x7dd3fc,
+    crossJudgement: 0xfff0a6,
+    shadowArrow: 0x2dd4bf,
+    mistStorm: 0xa78bfa,
+    twinIaido: 0xe5e7eb,
+    resonance: 0xf2c14e,
+  }[kind] || 0xf2c14e;
+  const group = new THREE.Group();
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(radius, 0.065, 8, 72), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.72, depthWrite: false, blending: THREE.AdditiveBlending }));
+  ring.rotation.x = Math.PI / 2;
+  const disk = new THREE.Mesh(new THREE.CylinderGeometry(radius * 0.92, radius * 0.92, 0.035, 64), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.12, depthWrite: false, blending: THREE.AdditiveBlending }));
+  disk.position.y = 0.02;
+  group.add(disk, ring);
+  if (kind === "bombArrow") {
+    for (let i = 0; i < 12; i += 1) {
+      const flame = new THREE.Mesh(new THREE.ConeGeometry(0.24, 1.4, 10), new THREE.MeshBasicMaterial({ color: i % 2 ? 0xffd166 : 0xff3b18, transparent: true, opacity: 0.68, depthWrite: false, blending: THREE.AdditiveBlending }));
+      const a = (Math.PI * 2 * i) / 12;
+      flame.position.set(Math.sin(a) * radius * 0.62, 0.7, Math.cos(a) * radius * 0.62);
+      flame.rotation.x = Math.PI;
+      group.add(flame);
+    }
+  } else if (kind === "thunderSpin") {
+    for (let i = 0; i < 10; i += 1) {
+      const bolt = makeThunderBoltMesh();
+      const a = (Math.PI * 2 * i) / 10;
+      bolt.position.set(Math.sin(a) * radius * 0.58, 0, Math.cos(a) * radius * 0.58);
+      group.add(bolt);
+    }
+  } else {
+    const count = kind === "mistStorm" ? 18 : 8;
+    for (let i = 0; i < count; i += 1) {
+      const slash = makeSlashArcMesh(radius * (0.35 + (i % 4) * 0.14), THREE.MathUtils.degToRad(100), 0.035, color, 0.48);
+      slash.rotation.y = (Math.PI * 2 * i) / count;
+      slash.position.y = 0.2 + (i % 3) * 0.08;
+      group.add(slash);
+    }
+  }
+  group.userData.ring = ring;
+  return group;
+}
+
 function makeNinjaSlashMesh(effect = {}) {
   const radius = effect.radius || 3.75;
   const arc = effect.arc || Math.PI;
@@ -6102,7 +6405,8 @@ function updateEffects(dt) {
     if (effect.kind === "ninjaClone") updateNinjaCloneEffect(effect, t);
     if (effect.kind === "ninjaSummon") updateNinjaSummonEffect(effect, t);
     if (effect.kind === "ninjaJutsu") updateNinjaJutsuEffect(effect, t);
-    if (effect.kind !== "ninjaJutsu") effect.mesh.scale.setScalar(effect.skill ? 1 + t * 0.8 : 1);
+    if (effect.kind === "linkSkill") updateLinkEffect(effect, t);
+    if (effect.kind !== "ninjaJutsu" && effect.kind !== "linkSkill") effect.mesh.scale.setScalar(effect.skill ? 1 + t * 0.8 : 1);
     setEffectOpacity(effect.mesh, Math.max(0, 0.75 * (1 - t)));
   }
   removeDead(state.effects, (effect) => effect.life <= 0);
@@ -6139,6 +6443,12 @@ function updateNinjaJutsuEffect(effect, t) {
   effect.mesh.scale.setScalar(1 + Math.sin(t * Math.PI) * 0.25);
 }
 
+function updateLinkEffect(effect, t) {
+  effect.mesh.rotation.y = (effect.angle || 0) + t * Math.PI * 2;
+  effect.mesh.scale.setScalar(0.55 + Math.sin(t * Math.PI) * 0.72 + t * 0.28);
+  if (effect.mesh.userData.ring) effect.mesh.userData.ring.rotation.z -= 0.18;
+}
+
 function updateSubstitutionLogEffect(effect, t) {
   effect.mesh.rotation.z = Math.sin(t * Math.PI) * 0.08;
   for (const child of effect.mesh.children) {
@@ -6170,6 +6480,7 @@ function removeDead(list, predicate) {
 
 function checkWin() {
   const duration = STAGES[state.stageId]?.duration ?? 180;
+  if (!Number.isFinite(duration)) return;
   if (state.elapsed >= duration && state.bossSpawned && !state.enemies.some((enemy) => enemy.boss)) endGame(true);
 }
 
@@ -6205,8 +6516,8 @@ function initAudio() {
 function startBgm() {
   initAudio();
   const enemies = state?.enemies?.length ? state.enemies : state?.remoteEnemies || [];
-  const stage3Boss = state?.stageId === "stage3" && enemies.some((enemy) => enemy.bossRole === "castleDragon" && enemy.hp > 0);
-  const bgmFile = stage3Boss ? "stage3boss.mp3" : state?.stageId === "stage3" ? "stage3.mp3" : state?.stageId === "stage2" ? "stage2.mp3" : "gamebgm.mp3";
+  const castleBoss = STAGES[state?.stageId]?.castle && enemies.some((enemy) => enemy.bossRole === "castleDragon" && enemy.hp > 0);
+  const bgmFile = castleBoss ? "stage3boss.mp3" : STAGES[state?.stageId]?.castle ? "stage3.mp3" : state?.stageId === "stage2" ? "stage2.mp3" : "gamebgm.mp3";
   if (!audio.bgm || audio.bgmFile !== bgmFile) {
     if (audio.bgm) {
       audio.bgm.pause();
@@ -6500,6 +6811,7 @@ function updateUi() {
   ui.skillText.textContent = skillPct >= 1 ? "READY" : `${Math.ceil(skillCooldown - (player.skillCharge || 0))}s`;
   ui.skillText.closest(".skill-hud")?.classList.toggle("ready", skillPct >= 1);
   ui.skillReadyHint?.classList.toggle("hidden", skillPct < 1 || net.phase !== "playing" || !state.running);
+  updateLinkHud(player);
   ui.bossCameraHint?.classList.toggle("hidden", !(net.phase === "playing" && state.running && isStage3DragonBossActive()));
   const buildSummary = formatBuildSummary(player);
   const room = net.roomCode ? ` / 部屋 ${net.roomCode}` : "";
@@ -6512,7 +6824,22 @@ function updateUi() {
       : player.character === "ninja"
         ? `刀 / 手裏剣${ninjaShurikenCount(player)}個 / 貫通${ninjaShurikenPierce(player)}`
       : `${player.arrows}本 / 後方${player.backShots || 0}本 / 貫通${player.pierce}`;
-  ui.build.textContent = `${characterName} / ${weapon} / 威力${Math.round(player.damage)} / ${buildSummary}${room}${revive}`;
+  const score = STAGES[state.stageId]?.scoreAttack ? ` / SCORE ${Math.floor(state.score || 0)}` : "";
+  ui.build.textContent = `${characterName} / ${weapon} / 威力${Math.round(player.damage)} / ${buildSummary}${room}${revive}${score}`;
+}
+
+function updateLinkHud(player) {
+  const hud = ui.linkText?.closest(".link-hud");
+  if (!hud) return;
+  const inPair = Boolean(state.linkPair && state.linkPair.split("+").includes(player.id));
+  const visible = net.phase === "playing" && state.running && inPair;
+  hud.classList.toggle("hidden", !visible);
+  if (!visible) return;
+  const pct = clamp((state.linkCharge || 0) / LINK_SKILL_CHARGE_SECONDS, 0, 1);
+  if (ui.linkFill) ui.linkFill.style.width = `${Math.round(pct * 100)}%`;
+  ui.linkText.textContent = state.linkReady ? "READY" : `${Math.ceil(LINK_SKILL_CHARGE_SECONDS - (state.linkCharge || 0))}s`;
+  hud.classList.toggle("ready", Boolean(state.linkReady));
+  ui.linkReadyHint?.classList.toggle("hidden", !state.linkReady);
 }
 
 function formatBuildSummary(player) {
@@ -6717,6 +7044,7 @@ function showLobby(message) {
   if (state) state.running = false;
   stopBgm();
   ui.skillText.closest(".skill-hud")?.classList.add("hidden");
+  ui.linkText?.closest(".link-hud")?.classList.add("hidden");
   ui.bossCameraHint?.classList.add("hidden");
   ui.start.classList.add("hidden");
   ui.createRoomPanel.classList.add("hidden");
@@ -6795,7 +7123,10 @@ function handleClientData(conn, data) {
   }
   if (data.type === "skill") {
     const player = state.players.find((p) => p.id === data.id);
-    if (player && activateSkill(player)) sendHostSnapshot(true);
+    if (player && !requestLinkSkill(data.id) && activateSkill(player)) sendHostSnapshot(true);
+  }
+  if (data.type === "linkRequest") {
+    if (requestLinkSkill(data.id)) sendHostSnapshot(true);
   }
 }
 
@@ -6827,6 +7158,7 @@ function handleHostData(data) {
     ui.gameOver.classList.add("hidden");
     ui.levelUp.classList.add("hidden");
     ui.skillText.closest(".skill-hud")?.classList.remove("hidden");
+    ui.linkText?.closest(".link-hud")?.classList.add("hidden");
     hideStatus();
     cancelAnimationFrame(animationId);
     if (state) resetSceneEntities();
@@ -6846,6 +7178,7 @@ function handleHostData(data) {
   }
   if (data.type === "toast") showToast(data.text);
   if (data.type === "skillBanner") showSkillBanner(data.playerName, data.skill);
+  if (data.type === "linkSkill") showSkillBanner("LINK SKILL", data.label);
   if (data.type === "dragonEntrance") startDragonEntranceCutscene({ remote: true, focus: data.focus });
   if (data.type === "comm") showToast(`${data.name}: ${data.text}`);
   if (data.type === "levelOffer" && data.playerId === localPlayerId) {
@@ -6871,10 +7204,21 @@ function handleHostData(data) {
     stopBgm();
     sfx(data.won ? "victory" : "gameover");
     ui.skillText.closest(".skill-hud")?.classList.add("hidden");
+    ui.linkText?.closest(".link-hud")?.classList.add("hidden");
     ui.bossCameraHint?.classList.add("hidden");
     const earnedMoney = awardMoney(data.won, { elapsed: data.elapsed, kills: data.kills, stageId: data.stageId });
     ui.endTitle.textContent = data.won ? "Clear!" : "Game Over";
-    ui.endText.textContent = `${endSummaryText(data.elapsed, data.kills, false)} / ${earnedMoney}G獲得`;
+    const scoreText = STAGES[data.stageId]?.scoreAttack ? ` / SCORE ${Math.floor(data.score || 0)}` : "";
+    let highScoreText = "";
+    if (STAGES[data.stageId]?.scoreAttack) {
+      progress.highScores ||= { extra: 0 };
+      const score = Math.floor(data.score || 0);
+      const isNew = score > (progress.highScores.extra || 0);
+      progress.highScores.extra = Math.max(progress.highScores.extra || 0, score);
+      saveProgress();
+      highScoreText = isNew ? " / 自己ベスト更新!" : ` / BEST ${progress.highScores.extra}`;
+    }
+    ui.endText.textContent = `${endSummaryText(data.elapsed, data.kills, false)}${scoreText}${highScoreText} / ${earnedMoney}G獲得`;
     ui.restartButton.textContent = "コンティニューに投票";
     ui.disbandButton.classList.remove("hidden");
     ui.gameOver.classList.remove("hidden");
@@ -6890,6 +7234,11 @@ function handleHostData(data) {
 function applySnapshot(data) {
   state.elapsed = data.elapsed;
   state.kills = data.kills;
+  state.linkPair = data.linkPair || null;
+  state.linkCharge = data.linkCharge || 0;
+  state.linkReady = Boolean(data.linkReady);
+  state.linkCutsceneUntil = data.linkCutsceneUntil || 0;
+  state.score = data.score || 0;
   state.remoteEnemies = data.enemies || [];
   net.pausedBy = data.pausedBy || null;
   net.waitingFor = data.waitingFor || null;
@@ -6968,7 +7317,12 @@ function sendHostSnapshot(force = false) {
       impactAt: z.impactAt, impacted: z.impacted, role: z.role, delay: z.delay, startX: z.startX, startZ: z.startZ, chargeDuration: z.chargeDuration, retargetOnStart: z.retargetOnStart, retargeted: z.retargeted,
       slow: z.slow, slowDuration: z.slowDuration, rotateSpeed: z.rotateSpeed,
     })),
-    effects: state.effects.map((fx) => ({ id: fx.id, kind: fx.kind, summonKind: fx.summonKind, jutsuKind: fx.jutsuKind, owner: fx.owner, skill: fx.skill, x: fx.x, z: fx.z, radius: fx.radius, arc: fx.arc, angle: fx.angle, length: fx.length, color: fx.color, life: fx.life, start: fx.start })),
+    linkPair: state.linkPair,
+    linkCharge: state.linkCharge,
+    linkReady: state.linkReady,
+    linkCutsceneUntil: state.linkCutsceneUntil,
+    score: state.score,
+    effects: state.effects.map((fx) => ({ id: fx.id, kind: fx.kind, summonKind: fx.summonKind, jutsuKind: fx.jutsuKind, linkKind: fx.linkKind, owner: fx.owner, skill: fx.skill, x: fx.x, z: fx.z, radius: fx.radius, arc: fx.arc, angle: fx.angle, length: fx.length, color: fx.color, life: fx.life, start: fx.start })),
   });
 }
 
@@ -7132,7 +7486,7 @@ function syncEffects(effects) {
   for (const effect of effects) {
     let mesh = cache.get(effect.id);
     if (!mesh) {
-      mesh = effect.kind === "slash" ? makeSlashMesh(effect) : effect.kind === "ninjaSlash" ? makeNinjaSlashMesh(effect) : effect.kind === "thunder" ? makeThunderBoltMesh(effect) : effect.kind === "ice" ? makeIceSpikeMesh(effect) : effect.kind === "ninjaClone" ? makeNinjaCloneMesh(effect) : effect.kind === "ninjaSummon" ? makeNinjaSummonMesh(effect) : effect.kind === "ninjaJutsu" ? makeNinjaJutsuMesh(effect) : effect.kind === "substitutionLog" ? makeSubstitutionLogMesh(effect) : makeRingMesh(effect);
+      mesh = effect.kind === "slash" ? makeSlashMesh(effect) : effect.kind === "ninjaSlash" ? makeNinjaSlashMesh(effect) : effect.kind === "thunder" ? makeThunderBoltMesh(effect) : effect.kind === "ice" ? makeIceSpikeMesh(effect) : effect.kind === "ninjaClone" ? makeNinjaCloneMesh(effect) : effect.kind === "ninjaSummon" ? makeNinjaSummonMesh(effect) : effect.kind === "ninjaJutsu" ? makeNinjaJutsuMesh(effect) : effect.kind === "linkSkill" ? makeLinkEffectMesh(effect) : effect.kind === "substitutionLog" ? makeSubstitutionLogMesh(effect) : makeRingMesh(effect);
       scene.add(mesh);
       cache.set(effect.id, mesh);
       if (effect.kind === "slash" && effect.owner && !effect.skill) sfx("saberAttack");
@@ -7146,7 +7500,8 @@ function syncEffects(effects) {
     if (effect.kind === "ninjaClone") updateNinjaCloneEffect({ ...effect, mesh }, t);
     if (effect.kind === "ninjaSummon") updateNinjaSummonEffect({ ...effect, mesh }, t);
     if (effect.kind === "ninjaJutsu") updateNinjaJutsuEffect({ ...effect, mesh }, t);
-    if (effect.kind !== "ninjaJutsu") mesh.scale.setScalar(effect.skill ? 1 + t * 0.8 : 1);
+    if (effect.kind === "linkSkill") updateLinkEffect({ ...effect, mesh }, t);
+    if (effect.kind !== "ninjaJutsu" && effect.kind !== "linkSkill") mesh.scale.setScalar(effect.skill ? 1 + t * 0.8 : 1);
     setEffectOpacity(mesh, Math.max(0, 0.75 * (1 - t)));
   }
 }
@@ -7440,9 +7795,10 @@ function defaultProgress() {
   return {
     money: 0,
     characters: { archer: true, witch: false, saber: false, ninja: false },
-    stages: { stage1: true, stage2: false, stage3: false },
-    cleared: { stage1: false, stage2: false, stage3: false },
+    stages: { stage1: true, stage2: false, stage3: false, extra: false },
+    cleared: { stage1: false, stage2: false, stage3: false, extra: false },
     permanent: { power: 0, vitality: 0, speed: 0, magnet: 0, learning: 0 },
+    highScores: { extra: 0 },
   };
 }
 
@@ -7456,6 +7812,7 @@ function loadProgress() {
       stages: { ...base.stages, ...(saved.stages || {}) },
       cleared: { ...base.cleared, ...(saved.cleared || {}) },
       permanent: { ...base.permanent, ...(saved.permanent || {}) },
+      highScores: { ...base.highScores, ...(saved.highScores || {}) },
     };
     if (saved.stages?.stage2) loaded.cleared.stage1 = true;
     if (saved.stages?.stage3) loaded.cleared.stage2 = true;
@@ -7565,6 +7922,7 @@ function isCharacterUnlocked(character) {
 }
 
 function isStageProgressUnlocked(stageId) {
+  if (stageId === "extra") return Boolean((progress.cleared?.stage1 && progress.cleared?.stage2 && progress.cleared?.stage3) || progress.stages?.extra || debugModeEnabled);
   if (stageId === "stage3") return Boolean(progress.stages.stage3 || stage3DebugUnlocked || debugModeEnabled);
   return Boolean(progress.stages[stageId]);
 }
@@ -7636,6 +7994,10 @@ function unlockStageClearRewards(stageId) {
   if (stageId === "stage2" && !progress.stages.stage3) {
     progress.stages.stage3 = true;
     showToast("ステージ3 冥冠城塞が解放されました");
+  }
+  if (progress.cleared.stage1 && progress.cleared.stage2 && progress.cleared.stage3 && !progress.stages.extra) {
+    progress.stages.extra = true;
+    showToast("エクストラ 無限試練が解放されました");
   }
   if (stageId === "stage2" && !progress.characters.ninja) {
     showToast("ショップに忍者が入荷しました");
@@ -7855,17 +8217,31 @@ function endGame(won) {
   stopBgm();
   sfx(won ? "victory" : "gameover");
   ui.skillText.closest(".skill-hud")?.classList.add("hidden");
+  ui.linkText?.closest(".link-hud")?.classList.add("hidden");
   ui.bossCameraHint?.classList.add("hidden");
   net.restartVotes = new Set();
   const earnedMoney = awardMoney(won);
+  const highScoreText = updateExtraHighScore();
   ui.endTitle.textContent = won ? "Clear!" : "Game Over";
-  ui.endText.textContent = `${endSummaryText(state.elapsed, state.kills, true)} / ${earnedMoney}G獲得`;
+  const scoreText = STAGES[state.stageId]?.scoreAttack ? ` / SCORE ${Math.floor(state.score || 0)}` : "";
+  ui.endText.textContent = `${endSummaryText(state.elapsed, state.kills, true)}${scoreText}${highScoreText} / ${earnedMoney}G獲得`;
   ui.restartButton.textContent = net.mode === "solo" ? "コンティニュー" : "コンティニューに投票";
   ui.disbandButton.textContent = net.mode === "solo" ? "タイトルに戻る" : "解散する";
   ui.voteText.textContent = net.mode === "solo" ? "" : `再戦投票: 0/${state.players.length}`;
   ui.disbandButton.classList.remove("hidden");
   ui.gameOver.classList.remove("hidden");
-  if (net.mode === "host") broadcast({ type: "gameOver", won, elapsed: state.elapsed, kills: state.kills, total: state.players.length, stageId: state.stageId });
+  if (net.mode === "host") broadcast({ type: "gameOver", won, elapsed: state.elapsed, kills: state.kills, total: state.players.length, stageId: state.stageId, score: state.score });
+}
+
+function updateExtraHighScore() {
+  if (!STAGES[state.stageId]?.scoreAttack) return "";
+  progress.highScores ||= { extra: 0 };
+  const score = Math.floor(state.score || 0);
+  const best = Math.max(progress.highScores.extra || 0, score);
+  const isNew = best > (progress.highScores.extra || 0);
+  progress.highScores.extra = best;
+  saveProgress();
+  return isNew ? " / 自己ベスト更新!" : ` / BEST ${best}`;
 }
 
 function voteRestart(playerId = localPlayerId) {
