@@ -227,6 +227,7 @@ const SHOP_ITEMS = [
   { id: "witch", type: "character", name: "ウィッチ購入", desc: "元素魔法を操るウィッチを使用可能にする。", cost: 1000 },
   { id: "saber", type: "character", name: "セイバー購入", desc: "近距離を薙ぎ払うセイバーを使用可能にする。", cost: 1500 },
   { id: "ninja", type: "character", name: "忍者購入", desc: "刀と手裏剣を使い分ける隠密アタッカーを使用可能にする。", cost: 5000, requiresClear: "stage2" },
+  { id: "soldier", type: "character", name: "ソルジャー購入", desc: "アサルトライフルと兵器支援で戦う女傭兵を使用可能にする。", cost: 10000, requiresClear: "stage3" },
 ];
 
 progress = loadProgress();
@@ -236,6 +237,7 @@ const CHARACTER_TYPES = {
   witch: { label: "ウィッチ", color: 0x8b5cf6, remoteColor: 0xb07cff },
   saber: { label: "セイバー", color: 0xd9dfe8, remoteColor: 0x91c7ff },
   ninja: { label: "忍者", color: 0x2dd4bf, remoteColor: 0x67e8f9 },
+  soldier: { label: "ソルジャー", color: 0x9ca3af, remoteColor: 0x93c5fd },
 };
 
 const STAGES = {
@@ -255,6 +257,7 @@ const CHARACTER_MODELS = {
   witch: { path: "./model_glTF/Witch.gltf", scale: 0.68, keepProps: true },
   saber: { path: "./model_glTF/Knight_Male.gltf", scale: 0.78, keepProps: true },
   ninja: { path: "./model_glTF/Ninja_Male.gltf", scale: 0.78, keepProps: true },
+  soldier: { path: "./model_glTF/Soldier_Female.gltf", scale: 0.78, keepProps: true },
 };
 
 const gltfLoader = new GLTFLoader();
@@ -281,6 +284,8 @@ const FBX_ASSETS = {
   knightBossHelmet: { path: "./model_FBX/KNIGHT/Helmet3.fbx", size: 0.78, position: [0, 2.68, 0.03], rotation: [0, 0, 0], scale: [1, 1, 1] },
   knightBossShoulders: { path: "./model_FBX/KNIGHT/ShoulderPads.fbx", size: 1.15, position: [0, 2.08, 0.02], rotation: [0, 0, 0], scale: [1, 1, 1] },
   knightBossSword: { path: "./model_FBX/KNIGHT/Sword.fbx", size: 1.35, position: [0.95, 1.2, 0.2], rotation: [0, 0, -0.55], scale: [1, 1, 1] },
+  assaultRifle: { path: "./model_FBX/Buki/AssaultRifle_2.fbx", size: 1.1, position: [0.55, 1.18, 0.16], rotation: [0, Math.PI / 2, -0.12], scale: [1, 1, 1] },
+  tank: { path: "./model_FBX/Tank/Tank.fbx", size: 3.9, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], groundOffset: 0 },
 };
 
 const CHARACTER_CODEX = [
@@ -316,6 +321,14 @@ const CHARACTER_CODEX = [
     skill: "飛影八閃: 15秒ごとにマウス方向へワープし、八方向へ手裏剣を放ちます。",
     upgrades: ["風魔手裏剣", "影分身の術", "口寄せの術"],
   },
+  {
+    id: "soldier",
+    role: "高連射の手数型アタッカー",
+    weapon: "アサルトライフルを高連射します。30発撃つと2秒間リロードします。",
+    passive: "未設定: 今後の調整で追加予定です。",
+    skill: "戦車降下: 60秒ごとに戦車へ乗り込み、砲弾と両側バルカンで敵を蹂躙します。",
+    upgrades: ["グレネード", "ドローン支援", "火炎放射器"],
+  },
 ];
 
 const materials = {
@@ -332,6 +345,9 @@ const materials = {
   arrow: new THREE.MeshStandardMaterial({ color: 0xf2c14e, roughness: 0.28, metalness: 0.15 }),
   magic: new THREE.MeshStandardMaterial({ color: 0xff6b2c, roughness: 0.28, emissive: 0x7a1b05 }),
   shuriken: new THREE.MeshStandardMaterial({ color: 0xc8f3ff, roughness: 0.22, metalness: 0.6, emissive: 0x123047 }),
+  bulletTracer: new THREE.MeshBasicMaterial({ color: 0xfff0a3, transparent: true, opacity: 0.88, depthWrite: false }),
+  grenade: new THREE.MeshStandardMaterial({ color: 0x4b5563, roughness: 0.62, metalness: 0.35 }),
+  shell: new THREE.MeshStandardMaterial({ color: 0xfacc15, roughness: 0.3, metalness: 0.35, emissive: 0x553a00 }),
   ninjaShadow: new THREE.MeshBasicMaterial({ color: 0x2dd4bf, transparent: true, opacity: 0.52, depthWrite: false }),
   ice: new THREE.MeshStandardMaterial({ color: 0x9fe8ff, roughness: 0.18, metalness: 0.05, emissive: 0x124b68, transparent: true, opacity: 0.9 }),
   bullet: new THREE.MeshStandardMaterial({ color: 0xff7a42, roughness: 0.35, emissive: 0x3a1206 }),
@@ -379,7 +395,10 @@ upgrades.push(
   { name: "二連斬り", desc: "薙ぎ払いの直後に、少しずらした追加の斬撃を放つ。", classes: ["saber"], apply: (p) => (p.doubleSlash += 1) },
   { name: "風魔手裏剣", desc: "手裏剣が風をまとい、取得するたび威力+15%、大きさ+0.1、飛距離が少し伸びる。命中した敵を真空の刃で切り刻む。", classes: ["ninja"], apply: (p) => (p.fumaShuriken += 1) },
   { name: "影分身の術", desc: "離れた場所に分身を召喚し、火遁、雷遁、水遁、土遁を順番に放つ。Lv3とLv5で分身が増える。", classes: ["ninja"], apply: (p) => (p.shadowClone += 1) },
-  { name: "口寄せの術", desc: "3種類の生物からランダムに1匹を呼び出し範囲攻撃を行う。取得するたび持続時間、範囲、威力が少し伸びる。", classes: ["ninja"], apply: (p) => (p.summonJutsu += 1) }
+  { name: "口寄せの術", desc: "3種類の生物からランダムに1匹を呼び出し範囲攻撃を行う。取得するたび持続時間、範囲、威力が少し伸びる。", classes: ["ninja"], apply: (p) => (p.summonJutsu += 1) },
+  { name: "グレネード", desc: "3秒ごとに近くの敵へ投げる。2秒後に爆発。Lv3で2個、Lv5で3個投げる。", classes: ["soldier"], apply: (p) => (p.grenade += 1) },
+  { name: "ドローン支援", desc: "小型ドローンが追従して機銃掃射する。取得するたびドローン+1、威力も少し上がる。", classes: ["soldier"], apply: (p) => (p.droneSupport += 1) },
+  { name: "火炎放射器", desc: "10秒ごとに周囲へ火炎放射。取得するたび範囲と威力が少し伸びる。", classes: ["soldier"], apply: (p) => (p.flamethrower += 1) }
 );
 
 initThree();
@@ -1108,6 +1127,20 @@ function makePlayer(id, name, x, z, local, character = "archer") {
     summonTimer: 4.2,
     summonIndex: 0,
     ninjaAttackMode: "shuriken",
+    rifleAmmo: 30,
+    rifleReloadUntil: 0,
+    grenade: 0,
+    grenadeTimer: 3,
+    droneSupport: 0,
+    droneTimer: 0,
+    flamethrower: 0,
+    flamethrowerTimer: 10,
+    tankUntil: 0,
+    tankShellTimer: 0,
+    tankVulcanTimer: 0,
+    tankVulcanBurst: 0,
+    tankDropUntil: 0,
+    tankMesh: null,
     modelActionName: "",
     modelActionUntil: 0,
     mesh: makePlayerMesh(name, local, type),
@@ -1132,6 +1165,13 @@ function makePlayer(id, name, x, z, local, character = "archer") {
     player.pierce = 0;
     player.slashArc = THREE.MathUtils.degToRad(74);
     player.slashRange = 3.75;
+  } else if (type === "soldier") {
+    player.damage = 7.2;
+    player.baseFireRate = 0.105;
+    player.speed = 9.1;
+    player.skillCooldown = 60;
+    player.arrows = 0;
+    player.pierce = 0;
   }
   applyPermanentBonuses(player);
   updateFireRate(player);
@@ -1230,6 +1270,11 @@ function addCharacterProps(group, character, bodyMat, useLegacyModel = false) {
     group.add(weapon);
     return [weapon];
   }
+  if (character === "soldier") {
+    const rifle = useLegacyModel ? makeOldRifleMesh(bodyMat) : makeFbxMesh("assaultRifle", () => makeOldRifleMesh(bodyMat));
+    group.add(rifle);
+    return [rifle];
+  }
   const bow = useLegacyModel ? makeOldBowMesh() : makeFbxMesh("bow", makeOldBowMesh);
   group.add(bow);
   return [bow];
@@ -1279,6 +1324,21 @@ function makeNinjaWeaponMesh(bodyMat) {
   shuriken.position.set(-0.45, 1.35, -0.1);
   shuriken.rotation.set(Math.PI / 2, 0, Math.PI / 4);
   group.add(blade, guard, shuriken);
+  return group;
+}
+
+function makeOldRifleMesh(bodyMat) {
+  const group = new THREE.Group();
+  const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 1.1), materials.saberBlade.clone());
+  barrel.position.set(0.48, 1.25, -0.06);
+  barrel.rotation.y = Math.PI / 2;
+  const stock = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.18, 0.38), bodyMat);
+  stock.position.set(0.16, 1.18, 0.02);
+  stock.rotation.y = Math.PI / 2;
+  const grip = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.36, 0.12), bodyMat);
+  grip.position.set(0.44, 0.95, 0.12);
+  grip.rotation.z = -0.25;
+  group.add(barrel, stock, grip);
   return group;
 }
 
@@ -1446,14 +1506,35 @@ function cloneFbxModel(model, key) {
   });
   if (key.startsWith("castle")) styleCastleFbxModel(clone, key);
   if (key.startsWith("knightBoss")) styleKnightBossFbxModel(clone, key);
+  if (key === "tank" || key === "assaultRifle") styleSoldierFbxModel(clone, key);
   clone.position.set(...(asset.position || [0, 0, 0]));
   clone.rotation.set(...(asset.rotation || [0, 0, 0]));
   clone.scale.multiply(new THREE.Vector3(...(asset.scale || [1, 1, 1])));
-  if (key.startsWith("castle") || key === "knightBossBody") {
+  if (key.startsWith("castle") || key === "knightBossBody" || key === "tank") {
     snapModelBottomToGround(clone, asset.groundOffset || 0);
     if (key.startsWith("castle")) addCastleModelAccent(clone, key);
   }
   return clone;
+}
+
+function styleSoldierFbxModel(model, key) {
+  model.traverse((child) => {
+    if (!child.isMesh || !child.material) return;
+    const mats = Array.isArray(child.material) ? child.material : [child.material];
+    for (const material of mats) {
+      if (!material.color) continue;
+      if (key === "tank") {
+        material.color.setHex(0x4b5563);
+        if ("roughness" in material) material.roughness = 0.62;
+        if ("metalness" in material) material.metalness = 0.24;
+      } else {
+        material.color.setHex(0x2f343b);
+        if ("roughness" in material) material.roughness = 0.5;
+        if ("metalness" in material) material.metalness = 0.55;
+      }
+      material.needsUpdate = true;
+    }
+  });
 }
 
 function styleKnightBossFbxModel(model, key) {
@@ -1814,7 +1895,10 @@ function startGame(mode = "solo") {
 }
 
 function resetSceneEntities() {
-  for (const player of state.players) scene.remove(player.mesh);
+  for (const player of state.players) {
+    scene.remove(player.mesh);
+    if (player.tankMesh) scene.remove(player.tankMesh);
+  }
   for (const group of [state.enemies, state.arrows, state.enemyBullets, state.gems, state.hearts, state.magnets, state.magicCircles, state.rockfalls, state.bossZones, state.effects]) {
     for (const item of group) {
       scene.remove(item.mesh);
@@ -1898,16 +1982,20 @@ function updatePlayers(dt) {
     player.mesh.rotation.y = spinning ? (player.spinSlashAngle || angle) + state.elapsed * 18 : angle;
     animateHuman(player, moving, dt);
     updateSaberSpinSlash(player, dt);
+    updateSoldierTank(player, dt);
 
     player.fireTimer -= dt;
-    if (!spinning && player.fireTimer <= 0) {
+    if (!spinning && !isSoldierInTank(player) && player.fireTimer <= 0) {
       shoot(player);
-      player.fireTimer = player.fireRate;
+      player.fireTimer = player.character === "soldier" && state.elapsed < (player.rifleReloadUntil || 0)
+        ? Math.max(0.05, (player.rifleReloadUntil || 0) - state.elapsed)
+        : player.fireRate;
     }
     updatePlayerIceSpike(player, dt);
     updatePlayerThunderCircle(player, dt);
     updateNinjaSummonJutsu(player, dt);
     updateNinjaShadowCloneJutsu(player, dt);
+    updateSoldierSupport(player, dt);
   }
 }
 
@@ -2234,8 +2322,208 @@ function castShadowCloneJutsu(player, level) {
     if (jutsu === "fire") castCloneFireJutsu(player, level, x, z);
     else if (jutsu === "thunder") castCloneThunderJutsu(player, level, x, z);
     else if (jutsu === "water") castCloneWaterJutsu(player, level, x, z);
-    else castCloneEarthJutsu(player, level, x, z);
+  else castCloneEarthJutsu(player, level, x, z);
+}
+
+function updateSoldierSupport(player, dt) {
+  if (player.character !== "soldier") return;
+  updateSoldierGrenades(player, dt);
+  updateSoldierDrones(player, dt);
+  updateSoldierFlamethrower(player, dt);
+}
+
+function updateSoldierGrenades(player, dt) {
+  const level = player.grenade || 0;
+  if (level <= 0) return;
+  player.grenadeTimer = (player.grenadeTimer || 0) - dt;
+  if (player.grenadeTimer > 0) return;
+  const count = level >= 5 ? 3 : level >= 3 ? 2 : 1;
+  for (let i = 0; i < count; i += 1) throwSoldierGrenade(player, i, count);
+  player.grenadeTimer = 3;
+}
+
+function throwSoldierGrenade(player, index = 0, count = 1) {
+  const target = nearestEnemy(player, 18);
+  if (!target) return;
+  const base = Math.atan2(target.x - player.x, target.z - player.z);
+  const angle = base + (index - (count - 1) / 2) * 0.22;
+  const grenade = {
+    id: crypto.randomUUID(),
+    x: player.x + Math.sin(angle) * 0.9,
+    z: player.z + Math.cos(angle) * 0.9,
+    vx: Math.sin(angle) * 6.5,
+    vz: Math.cos(angle) * 6.5,
+    radius: 0.28,
+    life: 2,
+    damage: player.damage * (2.2 + (player.grenade || 0) * 0.24),
+    explosionDamage: player.damage * (3.6 + (player.grenade || 0) * 0.42),
+    explosionRadius: 2.4 + (player.grenade || 0) * 0.16,
+    pierce: 0,
+    owner: player.id,
+    kind: "grenade",
+    angle,
+    hit: new Set(),
+    mesh: makeProjectileMesh({ kind: "grenade" }),
+  };
+  grenade.mesh.position.set(grenade.x, 1.1, grenade.z);
+  scene.add(grenade.mesh);
+  state.arrows.push(grenade);
+}
+
+function updateSoldierDrones(player, dt) {
+  const level = player.droneSupport || 0;
+  if (level <= 0) return;
+  player.droneTimer = (player.droneTimer || 0) - dt;
+  if (player.droneTimer > 0) return;
+  const count = level;
+  for (let i = 0; i < count; i += 1) {
+    const orbit = (Math.PI * 2 * i) / Math.max(1, count) + state.elapsed * 1.8;
+    const originX = player.x + Math.sin(orbit) * 1.9;
+    const originZ = player.z + Math.cos(orbit) * 1.9;
+    const target = nearestEnemy({ x: originX, z: originZ }, 20);
+    addDroneEffect(originX, originZ, orbit);
+    if (!target) continue;
+    const angle = Math.atan2(target.x - originX, target.z - originZ);
+    fireSoldierBullet(player, angle, {
+      originX,
+      originZ,
+      offset: 0.25,
+      kind: "vulcanBullet",
+      radius: 0.13,
+      speed: 30,
+      life: 0.75,
+      damageScale: 0.72 + level * 0.05,
+    });
   }
+  player.droneTimer = Math.max(0.22, 0.42 - level * 0.025);
+}
+
+function addDroneEffect(x, z, angle = 0) {
+  const body = new THREE.Group();
+  const core = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 8), new THREE.MeshStandardMaterial({ color: 0x9ca3af, roughness: 0.45, metalness: 0.45 }));
+  const wing = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.035, 0.12), materials.saberBlade.clone());
+  body.add(core, wing);
+  body.position.set(x, 2.25 + Math.sin(state.elapsed * 8) * 0.08, z);
+  body.rotation.y = angle;
+  body.userData.life = 0.12;
+  scene.add(body);
+  state.effects.push({ id: crypto.randomUUID(), kind: "tempMesh", x, z, life: 0.12, start: 0.12, mesh: body });
+}
+
+function updateSoldierFlamethrower(player, dt) {
+  const level = player.flamethrower || 0;
+  if (level <= 0) return;
+  player.flamethrowerTimer = (player.flamethrowerTimer || 0) - dt;
+  if (player.flamethrowerTimer > 0) return;
+  const radius = 4.3 + level * 0.55;
+  const damage = player.damage * (3.2 + level * 0.38);
+  damageEnemiesInCircle(player.x, player.z, radius, damage, player.id);
+  addFlameBurstEffect(player.x, player.z, radius);
+  player.flamethrowerTimer = 10;
+}
+
+function addFlameBurstEffect(x, z, radius) {
+  addRing(x, z, radius, 0xff6b2c);
+  for (let i = 0; i < 10; i += 1) {
+    const angle = (Math.PI * 2 * i) / 10;
+    const endX = x + Math.sin(angle) * radius;
+    const endZ = z + Math.cos(angle) * radius;
+    addNinjaJutsuEffect("fire", (x + endX) / 2, (z + endZ) / 2, radius * 0.14, angle);
+  }
+}
+
+function isSoldierInTank(player) {
+  return player?.character === "soldier" && state.elapsed < (player.tankUntil || 0);
+}
+
+function updateSoldierTank(player, dt) {
+  if (player.character !== "soldier") return;
+  const active = isSoldierInTank(player);
+  if (!active) {
+    if (player.tankMesh) {
+      scene.remove(player.tankMesh);
+      player.tankMesh = null;
+    }
+    return;
+  }
+  if (!player.tankMesh) {
+    player.tankMesh = makeFbxMesh("tank", makeOldTankMesh);
+    scene.add(player.tankMesh);
+  }
+  const angle = Math.atan2(player.input.aimX - player.x, player.input.aimZ - player.z);
+  const dropLeft = Math.max(0, (player.tankDropUntil || 0) - state.elapsed);
+  const dropY = dropLeft > 0 ? 5.5 * (dropLeft / 0.65) : 0;
+  player.tankMesh.position.set(player.x, dropY, player.z);
+  player.tankMesh.rotation.y = angle;
+  player.invincibleUntil = Math.max(player.invincibleUntil || 0, state.elapsed + 0.12);
+  player.tankShellTimer = (player.tankShellTimer || 0) - dt;
+  if (player.tankShellTimer <= 0) {
+    fireTankShell(player, angle);
+    player.tankShellTimer = 0.9;
+  }
+  player.tankVulcanTimer = (player.tankVulcanTimer || 0) - dt;
+  if (player.tankVulcanTimer <= 0) {
+    player.tankVulcanBurst = player.tankVulcanBurst > 0 ? 0 : 1;
+    player.tankVulcanTimer = player.tankVulcanBurst ? 1 : 1;
+  }
+  if (player.tankVulcanBurst) {
+    for (const offset of [-0.34, 0.34]) {
+      fireSoldierBullet(player, angle + offset, {
+        kind: "vulcanBullet",
+        radius: 0.14,
+        speed: 34,
+        life: 0.72,
+        damageScale: 0.55,
+        offset: 1.65,
+      });
+    }
+  }
+}
+
+function fireTankShell(player, angle) {
+  const shell = {
+    id: crypto.randomUUID(),
+    x: player.x + Math.sin(angle) * 1.85,
+    z: player.z + Math.cos(angle) * 1.85,
+    vx: Math.sin(angle) * 22,
+    vz: Math.cos(angle) * 22,
+    radius: 0.42,
+    life: 1.55,
+    damage: player.damage * 4.8,
+    explosionDamage: player.damage * 3.2,
+    explosionRadius: 3.15,
+    pierce: 0,
+    owner: player.id,
+    kind: "tankShell",
+    angle,
+    hit: new Set(),
+    mesh: makeProjectileMesh({ kind: "tankShell" }),
+  };
+  shell.mesh.rotation.y = angle;
+  shell.mesh.position.set(shell.x, 1.1, shell.z);
+  scene.add(shell.mesh);
+  state.arrows.push(shell);
+  addRing(player.x, player.z, 1.4, 0xfacc15);
+}
+
+function makeOldTankMesh() {
+  const group = new THREE.Group();
+  const bodyMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.6, metalness: 0.25 });
+  const darkMat = new THREE.MeshStandardMaterial({ color: 0x1f2937, roughness: 0.8, metalness: 0.2 });
+  const body = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.72, 3.0), bodyMat);
+  body.position.y = 0.62;
+  const turret = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.7, 0.48, 12), bodyMat);
+  turret.position.y = 1.2;
+  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 1.7, 10), darkMat);
+  barrel.rotation.x = Math.PI / 2;
+  barrel.position.set(0, 1.22, -1.15);
+  const leftTrack = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.48, 3.15), darkMat);
+  const rightTrack = leftTrack.clone();
+  leftTrack.position.set(-1.28, 0.38, 0);
+  rightTrack.position.set(1.28, 0.38, 0);
+  group.add(body, turret, barrel, leftTrack, rightTrack);
+  return group;
+}
 }
 
 function castCloneFireJutsu(player, level, x, z) {
@@ -2530,6 +2818,10 @@ function cameraTargetPlayer() {
 }
 
 function shoot(player) {
+  if (player.character === "soldier") {
+    shootSoldierRifle(player);
+    return;
+  }
   if (player.character === "witch") {
     if (player.local || net.mode !== "client") sfx(attackSoundKey(player.character));
     shootMagic(player);
@@ -2546,6 +2838,47 @@ function shoot(player) {
   }
   if (player.local || net.mode !== "client") sfx(attackSoundKey(player.character));
   shootArrows(player);
+}
+
+function shootSoldierRifle(player) {
+  if (state.elapsed < (player.rifleReloadUntil || 0)) {
+    player.fireTimer = Math.max(player.fireTimer || 0, (player.rifleReloadUntil || 0) - state.elapsed);
+    return;
+  }
+  if ((player.rifleAmmo ?? 30) <= 0) {
+    player.rifleAmmo = 30;
+    player.rifleReloadUntil = state.elapsed + 2;
+    player.fireTimer = 2;
+    addRing(player.x, player.z, 1.0, 0x9ca3af);
+    return;
+  }
+  const base = Math.atan2(player.input.aimX - player.x, player.input.aimZ - player.z);
+  fireSoldierBullet(player, base + (Math.random() - 0.5) * 0.035, { damageScale: 1, speed: 34, life: 0.9 });
+  player.rifleAmmo -= 1;
+  if (player.local || net.mode !== "client") sfx("archerAttack");
+}
+
+function fireSoldierBullet(player, angle, options = {}) {
+  const bullet = {
+    id: crypto.randomUUID(),
+    x: (options.originX ?? player.x) + Math.sin(angle) * (options.offset ?? 1.1),
+    z: (options.originZ ?? player.z) + Math.cos(angle) * (options.offset ?? 1.1),
+    vx: Math.sin(angle) * (options.speed || 34),
+    vz: Math.cos(angle) * (options.speed || 34),
+    radius: options.radius || 0.16,
+    life: options.life || 0.9,
+    damage: player.damage * (options.damageScale || 1),
+    pierce: options.pierce || 0,
+    owner: player.id,
+    kind: options.kind || "soldierBullet",
+    angle,
+    hit: new Set(),
+    mesh: makeProjectileMesh({ kind: options.kind || "soldierBullet", radius: options.radius || 0.16 }),
+  };
+  bullet.mesh.rotation.y = angle;
+  bullet.mesh.position.set(bullet.x, 1.1, bullet.z);
+  scene.add(bullet.mesh);
+  state.arrows.push(bullet);
 }
 
 function shootArrows(player) {
@@ -2893,6 +3226,7 @@ function trackDebugBossKey(kind) {
 function attackSoundKey(character) {
   if (character === "witch") return "witchAttack";
   if (character === "saber") return "saberAttack";
+  if (character === "soldier") return "archerAttack";
   return "archerAttack";
 }
 
@@ -2900,6 +3234,7 @@ function skillSoundKey(character) {
   if (character === "witch") return "witchSkill";
   if (character === "saber") return "saberSkill";
   if (character === "ninja") return "ninjaSkill";
+  if (character === "soldier") return "saberSkill";
   return "archerSkill";
 }
 
@@ -2923,6 +3258,7 @@ function activateSkill(player) {
   if (player.character === "witch") castWitchSkill(player);
   else if (player.character === "saber") castSaberSkill(player, angle);
   else if (player.character === "ninja") castNinjaSkill(player, angle);
+  else if (player.character === "soldier") castSoldierSkill(player, angle);
   else castArcherSkill(player, angle);
   showSkillBanner(player.name, skillName(player.character));
   if (net.mode === "host") broadcast({ type: "skillBanner", playerName: player.name, skill: skillName(player.character) });
@@ -2933,6 +3269,7 @@ function skillName(character) {
   if (character === "witch") return "魔女の大爆発";
   if (character === "saber") return "回転突進斬り";
   if (character === "ninja") return "飛影八閃";
+  if (character === "soldier") return "戦車降下";
   return "アローレイン";
 }
 
@@ -3011,6 +3348,19 @@ function castNinjaSkill(player, baseAngle) {
       fireNinjaShuriken(player, base + offset, { skill: true, damageScale: 1.18, silent: true });
     }
   }
+}
+
+function castSoldierSkill(player, baseAngle) {
+  player.tankUntil = state.elapsed + 60;
+  player.tankDropUntil = state.elapsed + 0.65;
+  player.tankShellTimer = 0.25;
+  player.tankVulcanTimer = 0.15;
+  player.tankVulcanBurst = 1;
+  player.rifleReloadUntil = 0;
+  player.rifleAmmo = 30;
+  addRing(player.x, player.z, 4.2, 0xfacc15);
+  addScreenFlash(0x312e81, 0.18, 0.42);
+  fireTankShell(player, baseAngle);
 }
 
 function spawnEnemies(dt) {
@@ -3994,6 +4344,11 @@ function updateArrows(dt) {
     arrow.life -= dt;
     arrow.mesh.position.set(arrow.x, 1.1, arrow.z);
     if (arrow.kind === "shuriken") arrow.mesh.rotation.z += dt * 18;
+    if (arrow.kind === "grenade" && arrow.life <= 0 && !arrow.exploded) {
+      explodePlayerProjectile(arrow, arrow.explosionRadius || 2.8, arrow.explosionDamage || arrow.damage, 0xf97316);
+      arrow.exploded = true;
+    }
+    if (arrow.kind === "grenade") continue;
     for (const enemy of state.enemies) {
       if (arrow.hit.has(enemy)) continue;
       if (distance(arrow, enemy) < arrow.radius + enemyHitRadius(enemy)) {
@@ -4011,6 +4366,9 @@ function updateArrows(dt) {
           const splashDamage = arrow.damage * (0.35 + arrow.splash * 0.14);
           magicExplosion(enemy.x, enemy.z, splashRadius, splashDamage, arrow.chain || 0, arrow.owner, new Set([enemy.id || enemy]));
         }
+        if (arrow.kind === "tankShell") {
+          explodePlayerProjectile(arrow, arrow.explosionRadius || 3.2, arrow.explosionDamage || arrow.damage * 0.8, 0xfacc15);
+        }
         if (arrow.pierce <= 0) {
           arrow.life = 0;
           break;
@@ -4020,6 +4378,15 @@ function updateArrows(dt) {
     }
   }
   removeDead(state.arrows, (a) => a.life <= 0 || Math.abs(a.x) > WORLD.half + 4 || Math.abs(a.z) > WORLD.half + 4);
+}
+
+function explodePlayerProjectile(projectile, radius, damage, color = 0xf97316) {
+  addRing(projectile.x, projectile.z, radius, color);
+  for (const enemy of state.enemies) {
+    if (distance(projectile, enemy) <= radius + enemyHitRadius(enemy)) {
+      damageEnemy(enemy, damage, projectile.owner);
+    }
+  }
 }
 
 function projectileDamageMultiplier(projectile, target) {
@@ -5741,7 +6108,47 @@ function makeProjectileMesh(item = {}) {
   if (item.kind === "magic") return makeMagicMesh();
   if (item.kind === "flyingSlash") return makeFlyingSlashMesh(item);
   if (item.kind === "shuriken") return makeShurikenProjectileMesh(item);
+  if (item.kind === "soldierBullet" || item.kind === "vulcanBullet") return makeSoldierBulletMesh(item);
+  if (item.kind === "grenade") return makeGrenadeMesh(item);
+  if (item.kind === "tankShell") return makeTankShellMesh(item);
   return makeArrowMesh();
+}
+
+function makeSoldierBulletMesh(item = {}) {
+  const group = new THREE.Group();
+  const length = item.kind === "vulcanBullet" ? 0.82 : 0.62;
+  const core = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, length, 8), materials.bulletTracer.clone());
+  core.rotation.x = Math.PI / 2;
+  const glow = new THREE.Mesh(
+    new THREE.SphereGeometry(0.09, 10, 8),
+    new THREE.MeshBasicMaterial({ color: 0xfff7c2, transparent: true, opacity: 0.78, depthWrite: false })
+  );
+  glow.position.z = -length * 0.5;
+  group.add(core, glow);
+  return group;
+}
+
+function makeGrenadeMesh() {
+  const group = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 8), materials.grenade);
+  const pin = new THREE.Mesh(new THREE.TorusGeometry(0.12, 0.012, 6, 14), materials.saberBlade.clone());
+  pin.position.y = 0.18;
+  pin.rotation.x = Math.PI / 2;
+  group.add(body, pin);
+  return group;
+}
+
+function makeTankShellMesh() {
+  const group = new THREE.Group();
+  const shell = new THREE.Mesh(new THREE.CapsuleGeometry(0.16, 0.52, 6, 12), materials.shell);
+  shell.rotation.x = Math.PI / 2;
+  const glow = new THREE.Mesh(
+    new THREE.SphereGeometry(0.24, 14, 10),
+    new THREE.MeshBasicMaterial({ color: 0xffa21f, transparent: true, opacity: 0.32, depthWrite: false })
+  );
+  glow.position.z = 0.35;
+  group.add(shell, glow);
+  return group;
 }
 
 function makeShurikenProjectileMesh(item = {}) {
@@ -6824,7 +7231,9 @@ function updateUi() {
       ? `元素魔法`
       : player.character === "ninja"
         ? `刀 / 手裏剣${ninjaShurikenCount(player)}個 / 貫通${ninjaShurikenPierce(player)}`
-      : `${player.arrows}本 / 後方${player.backShots || 0}本 / 貫通${player.pierce}`;
+        : player.character === "soldier"
+          ? `ライフル ${Math.max(0, player.rifleAmmo ?? 30)}/30`
+          : `${player.arrows}本 / 後方${player.backShots || 0}本 / 貫通${player.pierce}`;
   const score = STAGES[state.stageId]?.scoreAttack ? ` / SCORE ${Math.floor(state.score || 0)}` : "";
   ui.build.textContent = `${characterName} / ${weapon} / 威力${Math.round(player.damage)} / ${buildSummary}${room}${revive}${score}`;
 }
@@ -6889,6 +7298,9 @@ function formatBuildSummary(player) {
   addCount("影分身の術");
   addCount("影分身", "影分身の術");
   addCount("口寄せの術");
+  addCount("グレネード");
+  addCount("ドローン支援");
+  addCount("火炎放射器");
   for (const [name, count] of counts) {
     if (handled.has(name)) continue;
     if (!upgrades.some((up) => up.name === name)) continue;
@@ -7294,6 +7706,8 @@ function sendHostSnapshot(force = false) {
       modelActionName: p.modelActionName, modelActionUntil: p.modelActionUntil,
       arrows: p.arrows, backShots: p.backShots, damage: p.damage, pierce: p.pierce,
       flyingSlash: p.flyingSlash, fumaShuriken: p.fumaShuriken, shadowClone: p.shadowClone, summonJutsu: p.summonJutsu,
+      rifleAmmo: p.rifleAmmo, rifleReloadUntil: p.rifleReloadUntil, grenade: p.grenade, droneSupport: p.droneSupport, flamethrower: p.flamethrower,
+      tankUntil: p.tankUntil, tankDropUntil: p.tankDropUntil, tankVulcanBurst: p.tankVulcanBurst,
       baseFireRate: p.baseFireRate, attackSpeedBonus: p.attackSpeedBonus, fireRate: p.fireRate,
       magicSplash: p.magicSplash, magicRadius: p.magicRadius, chainExplosion: p.chainExplosion, iceSpike: p.iceSpike, thunderCircle: p.thunderCircle,
       rerolls: p.rerolls, upgrades: p.upgrades,
@@ -7327,7 +7741,7 @@ function sendHostSnapshot(force = false) {
     linkReady: state.linkReady,
     linkCutsceneUntil: state.linkCutsceneUntil,
     score: state.score,
-    effects: state.effects.map((fx) => ({ id: fx.id, kind: fx.kind, summonKind: fx.summonKind, jutsuKind: fx.jutsuKind, linkKind: fx.linkKind, owner: fx.owner, skill: fx.skill, x: fx.x, z: fx.z, radius: fx.radius, arc: fx.arc, angle: fx.angle, length: fx.length, color: fx.color, life: fx.life, start: fx.start })),
+    effects: state.effects.filter((fx) => fx.kind !== "tempMesh").map((fx) => ({ id: fx.id, kind: fx.kind, summonKind: fx.summonKind, jutsuKind: fx.jutsuKind, linkKind: fx.linkKind, owner: fx.owner, skill: fx.skill, x: fx.x, z: fx.z, radius: fx.radius, arc: fx.arc, angle: fx.angle, length: fx.length, color: fx.color, life: fx.life, start: fx.start })),
   });
 }
 
@@ -7351,6 +7765,7 @@ function syncPlayers(players) {
       existingPlayer.mesh.userData.modelActionUntil = p.modelActionUntil || 0;
       animateHuman(existingPlayer, isSaberSpinning(existingPlayer) || Math.hypot(p.input?.dx || 0, p.input?.dz || 0) > 0.01, 0.033);
       setPlayerFlash(existingPlayer.mesh, playerFlashMode(existingPlayer));
+      syncSoldierTankVisual(existingPlayer);
       continue;
     }
     let mesh = state.renderCache.players.get(p.id);
@@ -7368,7 +7783,34 @@ function syncPlayers(players) {
     mesh.userData.modelActionUntil = p.modelActionUntil || 0;
     animateHumanMesh(mesh, isSaberSpinning(p) || Math.hypot(p.input?.dx || 0, p.input?.dz || 0) > 0.01, 0.033);
     setPlayerFlash(mesh, playerFlashMode(p));
+    syncSoldierTankVisual({ ...p, mesh });
   }
+}
+
+function syncSoldierTankVisual(player) {
+  if (player.character !== "soldier") {
+    if (player.tankMesh) {
+      scene.remove(player.tankMesh);
+      player.tankMesh = null;
+    }
+    return;
+  }
+  const active = state.elapsed < (player.tankUntil || 0);
+  if (!active) {
+    if (player.tankMesh) {
+      scene.remove(player.tankMesh);
+      player.tankMesh = null;
+    }
+    return;
+  }
+  if (!player.tankMesh) {
+    player.tankMesh = makeFbxMesh("tank", makeOldTankMesh);
+    scene.add(player.tankMesh);
+  }
+  const angle = typeof player.angle === "number" ? player.angle : Math.atan2((player.input?.aimX ?? player.x) - player.x, (player.input?.aimZ ?? player.z - 1) - player.z);
+  const dropLeft = Math.max(0, (player.tankDropUntil || 0) - state.elapsed);
+  player.tankMesh.position.set(player.x, dropLeft > 0 ? 5.5 * (dropLeft / 0.65) : 0, player.z);
+  player.tankMesh.rotation.y = angle;
 }
 
 function syncSimpleMeshes(cache, items, factory, y) {
@@ -7799,7 +8241,7 @@ function playerName() {
 function defaultProgress() {
   return {
     money: 0,
-    characters: { archer: true, witch: false, saber: false, ninja: false },
+    characters: { archer: true, witch: false, saber: false, ninja: false, soldier: false },
     stages: { stage1: true, stage2: false, stage3: false, extra: false },
     cleared: { stage1: false, stage2: false, stage3: false, extra: false },
     permanent: { power: 0, vitality: 0, speed: 0, magnet: 0, learning: 0 },
@@ -7925,7 +8367,7 @@ function isCharacterUnlocked(character) {
 }
 
 function isStageProgressUnlocked(stageId) {
-  if (stageId === "extra") return Boolean(progress.cleared?.stage3);
+  if (stageId === "extra") return Boolean(progress.cleared?.stage3 || debugModeEnabled);
   if (stageId === "stage3") return Boolean(progress.cleared?.stage2 || progress.stages.stage3 || stage3DebugUnlocked || debugModeEnabled);
   return Boolean(progress.stages[stageId]);
 }
@@ -7933,6 +8375,7 @@ function isStageProgressUnlocked(stageId) {
 function updateCharacterLocks() {
   if (!ui.characterSelect) return;
   ensureNinjaCharacterButton();
+  ensureSoldierCharacterButton();
   for (const button of ui.characterSelect.querySelectorAll("[data-character]")) {
     const character = button.dataset.character || "archer";
     const locked = !isCharacterUnlocked(character);
@@ -7952,6 +8395,15 @@ function ensureNinjaCharacterButton() {
   button.type = "button";
   button.dataset.character = "ninja";
   button.innerHTML = "<strong>忍者</strong><span>刀と手裏剣で戦う</span>";
+  ui.characterSelect.appendChild(button);
+}
+
+function ensureSoldierCharacterButton() {
+  if (!ui.characterSelect || ui.characterSelect.querySelector('[data-character="soldier"]')) return;
+  const button = document.createElement("button");
+  button.type = "button";
+  button.dataset.character = "soldier";
+  button.innerHTML = "<strong>ソルジャー</strong><span>銃火器と戦車で戦う</span>";
   ui.characterSelect.appendChild(button);
 }
 
@@ -8004,6 +8456,9 @@ function unlockStageClearRewards(stageId) {
   }
   if (stageId === "stage2" && !progress.characters.ninja) {
     showToast("ショップに忍者が入荷しました");
+  }
+  if (stageId === "stage3" && !progress.characters.soldier) {
+    showToast("ショップにソルジャーが入荷しました");
   }
 }
 
@@ -8606,12 +9061,14 @@ function upgradeDescForPlayer(up, player) {
     if (character === "witch") return "ファイア、魔力爆発、サンダーストーム、アイススパイク、魔女の大爆発の威力が増える。";
     if (character === "saber") return "薙ぎ払いの威力が増える。近づいた敵をまとめて倒しやすくなる。";
     if (character === "ninja") return "刀、手裏剣、飛影八閃の威力が増える。";
+    if (character === "soldier") return "ライフル、グレネード、ドローン、火炎放射、戦車の威力が増える。";
     return "矢の威力が増える。硬い敵に効きやすい。";
   }
   if (up.name === "攻撃速度 +18%") {
     if (character === "witch") return "ファイアを放つ間隔が短くなる。通常攻撃の回転率が上がる。";
     if (character === "saber") return "薙ぎ払いを出せる間隔が短くなる。隙を減らしやすい。";
     if (character === "ninja") return "刀と手裏剣を出す間隔が短くなる。";
+    if (character === "soldier") return "ライフルの連射間隔が短くなる。リロードの隙を火力で補いやすい。";
     return "矢を撃つ間隔が短くなる。";
   }
   return up.desc;
