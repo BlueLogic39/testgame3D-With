@@ -1145,7 +1145,8 @@ function makePlayer(id, name, x, z, local, character = "archer") {
     droneTimer: 0,
     flamethrower: 0,
     flamethrowerTimer: 10,
-    tankUntil: 0,
+  tankUntil: 0,
+  tankActive: false,
     tankShellTimer: 0,
     tankVulcanTimer: 0,
     tankVulcanBurst: 0,
@@ -2375,14 +2376,23 @@ function throwSoldierGrenade(player, index = 0, count = 1) {
   if (!target) return;
   const base = Math.atan2(target.x - player.x, target.z - player.z);
   const angle = base + (index - (count - 1) / 2) * 0.22;
+  const distanceToTarget = Math.hypot(target.x - player.x, target.z - player.z);
+  const flightTime = clamp(distanceToTarget / 12, 0.72, 1.18);
+  const horizontalSpeed = distanceToTarget / flightTime;
+  const gravity = 15;
   const grenade = {
     id: crypto.randomUUID(),
     x: player.x + Math.sin(angle) * 0.9,
+    y: 1.25,
     z: player.z + Math.cos(angle) * 0.9,
-    vx: Math.sin(angle) * 6.5,
-    vz: Math.cos(angle) * 6.5,
+    vx: Math.sin(angle) * horizontalSpeed,
+    vy: gravity * flightTime * 0.48,
+    vz: Math.cos(angle) * horizontalSpeed,
+    gravity,
     radius: 0.28,
     life: 2,
+    airLife: flightTime + 0.35,
+    landed: false,
     damage: player.damage * (2.2 + (player.grenade || 0) * 0.24),
     explosionDamage: player.damage * (3.6 + (player.grenade || 0) * 0.42),
     explosionRadius: 2.4 + (player.grenade || 0) * 0.16,
@@ -2393,7 +2403,7 @@ function throwSoldierGrenade(player, index = 0, count = 1) {
     hit: new Set(),
     mesh: makeProjectileMesh({ kind: "grenade" }),
   };
-  grenade.mesh.position.set(grenade.x, 1.1, grenade.z);
+  grenade.mesh.position.set(grenade.x, grenade.y, grenade.z);
   scene.add(grenade.mesh);
   state.arrows.push(grenade);
 }
@@ -2465,10 +2475,39 @@ function isSoldierInTank(player) {
   return player?.character === "soldier" && state.elapsed < (player.tankUntil || 0);
 }
 
+function setSoldierTankForm(player, active) {
+  if (!player?.mesh) return;
+  if (player.tankActive === active) return;
+  player.tankActive = active;
+  const parts = player.mesh.userData.parts;
+  const labelObjects = new Set(player.mesh.children.filter((child) => child.type === "Sprite"));
+  if (!parts) return;
+  if (!active) {
+    setPlayerDeadVisual(player, Boolean(parts.coffin?.visible));
+    return;
+  }
+  for (const child of player.mesh.children) {
+    if (labelObjects.has(child)) continue;
+    if (child === parts.coffin) {
+      child.visible = false;
+      continue;
+    }
+    child.visible = !active;
+  }
+}
+
+function tankVisualScale(mesh) {
+  if (!mesh || mesh.userData.tankScaled) return;
+  mesh.scale.multiplyScalar(4);
+  mesh.userData.tankScaled = true;
+}
+
 function updateSoldierTank(player, dt) {
   if (player.character !== "soldier") return;
   const active = isSoldierInTank(player);
   if (!active) {
+    player.radius = 1.05;
+    setSoldierTankForm(player, false);
     if (player.tankMesh) {
       scene.remove(player.tankMesh);
       player.tankMesh = null;
@@ -2477,13 +2516,18 @@ function updateSoldierTank(player, dt) {
   }
   if (!player.tankMesh) {
     player.tankMesh = makeFbxMesh("tank", makeOldTankMesh);
+    tankVisualScale(player.tankMesh);
     scene.add(player.tankMesh);
   }
   const angle = Math.atan2(player.input.aimX - player.x, player.input.aimZ - player.z);
   const dropLeft = Math.max(0, (player.tankDropUntil || 0) - state.elapsed);
-  const dropY = dropLeft > 0 ? 5.5 * (dropLeft / 0.65) : 0;
+  const dropY = dropLeft > 0 ? 8.5 * (dropLeft / 0.65) : 0;
   player.tankMesh.position.set(player.x, dropY, player.z);
   player.tankMesh.rotation.y = angle;
+  const grounded = dropLeft <= 0;
+  setSoldierTankForm(player, grounded);
+  if (!grounded) return;
+  player.radius = 2.3;
   player.invincibleUntil = Math.max(player.invincibleUntil || 0, state.elapsed + 0.12);
   player.tankShellTimer = (player.tankShellTimer || 0) - dt;
   if (player.tankShellTimer <= 0) {
@@ -3383,7 +3427,7 @@ function castNinjaSkill(player, baseAngle) {
 }
 
 function castSoldierSkill(player, baseAngle) {
-  player.tankUntil = state.elapsed + 60;
+  player.tankUntil = state.elapsed + 10;
   player.tankDropUntil = state.elapsed + 0.65;
   player.tankShellTimer = 0.25;
   player.tankVulcanTimer = 0.15;
@@ -4371,16 +4415,15 @@ function allPlayersDead() {
 
 function updateArrows(dt) {
   for (const arrow of state.arrows) {
+    if (arrow.kind === "grenade") {
+      updateGrenadeProjectile(arrow, dt);
+      continue;
+    }
     arrow.x += arrow.vx * dt;
     arrow.z += arrow.vz * dt;
     arrow.life -= dt;
     arrow.mesh.position.set(arrow.x, 1.1, arrow.z);
     if (arrow.kind === "shuriken") arrow.mesh.rotation.z += dt * 18;
-    if (arrow.kind === "grenade" && arrow.life <= 0 && !arrow.exploded) {
-      explodePlayerProjectile(arrow, arrow.explosionRadius || 2.8, arrow.explosionDamage || arrow.damage, 0xf97316);
-      arrow.exploded = true;
-    }
-    if (arrow.kind === "grenade") continue;
     for (const enemy of state.enemies) {
       if (arrow.hit.has(enemy)) continue;
       if (distance(arrow, enemy) < arrow.radius + enemyHitRadius(enemy)) {
@@ -4410,6 +4453,35 @@ function updateArrows(dt) {
     }
   }
   removeDead(state.arrows, (a) => a.life <= 0 || Math.abs(a.x) > WORLD.half + 4 || Math.abs(a.z) > WORLD.half + 4);
+}
+
+function updateGrenadeProjectile(grenade, dt) {
+  if (!grenade.landed) {
+    grenade.airLife = (grenade.airLife || 0) - dt;
+    grenade.x += (grenade.vx || 0) * dt;
+    grenade.z += (grenade.vz || 0) * dt;
+    grenade.y = (grenade.y ?? 1.1) + (grenade.vy || 0) * dt;
+    grenade.vy = (grenade.vy || 0) - (grenade.gravity || 15) * dt;
+    grenade.mesh.rotation.x += dt * 8;
+    grenade.mesh.rotation.z += dt * 5;
+    if (grenade.y <= 0.34 || grenade.airLife <= 0) {
+      grenade.y = 0.34;
+      grenade.vx = 0;
+      grenade.vz = 0;
+      grenade.vy = 0;
+      grenade.landed = true;
+      grenade.life = 2;
+      addRing(grenade.x, grenade.z, 0.75, 0xf97316);
+    }
+  } else {
+    grenade.life -= dt;
+    grenade.mesh.rotation.x *= Math.max(0, 1 - dt * 8);
+    if (grenade.life <= 0 && !grenade.exploded) {
+      explodePlayerProjectile(grenade, grenade.explosionRadius || 2.8, grenade.explosionDamage || grenade.damage, 0xf97316);
+      grenade.exploded = true;
+    }
+  }
+  grenade.mesh.position.set(grenade.x, grenade.y ?? 0.34, grenade.z);
 }
 
 function explodePlayerProjectile(projectile, radius, damage, color = 0xf97316) {
@@ -7014,7 +7086,7 @@ function playSound(kind, options = {}) {
   const base = audio.sounds[kind];
   if (base) {
     const sound = base.cloneNode();
-    const volumeBoost = 1;
+    const volumeBoost = kind === "soldierRifle" ? 1 / 3 : 1;
     sound.volume = Math.min(1, effectiveSeVolume() * volumeBoost);
     if (kind === "victory" || kind === "gameover") {
       audio.activeSounds.add(sound);
@@ -7759,7 +7831,7 @@ function sendHostSnapshot(force = false) {
       dragonTailSweepStart: e.dragonTailSweepStart, dragonTailSweepUntil: e.dragonTailSweepUntil,
       dragonTailBaseAngle: e.dragonTailBaseAngle, hitboxFlash: e.hitboxFlash,
     })),
-    arrows: state.arrows.map((a) => ({ id: a.id, x: a.x, z: a.z, angle: a.angle, kind: a.kind, radius: a.radius, owner: a.owner, skill: a.skill, fuma: a.fuma })),
+    arrows: state.arrows.map((a) => ({ id: a.id, x: a.x, y: a.y, z: a.z, angle: a.angle, kind: a.kind, radius: a.radius, owner: a.owner, skill: a.skill, fuma: a.fuma, landed: a.landed })),
     bullets: state.enemyBullets.map((b) => ({ id: b.id, x: b.x, z: b.z, kind: b.kind, colorIndex: b.colorIndex, angle: b.angle })),
     gems: state.gems.map((g) => ({ id: g.id, x: g.x, z: g.z, kind: g.kind, forceTarget: g.forceTarget })),
     hearts: state.hearts.map((h) => ({ id: h.id, x: h.x, z: h.z })),
@@ -7826,6 +7898,7 @@ function syncPlayers(players) {
 function syncSoldierTankVisual(player) {
   const holder = player.mesh?.userData || player;
   if (player.character !== "soldier") {
+    setSoldierTankForm(player, false);
     if (holder.tankMesh) {
       scene.remove(holder.tankMesh);
       holder.tankMesh = null;
@@ -7834,6 +7907,7 @@ function syncSoldierTankVisual(player) {
   }
   const active = state.elapsed < (player.tankUntil || 0);
   if (!active) {
+    setSoldierTankForm(player, false);
     if (holder.tankMesh) {
       scene.remove(holder.tankMesh);
       holder.tankMesh = null;
@@ -7842,12 +7916,14 @@ function syncSoldierTankVisual(player) {
   }
   if (!holder.tankMesh) {
     holder.tankMesh = makeFbxMesh("tank", makeOldTankMesh);
+    tankVisualScale(holder.tankMesh);
     scene.add(holder.tankMesh);
   }
   const angle = typeof player.angle === "number" ? player.angle : Math.atan2((player.input?.aimX ?? player.x) - player.x, (player.input?.aimZ ?? player.z - 1) - player.z);
   const dropLeft = Math.max(0, (player.tankDropUntil || 0) - state.elapsed);
-  holder.tankMesh.position.set(player.x, dropLeft > 0 ? 5.5 * (dropLeft / 0.65) : 0, player.z);
+  holder.tankMesh.position.set(player.x, dropLeft > 0 ? 8.5 * (dropLeft / 0.65) : 0, player.z);
   holder.tankMesh.rotation.y = angle;
+  setSoldierTankForm(player, dropLeft <= 0);
 }
 
 function syncSimpleMeshes(cache, items, factory, y) {
@@ -7894,6 +7970,8 @@ function syncSimpleMeshes(cache, items, factory, y) {
     } else if (item.enemyType === "castleMage" || item.enemyType?.startsWith("castle")) {
       const bob = Math.sin(state.elapsed * 8.5 + (item.walkSeed || 0)) * 0.08;
       mesh.position.set(item.x, (item.radius || 0.9) + bob, item.z);
+    } else if (typeof item.y === "number") {
+      mesh.position.set(item.x, item.y, item.z);
     } else {
       mesh.position.set(item.x, y || item.radius || 0.6, item.z);
     }
