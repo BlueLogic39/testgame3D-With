@@ -519,6 +519,19 @@ canvas {
   text-align: left;
 }
 
+#shopPanel {
+  align-content: start;
+  place-items: center;
+  overflow-y: auto;
+  padding-top: 28px;
+  padding-bottom: 36px;
+}
+
+#shopPanel h2,
+#shopPanel .shop-money {
+  width: min(760px, 100%);
+}
+
 .shop-card {
   display: grid;
   gap: 7px;

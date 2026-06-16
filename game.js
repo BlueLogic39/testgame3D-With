@@ -294,7 +294,7 @@ const FBX_ASSETS = {
   knightBossHelmet: { path: "./model_FBX/KNIGHT/Helmet3.fbx", size: 0.78, position: [0, 2.68, 0.03], rotation: [0, 0, 0], scale: [1, 1, 1] },
   knightBossShoulders: { path: "./model_FBX/KNIGHT/ShoulderPads.fbx", size: 1.15, position: [0, 2.08, 0.02], rotation: [0, 0, 0], scale: [1, 1, 1] },
   knightBossSword: { path: "./model_FBX/KNIGHT/Sword.fbx", size: 1.35, position: [0.95, 1.2, 0.2], rotation: [0, 0, -0.55], scale: [1, 1, 1] },
-  assaultRifle: { path: "./model_FBX/Buki/AssaultRifle_2.fbx", size: 1.1, position: [0.55, 1.18, 0.16], rotation: [0, Math.PI / 2, -0.12], scale: [1, 1, 1] },
+  assaultRifle: { path: "./model_FBX/Buki/AssaultRifle_2.fbx", size: 1.1, position: [0.55, 1.18, 0.16], rotation: [0, -Math.PI / 2, -0.12], scale: [1, 1, 1] },
   tank: { path: "./model_FBX/Tank/Tank.fbx", size: 3.9, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], groundOffset: 0 },
 };
 
@@ -406,7 +406,7 @@ upgrades.push(
   { name: "風魔手裏剣", desc: "手裏剣が風をまとい、取得するたび威力+15%、大きさ+0.1、飛距離が少し伸びる。命中した敵を真空の刃で切り刻む。", classes: ["ninja"], apply: (p) => (p.fumaShuriken += 1) },
   { name: "影分身の術", desc: "離れた場所に分身を召喚し、火遁、雷遁、水遁、土遁を順番に放つ。Lv3とLv5で分身が増える。", classes: ["ninja"], apply: (p) => (p.shadowClone += 1) },
   { name: "口寄せの術", desc: "3種類の生物からランダムに1匹を呼び出し範囲攻撃を行う。取得するたび持続時間、範囲、威力が少し伸びる。", classes: ["ninja"], apply: (p) => (p.summonJutsu += 1) },
-  { name: "グレネード", desc: "3秒ごとに近くの敵へ投げる。2秒後に爆発。Lv3で2個、Lv5で3個投げる。", classes: ["soldier"], apply: (p) => (p.grenade += 1) },
+  { name: "グレネード", desc: "3秒ごとに近くの敵へ分散して投げる。Lv3で2個、Lv5で3個。取得するたび威力と爆発範囲が少し伸びる。", classes: ["soldier"], apply: (p) => (p.grenade += 1) },
   { name: "ドローン支援", desc: "ファンネルのように周囲を浮遊する小型ドローンが機銃掃射。取得するたびドローン+1、威力も少し上がる。", classes: ["soldier"], apply: (p) => (p.droneSupport += 1) },
   { name: "火炎放射器", desc: "10秒ごとに周囲へ火炎放射。取得するたび範囲と威力が少し伸びる。", classes: ["soldier"], apply: (p) => (p.flamethrower += 1) }
 );
@@ -2140,8 +2140,12 @@ function linkSkillType(a, b) {
   if (key === "saber+witch") return "thunderSpin";
   if (key === "archer+saber") return "crossJudgement";
   if (key === "archer+ninja") return "shadowArrow";
+  if (key === "archer+soldier") return "suppressingRain";
   if (key === "ninja+witch") return "mistStorm";
   if (key === "ninja+saber") return "twinIaido";
+  if (key === "soldier+witch") return "arcaneArtillery";
+  if (key === "saber+soldier") return "bladeCover";
+  if (key === "ninja+soldier") return "shadowSuppress";
   return "resonance";
 }
 
@@ -2151,8 +2155,12 @@ function linkSkillName(type) {
     thunderSpin: "雷旋斬",
     crossJudgement: "穿月十字斬",
     shadowArrow: "矢影一閃",
+    suppressingRain: "制圧矢弾雨",
     mistStorm: "魔影霧雷",
     twinIaido: "双影居合",
+    arcaneArtillery: "魔導榴弾砲",
+    bladeCover: "装甲剣閃突破",
+    shadowSuppress: "影火器掃討",
     resonance: "共鳴連携",
   }[type] || "リンクスキル";
 }
@@ -2170,8 +2178,12 @@ function castLinkSkill(type, a, b) {
   else if (type === "thunderSpin") castThunderSpinLink(a, b, center);
   else if (type === "crossJudgement") castCrossJudgementLink(a, b, center);
   else if (type === "shadowArrow") castShadowArrowLink(a, b, center);
+  else if (type === "suppressingRain") castSuppressingRainLink(a, b, center);
   else if (type === "mistStorm") castMistStormLink(a, b, center);
   else if (type === "twinIaido") castTwinIaidoLink(a, b, center);
+  else if (type === "arcaneArtillery") castArcaneArtilleryLink(a, b, center);
+  else if (type === "bladeCover") castBladeCoverLink(a, b, center);
+  else if (type === "shadowSuppress") castShadowSuppressLink(a, b, center);
   else {
     damageEnemiesInCircle(center.x, center.z, 10, (a.damage + b.damage) * 2.4, a.id);
     addLinkEffect("resonance", center.x, center.z, 10, 0, 1.1);
@@ -2222,6 +2234,18 @@ function castShadowArrowLink(a, b, center) {
   addLinkEffect("shadowArrow", center.x, center.z, 9.5, 0, 1.0);
 }
 
+function castSuppressingRainLink(a, b, center) {
+  sfx("archerSkill", { broadcast: net.mode === "host" });
+  sfx("soldierRifle", { broadcast: net.mode === "host" });
+  addLinkEffect("suppressingRain", center.x, center.z, 13, 0, 1.2);
+  damageEnemiesInCircle(center.x, center.z, 13, (a.damage + b.damage) * 1.6, a.id);
+  for (let i = 0; i < 36; i += 1) {
+    const angle = (Math.PI * 2 * i) / 36;
+    const originRadius = 2.5 + (i % 6) * 1.15;
+    fireLinkProjectile(center.x + Math.sin(angle) * originRadius, center.z + Math.cos(angle) * originRadius, angle, (a.damage + b.damage) * 0.8, a.id, "suppressingRain");
+  }
+}
+
 function castMistStormLink(a, b, center) {
   sfx("witchSkill", { broadcast: net.mode === "host" });
   sfx("ninjaSkill", { broadcast: net.mode === "host" });
@@ -2236,6 +2260,22 @@ function castMistStormLink(a, b, center) {
   }
 }
 
+function castArcaneArtilleryLink(a, b, center) {
+  sfx("witchSkill", { broadcast: net.mode === "host" });
+  sfx("soldierGrenadeExplosion", { broadcast: net.mode === "host" });
+  const radius = 12;
+  addLinkEffect("arcaneArtillery", center.x, center.z, radius, 0, 1.35);
+  const targets = state.enemies
+    .filter((enemy) => enemy.hp > 0 && distance(center, enemy) <= radius + enemyHitRadius(enemy))
+    .sort((left, right) => distance(center, left) - distance(center, right))
+    .slice(0, 8);
+  for (let i = 0; i < Math.max(6, targets.length); i += 1) {
+    const target = targets[i] || { x: center.x + Math.sin((Math.PI * 2 * i) / 6) * 5.5, z: center.z + Math.cos((Math.PI * 2 * i) / 6) * 5.5 };
+    magicExplosion(target.x, target.z, 2.8, (a.damage + b.damage) * 1.25, 1, a.id, new Set());
+    addRing(target.x, target.z, 2.8, 0xff8a22);
+  }
+}
+
 function castTwinIaidoLink(a, b, center) {
   sfx("saberSkill", { broadcast: net.mode === "host" });
   sfx("ninjaSkill", { broadcast: net.mode === "host" });
@@ -2243,6 +2283,35 @@ function castTwinIaidoLink(a, b, center) {
     const length = 24;
     damageEnemiesOnLine(center.x - Math.sin(angle) * length * 0.5, center.z - Math.cos(angle) * length * 0.5, center.x + Math.sin(angle) * length * 0.5, center.z + Math.cos(angle) * length * 0.5, 2.8, (a.damage + b.damage) * 2.35, a.id);
     addLinkEffect("twinIaido", center.x, center.z, length, angle, 0.95);
+  }
+}
+
+function castBladeCoverLink(a, b, center) {
+  sfx("saberSkill", { broadcast: net.mode === "host" });
+  sfx("soldierTankFire", { broadcast: net.mode === "host" });
+  addLinkEffect("bladeCover", center.x, center.z, 11.5, 0, 1.15);
+  for (const angle of [0, Math.PI / 2, Math.PI / 4, -Math.PI / 4, Math.PI * 0.75, -Math.PI * 0.75]) {
+    const length = 25;
+    damageEnemiesOnLine(center.x - Math.sin(angle) * length * 0.45, center.z - Math.cos(angle) * length * 0.45, center.x + Math.sin(angle) * length * 0.55, center.z + Math.cos(angle) * length * 0.55, 2.4, (a.damage + b.damage) * 1.8, a.id);
+    addLinkEffect("bladeCover", center.x, center.z, length * 0.45, angle, 0.85);
+  }
+}
+
+function castShadowSuppressLink(a, b, center) {
+  sfx("ninjaSkill", { broadcast: net.mode === "host" });
+  sfx("soldierRifle", { broadcast: net.mode === "host" });
+  const radius = 12.5;
+  addLinkEffect("shadowSuppress", center.x, center.z, radius, 0, 1.25);
+  for (const enemy of state.enemies) {
+    if (enemy.hp <= 0 || distance(center, enemy) > radius + enemyHitRadius(enemy)) continue;
+    enemy.slowUntil = Math.max(enemy.slowUntil || 0, state.elapsed + 2.8);
+    enemy.attackSlowUntil = Math.max(enemy.attackSlowUntil || 0, state.elapsed + 2.8);
+    enemy.attackSlowFactor = Math.max(enemy.attackSlowFactor || 0, 0.45);
+    damageEnemy(enemy, (a.damage + b.damage) * 1.65, a.id);
+  }
+  for (let i = 0; i < 24; i += 1) {
+    const angle = (Math.PI * 2 * i) / 24 + (i % 2) * 0.08;
+    fireLinkProjectile(center.x, center.z, angle, (a.damage + b.damage) * 0.95, a.id, "shadowSuppress");
   }
 }
 
@@ -2358,6 +2427,10 @@ function castShadowCloneJutsu(player, level) {
 
 function updateSoldierSupport(player, dt) {
   if (player.character !== "soldier") return;
+  if (isSoldierInTank(player)) {
+    updateSoldierDroneVisuals(player, 0);
+    return;
+  }
   updateSoldierGrenades(player, dt);
   updateSoldierDrones(player, dt);
   updateSoldierFlamethrower(player, dt);
@@ -2371,16 +2444,27 @@ function updateSoldierGrenades(player, dt) {
   const count = level >= 5 ? 3 : level >= 3 ? 2 : 1;
   triggerPlayerModelAction(player, "SwordSlash", 0.42, { timeScale: 1.5 });
   if (player.local || net.mode !== "client") sfx("soldierGrenade", { broadcast: net.mode === "host" });
-  for (let i = 0; i < count; i += 1) throwSoldierGrenade(player, i, count);
+  const targets = soldierGrenadeTargets(player, count);
+  for (let i = 0; i < count; i += 1) throwSoldierGrenade(player, targets[i] || targets[0], i, count, targets.length < count);
   player.grenadeTimer = 3;
 }
 
-function throwSoldierGrenade(player, index = 0, count = 1) {
-  const target = nearestEnemy(player, 18);
+function soldierGrenadeTargets(player, count) {
+  return state.enemies
+    .filter((enemy) => enemy.hp > 0 && distance(player, enemy) <= 18 + enemyHitRadius(enemy))
+    .sort((a, b) => distance(player, a) - distance(player, b))
+    .slice(0, count);
+}
+
+function throwSoldierGrenade(player, target, index = 0, count = 1, scatterFallback = false) {
   if (!target) return;
-  const base = Math.atan2(target.x - player.x, target.z - player.z);
-  const angle = base + (index - (count - 1) / 2) * 0.22;
-  const distanceToTarget = Math.hypot(target.x - player.x, target.z - player.z);
+  const fallbackSpread = scatterFallback && count > 1 ? (index - (count - 1) / 2) * 0.42 : 0;
+  const scatterDistance = scatterFallback ? 1.8 : 0;
+  const targetX = target.x + Math.sin(fallbackSpread) * scatterDistance;
+  const targetZ = target.z + Math.cos(fallbackSpread) * scatterDistance;
+  const base = Math.atan2(targetX - player.x, targetZ - player.z);
+  const angle = base;
+  const distanceToTarget = Math.hypot(targetX - player.x, targetZ - player.z);
   const flightTime = clamp(distanceToTarget / 12, 0.72, 1.18);
   const horizontalSpeed = distanceToTarget / flightTime;
   const gravity = 15;
@@ -2397,9 +2481,9 @@ function throwSoldierGrenade(player, index = 0, count = 1) {
     life: 2,
     airLife: flightTime + 0.35,
     landed: false,
-    damage: player.damage * (2.2 + (player.grenade || 0) * 0.24),
-    explosionDamage: player.damage * (3.6 + (player.grenade || 0) * 0.42),
-    explosionRadius: 2.4 + (player.grenade || 0) * 0.16,
+    damage: player.damage * (2.2 + (player.grenade || 0) * 0.3),
+    explosionDamage: player.damage * (3.6 + (player.grenade || 0) * 0.52),
+    explosionRadius: 2.4 + (player.grenade || 0) * 0.2,
     pierce: 0,
     owner: player.id,
     kind: "grenade",
@@ -6825,8 +6909,12 @@ function makeLinkEffectMesh(effect = {}) {
     thunderSpin: 0x7dd3fc,
     crossJudgement: 0xfff0a6,
     shadowArrow: 0x2dd4bf,
+    suppressingRain: 0xfacc15,
     mistStorm: 0xa78bfa,
     twinIaido: 0xe5e7eb,
+    arcaneArtillery: 0xff6b2c,
+    bladeCover: 0x93c5fd,
+    shadowSuppress: 0x38bdf8,
     resonance: 0xf2c14e,
   }[kind] || 0xf2c14e;
   const group = new THREE.Group();
@@ -6843,12 +6931,22 @@ function makeLinkEffectMesh(effect = {}) {
       flame.rotation.x = Math.PI;
       group.add(flame);
     }
-  } else if (kind === "thunderSpin") {
+  } else if (kind === "thunderSpin" || kind === "bladeCover") {
     for (let i = 0; i < 10; i += 1) {
       const bolt = makeThunderBoltMesh();
       const a = (Math.PI * 2 * i) / 10;
       bolt.position.set(Math.sin(a) * radius * 0.58, 0, Math.cos(a) * radius * 0.58);
       group.add(bolt);
+    }
+  } else if (kind === "suppressingRain" || kind === "arcaneArtillery" || kind === "shadowSuppress") {
+    const count = kind === "arcaneArtillery" ? 14 : 18;
+    for (let i = 0; i < count; i += 1) {
+      const tracer = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, radius * 0.52, 8), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.48, depthWrite: false, blending: THREE.AdditiveBlending }));
+      const a = (Math.PI * 2 * i) / count;
+      tracer.rotation.x = Math.PI / 2;
+      tracer.rotation.z = a;
+      tracer.position.set(Math.sin(a) * radius * 0.22, 0.42 + (i % 3) * 0.08, Math.cos(a) * radius * 0.22);
+      group.add(tracer);
     }
   } else {
     const count = kind === "mistStorm" ? 18 : 8;
@@ -7926,7 +8024,7 @@ function syncPlayers(players) {
       animateHuman(existingPlayer, isSaberSpinning(existingPlayer) || Math.hypot(p.input?.dx || 0, p.input?.dz || 0) > 0.01, 0.033);
       setPlayerFlash(existingPlayer.mesh, playerFlashMode(existingPlayer));
       syncSoldierTankVisual(existingPlayer);
-      updateSoldierDroneVisuals(existingPlayer, existingPlayer.character === "soldier" ? existingPlayer.droneSupport || 0 : 0);
+      updateSoldierDroneVisuals(existingPlayer, existingPlayer.character === "soldier" && !isSoldierInTank(existingPlayer) ? existingPlayer.droneSupport || 0 : 0);
       continue;
     }
     let mesh = state.renderCache.players.get(p.id);
@@ -7945,7 +8043,7 @@ function syncPlayers(players) {
     animateHumanMesh(mesh, isSaberSpinning(p) || Math.hypot(p.input?.dx || 0, p.input?.dz || 0) > 0.01, 0.033);
     setPlayerFlash(mesh, playerFlashMode(p));
     syncSoldierTankVisual({ ...p, mesh });
-    updateSoldierDroneVisuals({ ...p, mesh }, p.character === "soldier" ? p.droneSupport || 0 : 0);
+    updateSoldierDroneVisuals({ ...p, mesh }, p.character === "soldier" && !(state.elapsed < (p.tankUntil || 0)) ? p.droneSupport || 0 : 0);
   }
 }
 
@@ -8572,7 +8670,7 @@ function ensureSoldierCharacterButton() {
   const button = document.createElement("button");
   button.type = "button";
   button.dataset.character = "soldier";
-  button.innerHTML = "<strong>ソルジャー</strong><span>銃火器と戦車で戦う</span>";
+  button.innerHTML = "<strong>ソルジャー</strong><span>銃火器と兵器支援で戦う</span>";
   ui.characterSelect.appendChild(button);
 }
 
