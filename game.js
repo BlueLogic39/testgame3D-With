@@ -113,6 +113,7 @@ const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 let pointerOnCanvas = false;
 const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+const TANK_ROTATION_OFFSET = Math.PI / 2;
 
 let scene;
 let camera;
@@ -406,7 +407,7 @@ upgrades.push(
   { name: "影分身の術", desc: "離れた場所に分身を召喚し、火遁、雷遁、水遁、土遁を順番に放つ。Lv3とLv5で分身が増える。", classes: ["ninja"], apply: (p) => (p.shadowClone += 1) },
   { name: "口寄せの術", desc: "3種類の生物からランダムに1匹を呼び出し範囲攻撃を行う。取得するたび持続時間、範囲、威力が少し伸びる。", classes: ["ninja"], apply: (p) => (p.summonJutsu += 1) },
   { name: "グレネード", desc: "3秒ごとに近くの敵へ投げる。2秒後に爆発。Lv3で2個、Lv5で3個投げる。", classes: ["soldier"], apply: (p) => (p.grenade += 1) },
-  { name: "ドローン支援", desc: "小型ドローンが追従して機銃掃射する。取得するたびドローン+1、威力も少し上がる。", classes: ["soldier"], apply: (p) => (p.droneSupport += 1) },
+  { name: "ドローン支援", desc: "ファンネルのように周囲を浮遊する小型ドローンが機銃掃射。取得するたびドローン+1、威力も少し上がる。", classes: ["soldier"], apply: (p) => (p.droneSupport += 1) },
   { name: "火炎放射器", desc: "10秒ごとに周囲へ火炎放射。取得するたび範囲と威力が少し伸びる。", classes: ["soldier"], apply: (p) => (p.flamethrower += 1) }
 );
 
@@ -1531,13 +1532,16 @@ function cloneFbxModel(model, key) {
 function styleSoldierFbxModel(model, key) {
   model.traverse((child) => {
     if (!child.isMesh || !child.material) return;
+    const partName = `${child.name || ""} ${child.parent?.name || ""}`.toLowerCase();
     const mats = Array.isArray(child.material) ? child.material : [child.material];
     for (const material of mats) {
       if (!material.color) continue;
       if (key === "tank") {
-        material.color.setHex(0x4b5563);
-        if ("roughness" in material) material.roughness = 0.62;
-        if ("metalness" in material) material.metalness = 0.24;
+        const trackLike = /track|tread|wheel|caterpillar|chain|belt|履帯/.test(partName);
+        const barrelLike = /barrel|gun|cannon|砲/.test(partName);
+        material.color.setHex(trackLike ? 0x202522 : barrelLike ? 0x30362f : 0x4b5541);
+        if ("roughness" in material) material.roughness = 0.68;
+        if ("metalness" in material) material.metalness = trackLike || barrelLike ? 0.34 : 0.18;
       } else {
         material.color.setHex(0x2f343b);
         if ("roughness" in material) material.roughness = 0.5;
@@ -2410,6 +2414,7 @@ function throwSoldierGrenade(player, index = 0, count = 1) {
 
 function updateSoldierDrones(player, dt) {
   const level = player.droneSupport || 0;
+  updateSoldierDroneVisuals(player, level);
   if (level <= 0) return;
   player.droneTimer = (player.droneTimer || 0) - dt;
   if (player.droneTimer > 0) return;
@@ -2434,6 +2439,47 @@ function updateSoldierDrones(player, dt) {
     });
   }
   player.droneTimer = Math.max(0.22, 0.42 - level * 0.025);
+}
+
+function makeSoldierDroneMesh() {
+  const group = new THREE.Group();
+  const core = new THREE.Mesh(
+    new THREE.SphereGeometry(0.24, 14, 10),
+    new THREE.MeshStandardMaterial({ color: 0x9ca3af, roughness: 0.38, metalness: 0.55 })
+  );
+  const wingMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.45, metalness: 0.4 });
+  const wingA = new THREE.Mesh(new THREE.BoxGeometry(0.86, 0.045, 0.16), wingMat);
+  const wingB = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.045, 0.86), wingMat.clone());
+  const eye = new THREE.Mesh(new THREE.SphereGeometry(0.075, 8, 6), new THREE.MeshBasicMaterial({ color: 0x67e8f9 }));
+  eye.position.set(0, 0.02, -0.24);
+  group.add(core, wingA, wingB, eye);
+  group.traverse((child) => {
+    if (child.isMesh) child.castShadow = true;
+  });
+  return group;
+}
+
+function updateSoldierDroneVisuals(player, level) {
+  const holder = player.mesh?.userData;
+  if (!holder) return;
+  holder.droneMeshes ||= [];
+  while (holder.droneMeshes.length > level) {
+    const drone = holder.droneMeshes.pop();
+    player.mesh.remove(drone);
+  }
+  while (holder.droneMeshes.length < level) {
+    const drone = makeSoldierDroneMesh();
+    player.mesh.add(drone);
+    holder.droneMeshes.push(drone);
+  }
+  const count = Math.max(1, level);
+  holder.droneMeshes.forEach((drone, i) => {
+    const angle = (Math.PI * 2 * i) / count + state.elapsed * 1.75;
+    const radius = 2.15 + Math.min(1.2, level * 0.08);
+    drone.position.set(Math.sin(angle) * radius, 2.15 + Math.sin(state.elapsed * 5.5 + i) * 0.16, Math.cos(angle) * radius);
+    drone.rotation.y = -player.mesh.rotation.y + angle + Math.PI;
+    drone.rotation.z = Math.sin(state.elapsed * 7 + i) * 0.12;
+  });
 }
 
 function addDroneEffect(x, z, angle = 0) {
@@ -2502,6 +2548,11 @@ function tankVisualScale(mesh) {
   mesh.userData.tankScaled = true;
 }
 
+function setTankVisualRotation(mesh, angle) {
+  if (!mesh) return;
+  mesh.rotation.y = angle + TANK_ROTATION_OFFSET;
+}
+
 function updateSoldierTank(player, dt) {
   if (player.character !== "soldier") return;
   const active = isSoldierInTank(player);
@@ -2523,7 +2574,7 @@ function updateSoldierTank(player, dt) {
   const dropLeft = Math.max(0, (player.tankDropUntil || 0) - state.elapsed);
   const dropY = dropLeft > 0 ? 8.5 * (dropLeft / 0.65) : 0;
   player.tankMesh.position.set(player.x, dropY, player.z);
-  player.tankMesh.rotation.y = angle;
+  setTankVisualRotation(player.tankMesh, angle);
   const grounded = dropLeft <= 0;
   setSoldierTankForm(player, grounded);
   if (!grounded) return;
@@ -4381,7 +4432,8 @@ function updateEnemyBullets(dt) {
 function damagePlayer(player, damage) {
   if ((debugModeEnabled && debugInvincible && player.local) || player.debugInvincible) return;
   if (player.dead || state.elapsed < (player.invincibleUntil || 0)) return;
-  player.hp -= damage;
+  const finalDamage = isSoldierInTank(player) ? damage * 0.5 : damage;
+  player.hp -= finalDamage;
   player.hitFlash = 0.45;
   if (player.local) sfx("hit");
   if (player.hp > 0) return;
@@ -7874,6 +7926,7 @@ function syncPlayers(players) {
       animateHuman(existingPlayer, isSaberSpinning(existingPlayer) || Math.hypot(p.input?.dx || 0, p.input?.dz || 0) > 0.01, 0.033);
       setPlayerFlash(existingPlayer.mesh, playerFlashMode(existingPlayer));
       syncSoldierTankVisual(existingPlayer);
+      updateSoldierDroneVisuals(existingPlayer, existingPlayer.character === "soldier" ? existingPlayer.droneSupport || 0 : 0);
       continue;
     }
     let mesh = state.renderCache.players.get(p.id);
@@ -7892,6 +7945,7 @@ function syncPlayers(players) {
     animateHumanMesh(mesh, isSaberSpinning(p) || Math.hypot(p.input?.dx || 0, p.input?.dz || 0) > 0.01, 0.033);
     setPlayerFlash(mesh, playerFlashMode(p));
     syncSoldierTankVisual({ ...p, mesh });
+    updateSoldierDroneVisuals({ ...p, mesh }, p.character === "soldier" ? p.droneSupport || 0 : 0);
   }
 }
 
@@ -7922,7 +7976,7 @@ function syncSoldierTankVisual(player) {
   const angle = typeof player.angle === "number" ? player.angle : Math.atan2((player.input?.aimX ?? player.x) - player.x, (player.input?.aimZ ?? player.z - 1) - player.z);
   const dropLeft = Math.max(0, (player.tankDropUntil || 0) - state.elapsed);
   holder.tankMesh.position.set(player.x, dropLeft > 0 ? 8.5 * (dropLeft / 0.65) : 0, player.z);
-  holder.tankMesh.rotation.y = angle;
+  setTankVisualRotation(holder.tankMesh, angle);
   setSoldierTankForm(player, dropLeft <= 0);
 }
 
