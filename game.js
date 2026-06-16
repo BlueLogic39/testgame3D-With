@@ -113,7 +113,7 @@ const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 let pointerOnCanvas = false;
 const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
-const TANK_ROTATION_OFFSET = Math.PI / 2;
+const TANK_ROTATION_OFFSET = Math.PI;
 
 let scene;
 let camera;
@@ -294,7 +294,7 @@ const FBX_ASSETS = {
   knightBossHelmet: { path: "./model_FBX/KNIGHT/Helmet3.fbx", size: 0.78, position: [0, 2.68, 0.03], rotation: [0, 0, 0], scale: [1, 1, 1] },
   knightBossShoulders: { path: "./model_FBX/KNIGHT/ShoulderPads.fbx", size: 1.15, position: [0, 2.08, 0.02], rotation: [0, 0, 0], scale: [1, 1, 1] },
   knightBossSword: { path: "./model_FBX/KNIGHT/Sword.fbx", size: 1.35, position: [0.95, 1.2, 0.2], rotation: [0, 0, -0.55], scale: [1, 1, 1] },
-  assaultRifle: { path: "./model_FBX/Buki/AssaultRifle_2.fbx", size: 1.1, position: [0.55, 1.18, 0.16], rotation: [0, -Math.PI / 2, -0.12], scale: [1, 1, 1] },
+  assaultRifle: { path: "./model_FBX/Buki/AssaultRifle_2.fbx", size: 1.1, position: [-0.55, 1.18, 0.16], rotation: [0, -Math.PI / 2, 0.12], scale: [1, 1, 1] },
   tank: { path: "./model_FBX/Tank/Tank.fbx", size: 3.9, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], groundOffset: 0 },
 };
 
@@ -2650,7 +2650,7 @@ function updateSoldierTank(player, dt) {
     return;
   }
   if (!player.tankMesh) {
-    player.tankMesh = makeFbxMesh("tank", makeOldTankMesh);
+    player.tankMesh = makeOldTankMesh();
     tankVisualScale(player.tankMesh);
     scene.add(player.tankMesh);
   }
@@ -2675,14 +2675,24 @@ function updateSoldierTank(player, dt) {
     player.tankVulcanTimer = player.tankVulcanBurst ? 1 : 1;
   }
   if (player.tankVulcanBurst) {
-    for (const offset of [-0.34, 0.34]) {
-      fireSoldierBullet(player, angle + offset, {
+    player.tankVulcanSoundTimer = (player.tankVulcanSoundTimer || 0) - dt;
+    if (player.tankVulcanSoundTimer <= 0) {
+      sfx("soldierRifle", { broadcast: net.mode === "host", volumeScale: 0.25 });
+      player.tankVulcanSoundTimer = 0.12;
+    }
+    for (const side of [-1, 1]) {
+      const sideAngle = angle + Math.PI / 2;
+      const originX = player.x + Math.sin(angle) * 1.55 + Math.sin(sideAngle) * side * 0.54;
+      const originZ = player.z + Math.cos(angle) * 1.55 + Math.cos(sideAngle) * side * 0.54;
+      fireSoldierBullet(player, angle, {
+        originX,
+        originZ,
         kind: "vulcanBullet",
         radius: 0.14,
         speed: 34,
         life: 0.72,
         damageScale: 0.55,
-        offset: 1.65,
+        offset: 0,
       });
     }
   }
@@ -2717,20 +2727,62 @@ function fireTankShell(player, angle) {
 
 function makeOldTankMesh() {
   const group = new THREE.Group();
-  const bodyMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.6, metalness: 0.25 });
-  const darkMat = new THREE.MeshStandardMaterial({ color: 0x1f2937, roughness: 0.8, metalness: 0.2 });
-  const body = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.72, 3.0), bodyMat);
-  body.position.y = 0.62;
-  const turret = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.7, 0.48, 12), bodyMat);
-  turret.position.y = 1.2;
-  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 1.7, 10), darkMat);
+  const bodyMat = new THREE.MeshStandardMaterial({ color: 0x4b5541, roughness: 0.68, metalness: 0.18 });
+  const darkMat = new THREE.MeshStandardMaterial({ color: 0x202522, roughness: 0.78, metalness: 0.34 });
+  const edgeMat = new THREE.MeshStandardMaterial({ color: 0x30362f, roughness: 0.65, metalness: 0.28 });
+
+  const base = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.34, 2.8), bodyMat);
+  base.position.y = 0.44;
+  const upper = new THREE.Mesh(new THREE.BoxGeometry(1.55, 0.34, 1.82), bodyMat.clone());
+  upper.position.set(0, 0.78, -0.08);
+  const turret = new THREE.Mesh(new THREE.CylinderGeometry(0.46, 0.56, 0.34, 8), bodyMat.clone());
+  turret.position.set(0, 1.1, -0.18);
+  turret.rotation.y = Math.PI / 8;
+
+  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 1.95, 10), edgeMat);
   barrel.rotation.x = Math.PI / 2;
-  barrel.position.set(0, 1.22, -1.15);
-  const leftTrack = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.48, 3.15), darkMat);
-  const rightTrack = leftTrack.clone();
-  leftTrack.position.set(-1.28, 0.38, 0);
-  rightTrack.position.set(1.28, 0.38, 0);
-  group.add(body, turret, barrel, leftTrack, rightTrack);
+  barrel.position.set(0, 1.1, -1.25);
+  const muzzle = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.18, 10), darkMat);
+  muzzle.rotation.x = Math.PI / 2;
+  muzzle.position.set(0, 1.1, -2.23);
+
+  const leftTrack = makeTankTrackMesh(darkMat, bodyMat);
+  const rightTrack = makeTankTrackMesh(darkMat, bodyMat);
+  leftTrack.position.set(-1.22, 0.38, 0);
+  rightTrack.position.set(1.22, 0.38, 0);
+
+  const antenna = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.82, 6), edgeMat);
+  antenna.position.set(0.48, 1.55, 0.35);
+  antenna.rotation.z = -0.08;
+  const hatch = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.38, 0.08, 8), edgeMat.clone());
+  hatch.position.set(0, 1.31, -0.17);
+
+  group.add(leftTrack, rightTrack, base, upper, turret, barrel, muzzle, antenna, hatch);
+  group.traverse((child) => {
+    if (child.isMesh) {
+      child.castShadow = true;
+      child.receiveShadow = true;
+    }
+  });
+  return group;
+}
+
+function makeTankTrackMesh(trackMat, padMat) {
+  const group = new THREE.Group();
+  const base = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.42, 2.95), trackMat);
+  base.position.y = 0.18;
+  group.add(base);
+  for (let i = 0; i < 9; i += 1) {
+    const pad = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.08, 0.22), padMat.clone());
+    pad.position.set(0, 0.45, -1.2 + i * 0.3);
+    group.add(pad);
+  }
+  for (const z of [-1.38, 1.38]) {
+    const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.24, 0.48, 12), trackMat.clone());
+    wheel.rotation.z = Math.PI / 2;
+    wheel.position.set(0, 0.18, z);
+    group.add(wheel);
+  }
   return group;
 }
 
@@ -3567,6 +3619,7 @@ function castSoldierSkill(player, baseAngle) {
   player.tankShellTimer = 0.25;
   player.tankVulcanTimer = 0.15;
   player.tankVulcanBurst = 1;
+  player.tankVulcanSoundTimer = 0;
   player.rifleReloadUntil = 0;
   player.rifleAmmo = 30;
   addRing(player.x, player.z, 4.2, 0xfacc15);
@@ -7236,8 +7289,9 @@ function playSound(kind, options = {}) {
   const base = audio.sounds[kind];
   if (base) {
     const sound = base.cloneNode();
-    const volumeBoost = kind === "soldierRifle" ? 1 / 3 : 1;
-    sound.volume = Math.min(1, effectiveSeVolume() * volumeBoost);
+    const volumeBoost = kind === "soldierRifle" ? 1 / 4 : 1;
+    const optionScale = typeof options.volumeScale === "number" ? options.volumeScale : 1;
+    sound.volume = Math.min(1, effectiveSeVolume() * volumeBoost * optionScale);
     if (kind === "victory" || kind === "gameover") {
       audio.activeSounds.add(sound);
       sound.addEventListener("ended", () => audio.activeSounds.delete(sound), { once: true });
@@ -7245,7 +7299,7 @@ function playSound(kind, options = {}) {
     sound.play().catch(() => {});
   }
   if (net.mode === "host" && options.broadcast && !options.remote) {
-    broadcast({ type: "sound", kind });
+    broadcast({ type: "sound", kind, volumeScale: options.volumeScale });
   }
 }
 
@@ -7844,7 +7898,7 @@ function handleHostData(data) {
     animationId = requestAnimationFrame(loop);
   }
   if (data.type === "snapshot") applySnapshot(data);
-  if (data.type === "sound") playSound(data.kind, { remote: true });
+  if (data.type === "sound") playSound(data.kind, { remote: true, volumeScale: data.volumeScale });
   if (data.type === "pause") {
     if (data.paused) applyPause(data.id);
     else clearPause();
@@ -8067,7 +8121,7 @@ function syncSoldierTankVisual(player) {
     return;
   }
   if (!holder.tankMesh) {
-    holder.tankMesh = makeFbxMesh("tank", makeOldTankMesh);
+    holder.tankMesh = makeOldTankMesh();
     tankVisualScale(holder.tankMesh);
     scene.add(holder.tankMesh);
   }
