@@ -1925,7 +1925,7 @@ function resetSceneEntities() {
 }
 
 function loop(now) {
-  const dt = Math.min((now - lastTime) / 1000, 0.033);
+  const dt = clamp((now - lastTime) / 1000, 0, 0.033);
   lastTime = now;
   if (state.running) {
     if (net.mode === "client") {
@@ -1936,7 +1936,7 @@ function loop(now) {
         sendHostSnapshot();
       } catch (error) {
         console.error("Game loop error", error);
-        showToast("ゲーム処理でエラーが発生しました。修正が必要です。");
+        showToast(`ゲーム処理エラー: ${String(error?.message || error).slice(0, 80)}`);
       }
     } else {
       updateEffects(dt);
@@ -2347,7 +2347,8 @@ function castShadowCloneJutsu(player, level) {
     if (jutsu === "fire") castCloneFireJutsu(player, level, x, z);
     else if (jutsu === "thunder") castCloneThunderJutsu(player, level, x, z);
     else if (jutsu === "water") castCloneWaterJutsu(player, level, x, z);
-  else castCloneEarthJutsu(player, level, x, z);
+    else castCloneEarthJutsu(player, level, x, z);
+  }
 }
 
 function updateSoldierSupport(player, dt) {
