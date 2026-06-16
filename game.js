@@ -193,6 +193,15 @@ const AUDIO_FILES = {
   saberSkill: "swordskillsound.mp3",
   ninjaShuriken: "ninja_syuriken.mp3",
   ninjaSkill: "ninja_skill.mp3",
+  soldierRifle: "soldier_raihuru.mp3",
+  soldierReloadStart: "soldier_reload_start.mp3",
+  soldierReloadFinish: "soldier_reload_finish.mp3",
+  soldierFlame: "soldier_kaenhosya.mp3",
+  soldierGrenade: "soldier_gurenedo.mp3",
+  soldierGrenadeExplosion: "soldier_gurenedo_bakuhatsu.mp3",
+  soldierTankFire: "soldier_sensya_hougeki.mp3",
+  soldierTankShellA: "soldier_sensya_houdan1.mp3",
+  soldierTankShellB: "soldier_sensya_houdan2.mp3",
   victory: "victory.mp3",
   gameover: "gameover.mp3",
   start: "gamestartsound.mp3",
@@ -1129,6 +1138,7 @@ function makePlayer(id, name, x, z, local, character = "archer") {
     ninjaAttackMode: "shuriken",
     rifleAmmo: 30,
     rifleReloadUntil: 0,
+    rifleReloading: false,
     grenade: 0,
     grenadeTimer: 3,
     droneSupport: 0,
@@ -1908,6 +1918,7 @@ function resetSceneEntities() {
   for (const cache of Object.values(state.renderCache || {})) {
     for (const mesh of cache.values()) {
       if (mesh.userData?.hitboxMesh) scene.remove(mesh.userData.hitboxMesh);
+      if (mesh.userData?.tankMesh) scene.remove(mesh.userData.tankMesh);
       scene.remove(mesh);
     }
   }
@@ -1920,8 +1931,13 @@ function loop(now) {
     if (net.mode === "client") {
       sendClientInput();
     } else if (!isGamePaused()) {
-      update(dt);
-      sendHostSnapshot();
+      try {
+        update(dt);
+        sendHostSnapshot();
+      } catch (error) {
+        console.error("Game loop error", error);
+        showToast("ゲーム処理でエラーが発生しました。修正が必要です。");
+      }
     } else {
       updateEffects(dt);
       sendHostSnapshot();
@@ -1983,6 +1999,7 @@ function updatePlayers(dt) {
     animateHuman(player, moving, dt);
     updateSaberSpinSlash(player, dt);
     updateSoldierTank(player, dt);
+    updateSoldierReloadState(player);
 
     player.fireTimer -= dt;
     if (!spinning && !isSoldierInTank(player) && player.fireTimer <= 0) {
@@ -1997,6 +2014,14 @@ function updatePlayers(dt) {
     updateNinjaShadowCloneJutsu(player, dt);
     updateSoldierSupport(player, dt);
   }
+}
+
+function updateSoldierReloadState(player) {
+  if (player.character !== "soldier" || !player.rifleReloading) return;
+  if (state.elapsed < (player.rifleReloadUntil || 0)) return;
+  player.rifleReloading = false;
+  player.rifleAmmo = 30;
+  if (player.local || net.mode !== "client") sfx("soldierReloadFinish", { broadcast: net.mode === "host" });
 }
 
 function updatePlayerIceSpike(player, dt) {
@@ -2338,6 +2363,8 @@ function updateSoldierGrenades(player, dt) {
   player.grenadeTimer = (player.grenadeTimer || 0) - dt;
   if (player.grenadeTimer > 0) return;
   const count = level >= 5 ? 3 : level >= 3 ? 2 : 1;
+  triggerPlayerModelAction(player, "SwordSlash", 0.42, { timeScale: 1.5 });
+  if (player.local || net.mode !== "client") sfx("soldierGrenade", { broadcast: net.mode === "host" });
   for (let i = 0; i < count; i += 1) throwSoldierGrenade(player, i, count);
   player.grenadeTimer = 3;
 }
@@ -2419,6 +2446,7 @@ function updateSoldierFlamethrower(player, dt) {
   const damage = player.damage * (3.2 + level * 0.38);
   damageEnemiesInCircle(player.x, player.z, radius, damage, player.id);
   addFlameBurstEffect(player.x, player.z, radius);
+  if (player.local || net.mode !== "client") sfx("soldierFlame", { broadcast: net.mode === "host" });
   player.flamethrowerTimer = 10;
 }
 
@@ -2504,6 +2532,7 @@ function fireTankShell(player, angle) {
   scene.add(shell.mesh);
   state.arrows.push(shell);
   addRing(player.x, player.z, 1.4, 0xfacc15);
+  if (player.local || net.mode !== "client") sfx("soldierTankFire", { broadcast: net.mode === "host" });
 }
 
 function makeOldTankMesh() {
@@ -2678,7 +2707,7 @@ function animateHumanMesh(mesh, moving, dt) {
       mesh.userData.modelActionUntil = 0;
     }
     const character = mesh.userData.character || "archer";
-    const movingAction = character === "ninja" ? ["Run", "Walk"] : ["Walk", "Run"];
+    const movingAction = character === "ninja" || character === "soldier" ? ["Run", "Walk"] : ["Walk", "Run"];
     playModelAction(mesh.userData.modelRoot, forced || (moving ? movingAction : "Idle"));
     mesh.userData.modelRoot.userData.mixer.update(dt);
   }
@@ -2702,6 +2731,7 @@ function playModelAction(model, name, options = {}) {
   if (model.userData.activeAction === action && !options.restart) return;
   action.setLoop(once ? THREE.LoopOnce : THREE.LoopRepeat, once ? 1 : Infinity);
   action.clampWhenFinished = once;
+  action.setEffectiveTimeScale?.(options.timeScale || 1);
   action.reset().play();
   if (model.userData.activeAction && model.userData.activeAction !== action) model.userData.activeAction.crossFadeTo(action, 0.16, false);
   model.userData.activeAction = action;
@@ -2719,7 +2749,7 @@ function findModelAction(actions, name) {
   return null;
 }
 
-function triggerPlayerModelAction(player, name, duration = 0.45) {
+function triggerPlayerModelAction(player, name, duration = 0.45, options = {}) {
   if (!player?.mesh || !name) return;
   const current = player.modelActionName || player.mesh.userData.modelActionName;
   const currentUntil = Math.max(player.modelActionUntil || 0, player.mesh.userData.modelActionUntil || 0);
@@ -2727,12 +2757,13 @@ function triggerPlayerModelAction(player, name, duration = 0.45) {
   let actionDuration = duration;
   const model = player.mesh.userData.modelRoot;
   const action = model ? findModelAction(model.userData.actions, name) : null;
-  if (action?.getClip) actionDuration = Math.max(actionDuration, action.getClip().duration || duration);
+  const timeScale = options.timeScale || 1;
+  if (action?.getClip) actionDuration = Math.max(actionDuration, (action.getClip().duration || duration) / timeScale);
   player.modelActionName = name;
   player.modelActionUntil = state.elapsed + actionDuration;
   player.mesh.userData.modelActionName = name;
   player.mesh.userData.modelActionUntil = player.modelActionUntil;
-  if (model) playModelAction(model, name, { restart: true });
+  if (model) playModelAction(model, name, { restart: true, timeScale });
 }
 
 function oldAnimateHumanUnused(player, moving, dt) {
@@ -2846,16 +2877,17 @@ function shootSoldierRifle(player) {
     return;
   }
   if ((player.rifleAmmo ?? 30) <= 0) {
-    player.rifleAmmo = 30;
     player.rifleReloadUntil = state.elapsed + 2;
+    player.rifleReloading = true;
     player.fireTimer = 2;
     addRing(player.x, player.z, 1.0, 0x9ca3af);
+    if (player.local || net.mode !== "client") sfx("soldierReloadStart", { broadcast: net.mode === "host" });
     return;
   }
   const base = Math.atan2(player.input.aimX - player.x, player.input.aimZ - player.z);
   fireSoldierBullet(player, base + (Math.random() - 0.5) * 0.035, { damageScale: 1, speed: 34, life: 0.9 });
   player.rifleAmmo -= 1;
-  if (player.local || net.mode !== "client") sfx("archerAttack");
+  if (player.local || net.mode !== "client") sfx("soldierRifle", { broadcast: net.mode === "host" });
 }
 
 function fireSoldierBullet(player, angle, options = {}) {
@@ -4382,6 +4414,8 @@ function updateArrows(dt) {
 
 function explodePlayerProjectile(projectile, radius, damage, color = 0xf97316) {
   addRing(projectile.x, projectile.z, radius, color);
+  if (projectile.kind === "grenade") sfx("soldierGrenadeExplosion", { broadcast: net.mode === "host" });
+  if (projectile.kind === "tankShell") sfx("soldierTankShell", { broadcast: net.mode === "host" });
   for (const enemy of state.enemies) {
     if (distance(projectile, enemy) <= radius + enemyHitRadius(enemy)) {
       damageEnemy(enemy, damage, projectile.owner);
@@ -6976,6 +7010,7 @@ function playSound(kind, options = {}) {
   if (kind === "gem") kind = Math.random() < 0.5 ? "gemA" : "gemB";
   if (kind === "thunder") kind = Math.random() < 0.5 ? "thunderA" : "thunderB";
   if (kind === "rock") kind = Math.random() < 0.5 ? "rockA" : "rockB";
+  if (kind === "soldierTankShell") kind = Math.random() < 0.5 ? "soldierTankShellA" : "soldierTankShellB";
   const base = audio.sounds[kind];
   if (base) {
     const sound = base.cloneNode();
@@ -7706,7 +7741,8 @@ function sendHostSnapshot(force = false) {
       modelActionName: p.modelActionName, modelActionUntil: p.modelActionUntil,
       arrows: p.arrows, backShots: p.backShots, damage: p.damage, pierce: p.pierce,
       flyingSlash: p.flyingSlash, fumaShuriken: p.fumaShuriken, shadowClone: p.shadowClone, summonJutsu: p.summonJutsu,
-      rifleAmmo: p.rifleAmmo, rifleReloadUntil: p.rifleReloadUntil, grenade: p.grenade, droneSupport: p.droneSupport, flamethrower: p.flamethrower,
+      rifleAmmo: p.rifleAmmo, rifleReloadUntil: p.rifleReloadUntil, rifleReloading: p.rifleReloading,
+      grenade: p.grenade, droneSupport: p.droneSupport, flamethrower: p.flamethrower,
       tankUntil: p.tankUntil, tankDropUntil: p.tankDropUntil, tankVulcanBurst: p.tankVulcanBurst,
       baseFireRate: p.baseFireRate, attackSpeedBonus: p.attackSpeedBonus, fireRate: p.fireRate,
       magicSplash: p.magicSplash, magicRadius: p.magicRadius, chainExplosion: p.chainExplosion, iceSpike: p.iceSpike, thunderCircle: p.thunderCircle,
@@ -7788,29 +7824,30 @@ function syncPlayers(players) {
 }
 
 function syncSoldierTankVisual(player) {
+  const holder = player.mesh?.userData || player;
   if (player.character !== "soldier") {
-    if (player.tankMesh) {
-      scene.remove(player.tankMesh);
-      player.tankMesh = null;
+    if (holder.tankMesh) {
+      scene.remove(holder.tankMesh);
+      holder.tankMesh = null;
     }
     return;
   }
   const active = state.elapsed < (player.tankUntil || 0);
   if (!active) {
-    if (player.tankMesh) {
-      scene.remove(player.tankMesh);
-      player.tankMesh = null;
+    if (holder.tankMesh) {
+      scene.remove(holder.tankMesh);
+      holder.tankMesh = null;
     }
     return;
   }
-  if (!player.tankMesh) {
-    player.tankMesh = makeFbxMesh("tank", makeOldTankMesh);
-    scene.add(player.tankMesh);
+  if (!holder.tankMesh) {
+    holder.tankMesh = makeFbxMesh("tank", makeOldTankMesh);
+    scene.add(holder.tankMesh);
   }
   const angle = typeof player.angle === "number" ? player.angle : Math.atan2((player.input?.aimX ?? player.x) - player.x, (player.input?.aimZ ?? player.z - 1) - player.z);
   const dropLeft = Math.max(0, (player.tankDropUntil || 0) - state.elapsed);
-  player.tankMesh.position.set(player.x, dropLeft > 0 ? 5.5 * (dropLeft / 0.65) : 0, player.z);
-  player.tankMesh.rotation.y = angle;
+  holder.tankMesh.position.set(player.x, dropLeft > 0 ? 5.5 * (dropLeft / 0.65) : 0, player.z);
+  holder.tankMesh.rotation.y = angle;
 }
 
 function syncSimpleMeshes(cache, items, factory, y) {
