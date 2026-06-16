@@ -2554,7 +2554,6 @@ function makeOldTankMesh() {
   group.add(body, turret, barrel, leftTrack, rightTrack);
   return group;
 }
-}
 
 function castCloneFireJutsu(player, level, x, z) {
   const target = nearestEnemy({ x, z }, 18);
