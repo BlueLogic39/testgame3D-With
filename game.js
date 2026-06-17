@@ -204,6 +204,8 @@ const AUDIO_FILES = {
   soldierTankFire: "soldier_sensya_hougeki.mp3",
   soldierTankShellA: "soldier_sensya_houdan1.mp3",
   soldierTankShellB: "soldier_sensya_houdan2.mp3",
+  soldierTankLanding: "soldier_sensya_tyakuti.mp3",
+  linkReady: "linkskill.mp3",
   victory: "victory.mp3",
   gameover: "gameover.mp3",
   start: "gamestartsound.mp3",
@@ -1066,6 +1068,7 @@ function newState(playerInfos, options = {}) {
     linkPair: null,
     linkCharge: 0,
     linkReady: false,
+    linkReadySounded: false,
     linkRequests: {},
     linkCutsceneUntil: 0,
     score: 0,
@@ -1154,6 +1157,7 @@ function makePlayer(id, name, x, z, local, character = "archer") {
     tankVulcanTimer: 0,
     tankVulcanBurst: 0,
     tankDropUntil: 0,
+    tankLanded: false,
     tankMesh: null,
     modelActionName: "",
     modelActionUntil: 0,
@@ -1961,7 +1965,7 @@ function update(dt) {
     updateUi();
     return;
   }
-  if (STAGES[state.stageId]?.scoreAttack) state.score += dt * (12 + Math.min(60, state.elapsed / 12));
+  if (STAGES[state.stageId]?.scoreAttack) state.score += dt * (2 + Math.min(14, state.elapsed / 45));
   updatePlayers(dt);
   updateLinkSkill(dt);
   updateCamera();
@@ -1985,7 +1989,11 @@ function updatePlayers(dt) {
   for (const player of state.players) {
     updatePlayerFlash(player, dt);
     if (player.dead || player.hp <= 0) continue;
-    player.skillCharge = Math.min(player.skillCooldown || 30, (player.skillCharge || 0) + dt);
+    if (player.character === "soldier" && isSoldierInTank(player)) {
+      player.skillCharge = 0;
+    } else {
+      player.skillCharge = Math.min(player.skillCooldown || 30, (player.skillCharge || 0) + dt);
+    }
     if ((player.modelActionUntil || 0) <= state.elapsed) {
       player.modelActionName = "";
       player.modelActionUntil = 0;
@@ -2063,6 +2071,7 @@ function updateLinkSkill(dt) {
     state.linkPair = null;
     state.linkCharge = Math.max(0, (state.linkCharge || 0) - dt * 1.6);
     state.linkReady = false;
+    state.linkReadySounded = false;
     state.linkRequests = {};
     return;
   }
@@ -2071,10 +2080,15 @@ function updateLinkSkill(dt) {
     state.linkPair = key;
     state.linkCharge = 0;
     state.linkReady = false;
+    state.linkReadySounded = false;
     state.linkRequests = {};
   }
   state.linkCharge = Math.min(LINK_SKILL_CHARGE_SECONDS, (state.linkCharge || 0) + dt);
   state.linkReady = state.linkCharge >= LINK_SKILL_CHARGE_SECONDS;
+  if (state.linkReady && !state.linkReadySounded) {
+    state.linkReadySounded = true;
+    sfx("linkReady", { broadcast: net.mode === "host" });
+  }
   for (const [id, time] of Object.entries(state.linkRequests || {})) {
     if (state.elapsed - time > 2.2) delete state.linkRequests[id];
   }
@@ -2126,6 +2140,7 @@ function activateLinkSkill(a, b) {
   b.skillCharge = 0;
   state.linkCharge = 0;
   state.linkReady = false;
+  state.linkReadySounded = false;
   state.linkRequests = {};
   state.linkCutsceneUntil = state.elapsed + 1.15;
   showLinkCutin(a, b, label);
@@ -2352,6 +2367,7 @@ function castNinjaSummon(player, level) {
   const radius = 3.0 + level * 0.38;
   const damage = player.damage * (1.1 + level * 0.11);
   if (kind === "toad") {
+    addSummonSmokeEffect(target.x, target.z, radius);
     damageEnemiesInCircle(target.x, target.z, radius, damage, player.id);
     addNinjaSummonEffect(kind, target.x, target.z, radius, 0, duration);
   } else if (kind === "hawk") {
@@ -2360,9 +2376,11 @@ function castNinjaSummon(player, level) {
     const width = 2.0 + level * 0.16;
     const endX = clamp(player.x + Math.sin(angle) * length, -WORLD.half + 1, WORLD.half - 1);
     const endZ = clamp(player.z + Math.cos(angle) * length, -WORLD.half + 1, WORLD.half - 1);
+    addSummonSmokeEffect(player.x, player.z, width * 1.5);
     damageEnemiesOnLine(player.x, player.z, endX, endZ, width, damage * 0.92, player.id);
     addNinjaSummonEffect(kind, player.x, player.z, width, angle, duration, { length: Math.hypot(endX - player.x, endZ - player.z) });
   } else {
+    addSummonSmokeEffect(player.x, player.z, radius * 1.08);
     damageEnemiesInCircle(player.x, player.z, radius * 1.08, damage * 0.86, player.id);
     addNinjaSummonEffect(kind, player.x, player.z, radius * 1.08, 0, duration);
   }
@@ -2580,6 +2598,22 @@ function addDroneEffect(x, z, angle = 0) {
   state.effects.push({ id: crypto.randomUUID(), kind: "tempMesh", x, z, life: 0.12, start: 0.12, mesh: body });
 }
 
+function addSummonSmokeEffect(x, z, radius = 2.2) {
+  const group = new THREE.Group();
+  const mat = new THREE.MeshBasicMaterial({ color: 0xe5e7eb, transparent: true, opacity: 0.55, depthWrite: false });
+  for (let i = 0; i < 12; i += 1) {
+    const puff = new THREE.Mesh(new THREE.SphereGeometry(0.18 + (i % 4) * 0.06, 10, 8), mat.clone());
+    const angle = (Math.PI * 2 * i) / 12;
+    puff.position.set(Math.sin(angle) * radius * 0.18, 0.28 + (i % 3) * 0.08, Math.cos(angle) * radius * 0.18);
+    puff.userData.smokeAngle = angle;
+    puff.userData.smokeRadius = radius * (0.34 + (i % 4) * 0.08);
+    group.add(puff);
+  }
+  group.position.set(x, 0.08, z);
+  scene.add(group);
+  state.effects.push({ id: crypto.randomUUID(), kind: "summonSmoke", x, z, radius, life: 0.62, start: 0.62, mesh: group });
+}
+
 function updateSoldierFlamethrower(player, dt) {
   const level = player.flamethrower || 0;
   if (level <= 0) return;
@@ -2664,8 +2698,11 @@ function updateSoldierTank(player, dt) {
   const grounded = dropLeft <= 0;
   setSoldierTankForm(player, grounded);
   if (!grounded) return;
+  if (!player.tankLanded) {
+    player.tankLanded = true;
+    sfx("soldierTankLanding", { broadcast: net.mode === "host" });
+  }
   player.radius = 2.3;
-  player.invincibleUntil = Math.max(player.invincibleUntil || 0, state.elapsed + 0.12);
   player.tankShellTimer = (player.tankShellTimer || 0) - dt;
   if (player.tankShellTimer <= 0) {
     fireTankShell(player, angle);
@@ -2684,8 +2721,8 @@ function updateSoldierTank(player, dt) {
     }
     for (const side of [-1, 1]) {
       const sideAngle = angle + Math.PI / 2;
-      const originX = player.x + Math.sin(angle) * 3.1 + Math.sin(sideAngle) * side * 0.78;
-      const originZ = player.z + Math.cos(angle) * 3.1 + Math.cos(sideAngle) * side * 0.78;
+      const originX = player.x + Math.sin(angle) * 3.1 + Math.sin(sideAngle) * side * 1.08;
+      const originZ = player.z + Math.cos(angle) * 3.1 + Math.cos(sideAngle) * side * 1.08;
       fireSoldierBullet(player, angle, {
         originX,
         originZ,
@@ -3296,7 +3333,7 @@ function applySaberSlash(player, angle) {
 function attackNinja(player) {
   const base = Math.atan2(player.input.aimX - player.x, player.input.aimZ - player.z);
   if ((player.ninjaAttackMode || "shuriken") === "shuriken") {
-    triggerPlayerModelAction(player, "SwordSlash", 0.48);
+    triggerPlayerModelAction(player, "SwordSlash", 0.32, { timeScale: 1.5 });
     fireNinjaShurikenSpread(player, base, ninjaShurikenCount(player), { damageScale: 1, clone: false });
     player.ninjaAttackMode = "slash";
     return;
@@ -3628,11 +3665,11 @@ function castSoldierSkill(player, baseAngle) {
   player.tankVulcanTimer = 0.15;
   player.tankVulcanBurst = 1;
   player.tankVulcanSoundTimer = 0;
+  player.tankLanded = false;
   player.rifleReloadUntil = 0;
   player.rifleAmmo = 30;
   addRing(player.x, player.z, 4.2, 0xfacc15);
   addScreenFlash(0x312e81, 0.18, 0.42);
-  fireTankShell(player, baseAngle);
 }
 
 function spawnEnemies(dt) {
@@ -3816,7 +3853,7 @@ function updateEnemies(dt) {
   const dead = state.enemies.filter((enemy) => enemy.hp <= 0);
   for (const enemy of dead) {
     state.kills += 1;
-    if (STAGES[state.stageId]?.scoreAttack) state.score += enemy.boss ? 5000 : enemy.midBoss ? 1800 : enemy.enemyType === "castleMage" ? 180 : enemy.bomber ? 150 : enemy.shooter ? 120 : 80;
+    if (STAGES[state.stageId]?.scoreAttack) state.score += enemy.boss ? 1400 : enemy.midBoss ? 520 : enemy.enemyType === "castleMage" ? 65 : enemy.bomber ? 52 : enemy.shooter ? 42 : 28;
     const owner = state.players.find((p) => p.id === enemy.lastHitBy) || localPlayer();
     dropGem(enemy.x, enemy.z, enemy.xp, enemy.boss || enemy.midBoss ? "boss" : enemy.enemyType === "castleMage" ? "orange" : enemy.bomber || enemy.enemyType === "castleShield" || enemy.enemyType === "castleGhost" ? "bomber" : enemy.shooter ? "shooter" : "normal");
     if (owner) {
@@ -4129,6 +4166,7 @@ function addRandomDragonAttack(enemy, target) {
   ];
   if (phase === "angry" || phase === "critical") {
     attacks.push(
+      () => addDragonTripleBreath(enemy, target),
       () => addDragonRoarShockwaves(enemy),
       () => addDragonDarkRain(enemy),
       () => addDragonPetrifyBeam(enemy)
@@ -4577,7 +4615,7 @@ function updateEnemyBullets(dt) {
 function damagePlayer(player, damage) {
   if ((debugModeEnabled && debugInvincible && player.local) || player.debugInvincible) return;
   if (player.dead || state.elapsed < (player.invincibleUntil || 0)) return;
-  const finalDamage = isSoldierInTank(player) ? damage * 0.5 : damage;
+  const finalDamage = isSoldierInTank(player) ? damage * 0.25 : damage;
   player.hp -= finalDamage;
   player.hitFlash = 0.45;
   if (player.local) sfx("hit");
@@ -4735,7 +4773,7 @@ function updateGems(dt) {
         player.xp -= player.xpNext;
         player.level += 1;
         player.xpNext = Math.floor(player.xpNext * 1.28 + 7);
-        if (player.character === "saber") addAttackSpeed(player, 0.1);
+        if (player.character === "saber") addAttackSpeed(player, 0.05);
         if (player.local || net.mode === "host") sfx("level", { broadcast: net.mode === "host" });
         openLevelUp(player);
       }
@@ -6147,6 +6185,15 @@ function updateBossHealthVisual(enemy) {
 function updateDragonRoarPhase(enemy) {
   if (enemy.bossRole !== "castleDragon") return;
   const ratio = enemy.hp / enemy.maxHp;
+  const target = nearestLivingPlayer(enemy);
+  if (target && ratio <= 0.5 && (enemy.dragonTriplePhase || 0) < 1) {
+    enemy.dragonTriplePhase = 1;
+    addDragonTripleBreath(enemy, target);
+  }
+  if (target && ratio <= 0.25 && (enemy.dragonTriplePhase || 0) < 2) {
+    enemy.dragonTriplePhase = 2;
+    addDragonTripleBreath(enemy, target);
+  }
   const thresholds = [0.85, 0.7, 0.55, 0.4, 0.25];
   const phase = thresholds.filter((threshold) => ratio <= threshold).length;
   if (phase > (enemy.dragonRoarPhase || 0)) {
@@ -6187,13 +6234,14 @@ function applyHealthAura(mesh, phase = "", radius = 1.5) {
   if (!phase) return;
   const color = phase === "red" ? 0xff2b2b : 0xff8a22;
   const angry = phase === "red";
+  const bossScale = mesh.userData.dragon ? 1.75 : 1;
   for (const [index, puff] of aura.userData.puffs.entries()) {
     const speed = angry ? 2.7 : 1.8;
     const t = (state.elapsed * speed + puff.userData.seed + index * 0.17) % 1;
     const swirl = puff.userData.angle + state.elapsed * (angry ? 1.15 : 0.72) + Math.sin(state.elapsed * 2 + index) * 0.12;
     const distanceFromBoss = radius * (1.08 + Math.sin(index * 1.7) * 0.12);
     puff.position.set(Math.sin(swirl) * distanceFromBoss, radius * (0.12 + puff.userData.height * t), Math.cos(swirl) * distanceFromBoss);
-    const scale = (angry ? 1.25 : 1.0) * (0.65 + t * 0.85);
+    const scale = bossScale * (angry ? 1.25 : 1.0) * (0.65 + t * 0.85);
     puff.scale.setScalar(scale);
     puff.material.color.setHex(color);
     puff.material.opacity = (angry ? 0.58 : 0.42) * (1 - t);
@@ -7132,12 +7180,24 @@ function updateEffects(dt) {
     if (effect.kind === "substitutionLog") updateSubstitutionLogEffect(effect, t);
     if (effect.kind === "ninjaClone") updateNinjaCloneEffect(effect, t);
     if (effect.kind === "ninjaSummon") updateNinjaSummonEffect(effect, t);
+    if (effect.kind === "summonSmoke") updateSummonSmokeEffect(effect, t);
     if (effect.kind === "ninjaJutsu") updateNinjaJutsuEffect(effect, t);
     if (effect.kind === "linkSkill") updateLinkEffect(effect, t);
-    if (effect.kind !== "ninjaJutsu" && effect.kind !== "linkSkill") effect.mesh.scale.setScalar(effect.skill ? 1 + t * 0.8 : 1);
+    if (effect.kind !== "ninjaJutsu" && effect.kind !== "linkSkill" && effect.kind !== "summonSmoke") effect.mesh.scale.setScalar(effect.skill ? 1 + t * 0.8 : 1);
     setEffectOpacity(effect.mesh, Math.max(0, 0.75 * (1 - t)));
   }
   removeDead(state.effects, (effect) => effect.life <= 0);
+}
+
+function updateSummonSmokeEffect(effect, t) {
+  effect.mesh.scale.setScalar(0.7 + Math.sin(t * Math.PI) * 1.2 + t * 0.6);
+  for (const child of effect.mesh.children) {
+    const angle = child.userData.smokeAngle || 0;
+    const radius = (child.userData.smokeRadius || effect.radius || 2) * t;
+    child.position.x = Math.sin(angle) * radius;
+    child.position.z = Math.cos(angle) * radius;
+    child.position.y += 0.012;
+  }
 }
 
 function updateNinjaSummonEffect(effect, t) {
