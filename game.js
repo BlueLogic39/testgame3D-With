@@ -322,7 +322,7 @@ const CHARACTER_CODEX = [
     id: "saber",
     role: "近距離の前方制圧キャラクター",
     weapon: "2秒ごとにマウス方向へ90度の剣閃で薙ぎ払います。",
-    passive: "バーサーカー: レベルが上がるたびに攻撃速度が10%上がります。",
+    passive: "バーサーカー: レベルが上がるたびに攻撃速度が5%上がります。",
     skill: "回転突進斬り: スペースキーで2秒間回転斬りしながらマウス方向へ突進します。",
     upgrades: ["剣閃範囲 +10度", "飛燕斬", "二連斬り"],
   },
@@ -411,7 +411,7 @@ upgrades.push(
   { name: "口寄せの術", desc: "3種類の生物からランダムに1匹を呼び出し範囲攻撃を行う。取得するたび持続時間、範囲、威力が少し伸びる。", classes: ["ninja"], apply: (p) => (p.summonJutsu += 1) },
   { name: "グレネード", desc: "3秒ごとに近くの敵へ分散して投げる。Lv3で2個、Lv5で3個。取得するたび威力と爆発範囲が少し伸びる。", classes: ["soldier"], apply: (p) => (p.grenade += 1) },
   { name: "ドローン支援", desc: "ファンネルのように周囲を浮遊する小型ドローンが機銃掃射。取得するたびドローン+1、威力も少し上がる。", classes: ["soldier"], apply: (p) => (p.droneSupport += 1) },
-  { name: "火炎放射器", desc: "10秒ごとに周囲へ火炎放射。取得するたび範囲と威力が少し伸びる。", classes: ["soldier"], apply: (p) => (p.flamethrower += 1) }
+  { name: "火炎放射器", desc: "10秒ごとに2秒間、周囲へ激しい炎を放ち続ける。取得するたび範囲と威力が少し伸びる。", classes: ["soldier"], apply: (p) => (p.flamethrower += 1) }
 );
 
 initThree();
@@ -1151,6 +1151,8 @@ function makePlayer(id, name, x, z, local, character = "archer") {
     droneTimer: 0,
     flamethrower: 0,
     flamethrowerTimer: 10,
+    flamethrowerUntil: 0,
+    flamethrowerTick: 0,
   tankUntil: 0,
   tankActive: false,
     tankShellTimer: 0,
@@ -1910,7 +1912,7 @@ function startGame(mode = "solo") {
   hideStatus();
   updateUi();
   updateOnlineBadge();
-  updateProgressUi();
+  updateProgressVisibility();
   animationId = requestAnimationFrame(loop);
   if (mode === "host") broadcast({ type: "start", players: net.lobbyPlayers, stageId: net.stageId, difficultyId: net.difficultyId });
 }
@@ -2253,7 +2255,7 @@ function castShadowArrowLink(a, b, center) {
 
 function castSuppressingRainLink(a, b, center) {
   sfx("archerSkill", { broadcast: net.mode === "host" });
-  sfx("soldierRifle", { broadcast: net.mode === "host" });
+  sfx("soldierRifle", { broadcast: net.mode === "host", volumeScale: 0.5 });
   addLinkEffect("suppressingRain", center.x, center.z, 13, 0, 1.2);
   damageEnemiesInCircle(center.x, center.z, 13, (a.damage + b.damage) * 1.6, a.id);
   for (let i = 0; i < 36; i += 1) {
@@ -2316,7 +2318,7 @@ function castBladeCoverLink(a, b, center) {
 
 function castShadowSuppressLink(a, b, center) {
   sfx("ninjaSkill", { broadcast: net.mode === "host" });
-  sfx("soldierRifle", { broadcast: net.mode === "host" });
+  sfx("soldierRifle", { broadcast: net.mode === "host", volumeScale: 0.5 });
   const radius = 12.5;
   addLinkEffect("shadowSuppress", center.x, center.z, radius, 0, 1.25);
   for (const enemy of state.enemies) {
@@ -2617,12 +2619,21 @@ function addSummonSmokeEffect(x, z, radius = 2.2) {
 function updateSoldierFlamethrower(player, dt) {
   const level = player.flamethrower || 0;
   if (level <= 0) return;
+  if (state.elapsed < (player.flamethrowerUntil || 0)) {
+    player.flamethrowerTick = (player.flamethrowerTick || 0) - dt;
+    if (player.flamethrowerTick <= 0) {
+      const radius = 4.3 + level * 0.55;
+      const damage = player.damage * (0.72 + level * 0.09);
+      damageEnemiesInCircle(player.x, player.z, radius, damage, player.id);
+      addFlameBurstEffect(player.x, player.z, radius);
+      player.flamethrowerTick = 0.18;
+    }
+    return;
+  }
   player.flamethrowerTimer = (player.flamethrowerTimer || 0) - dt;
   if (player.flamethrowerTimer > 0) return;
-  const radius = 4.3 + level * 0.55;
-  const damage = player.damage * (3.2 + level * 0.38);
-  damageEnemiesInCircle(player.x, player.z, radius, damage, player.id);
-  addFlameBurstEffect(player.x, player.z, radius);
+  player.flamethrowerUntil = state.elapsed + 2;
+  player.flamethrowerTick = 0;
   if (player.local || net.mode !== "client") sfx("soldierFlame", { broadcast: net.mode === "host" });
   player.flamethrowerTimer = 10;
 }
@@ -2701,6 +2712,9 @@ function updateSoldierTank(player, dt) {
   if (!player.tankLanded) {
     player.tankLanded = true;
     sfx("soldierTankLanding", { broadcast: net.mode === "host" });
+    const landingRadius = 3.0;
+    damageEnemiesInCircle(player.x, player.z, landingRadius, 50, player.id);
+    addRing(player.x, player.z, landingRadius, 0x9ca3af);
   }
   player.radius = 2.3;
   player.tankShellTimer = (player.tankShellTimer || 0) - dt;
@@ -2721,11 +2735,13 @@ function updateSoldierTank(player, dt) {
     }
     for (const side of [-1, 1]) {
       const sideAngle = angle + Math.PI / 2;
-      const originX = player.x + Math.sin(angle) * 3.1 + Math.sin(sideAngle) * side * 1.08;
-      const originZ = player.z + Math.cos(angle) * 3.1 + Math.cos(sideAngle) * side * 1.08;
+      const originX = player.x + Math.sin(angle) * 3.25 + Math.sin(sideAngle) * side * 2.05;
+      const originZ = player.z + Math.cos(angle) * 3.25 + Math.cos(sideAngle) * side * 2.05;
       fireSoldierBullet(player, angle, {
         originX,
         originZ,
+        y: 2.45,
+        groundRadius: 0.62,
         kind: "vulcanBullet",
         radius: 0.14,
         speed: 34,
@@ -3170,10 +3186,12 @@ function fireSoldierBullet(player, angle, options = {}) {
   const bullet = {
     id: crypto.randomUUID(),
     x: (options.originX ?? player.x) + Math.sin(angle) * (options.offset ?? 1.1),
+    y: options.y ?? 1.1,
     z: (options.originZ ?? player.z) + Math.cos(angle) * (options.offset ?? 1.1),
     vx: Math.sin(angle) * (options.speed || 34),
     vz: Math.cos(angle) * (options.speed || 34),
     radius: options.radius || 0.16,
+    groundRadius: options.groundRadius || 0,
     life: options.life || 0.9,
     damage: player.damage * (options.damageScale || 1),
     pierce: options.pierce || 0,
@@ -3184,7 +3202,7 @@ function fireSoldierBullet(player, angle, options = {}) {
     mesh: makeProjectileMesh({ kind: options.kind || "soldierBullet", radius: options.radius || 0.16 }),
   };
   bullet.mesh.rotation.y = angle;
-  bullet.mesh.position.set(bullet.x, 1.1, bullet.z);
+  bullet.mesh.position.set(bullet.x, bullet.y, bullet.z);
   scene.add(bullet.mesh);
   state.arrows.push(bullet);
 }
@@ -3542,7 +3560,7 @@ function skillSoundKey(character) {
   if (character === "witch") return "witchSkill";
   if (character === "saber") return "saberSkill";
   if (character === "ninja") return "ninjaSkill";
-  if (character === "soldier") return "saberSkill";
+  if (character === "soldier") return "";
   return "archerSkill";
 }
 
@@ -3561,7 +3579,8 @@ function canUseSkill(player) {
 function activateSkill(player) {
   if (!canUseSkill(player)) return false;
   player.skillCharge = 0;
-  sfx(skillSoundKey(player.character), { broadcast: net.mode === "host" });
+  const soundKey = skillSoundKey(player.character);
+  if (soundKey) sfx(soundKey, { broadcast: net.mode === "host" });
   const angle = Math.atan2(player.input.aimX - player.x, player.input.aimZ - player.z);
   if (player.character === "witch") castWitchSkill(player);
   else if (player.character === "saber") castSaberSkill(player, angle);
@@ -4659,12 +4678,13 @@ function updateArrows(dt) {
     arrow.x += arrow.vx * dt;
     arrow.z += arrow.vz * dt;
     arrow.life -= dt;
-    arrow.mesh.position.set(arrow.x, arrow.kind === "tankShell" ? 2.75 : 1.1, arrow.z);
+    arrow.mesh.position.set(arrow.x, arrow.y ?? (arrow.kind === "tankShell" ? 2.75 : 1.1), arrow.z);
     if (arrow.kind === "shuriken") arrow.mesh.rotation.z += dt * 18;
     for (const enemy of state.enemies) {
       if (arrow.hit.has(enemy)) continue;
-      const tankGroundHit = arrow.kind === "tankShell" && distancePointToSegment(enemy.x, enemy.z, prevX, prevZ, arrow.x, arrow.z) <= (arrow.groundRadius || arrow.radius) + enemyHitRadius(enemy);
-      if (distance(arrow, enemy) < arrow.radius + enemyHitRadius(enemy) || tankGroundHit) {
+      const groundLineHit = (arrow.kind === "tankShell" || arrow.kind === "vulcanBullet") && (arrow.groundRadius || 0) > 0
+        && distancePointToSegment(enemy.x, enemy.z, prevX, prevZ, arrow.x, arrow.z) <= (arrow.groundRadius || arrow.radius) + enemyHitRadius(enemy);
+      if (distance(arrow, enemy) < arrow.radius + enemyHitRadius(enemy) || groundLineHit) {
         const finalDamage = arrow.damage * projectileDamageMultiplier(arrow, enemy);
         damageEnemy(enemy, finalDamage, arrow.owner);
         arrow.hit.add(enemy);
@@ -7590,6 +7610,7 @@ function animateCodex() {
 
 function updateUi() {
   const player = localPlayer() || state.players[0];
+  updateProgressUi();
   ui.level.textContent = player.level || 1;
   ui.hp.textContent = `${Math.max(0, Math.ceil(player.hp))}/${player.maxHp}`;
   ui.time.textContent = formatTime(state.elapsed);
@@ -8705,17 +8726,23 @@ function buyShopItem(itemId) {
 
 function updateProgressUi() {
   if (ui.moneyBadge) ui.moneyBadge.textContent = `${progress.money}G`;
-  ui.moneyBadge?.parentElement?.classList.toggle("hidden", net.phase === "playing" || net.phase === "gameover");
-  const showExtraBest = Boolean(progress.stages?.extra || progress.cleared?.stage3 || debugModeEnabled) && net.phase !== "playing" && net.phase !== "gameover";
-  if (ui.extraHighScoreBadge) {
-    ui.extraHighScoreBadge.classList.toggle("hidden", !showExtraBest);
-    ui.extraHighScoreBadge.textContent = `EX BEST: ${Math.floor(progress.highScores?.extra || 0)}`;
-  }
   if (ui.shopMoney) ui.shopMoney.textContent = `所持金 ${progress.money}G`;
+  updateProgressVisibility();
   updateDebugControls();
   renderShop();
   updateCharacterLocks();
   updateStageDifficultyButtons();
+}
+
+function updateProgressVisibility() {
+  const hideProgressUi = net.phase === "playing" || net.phase === "gameover" || Boolean(state?.running) || !ui.gameOver.classList.contains("hidden");
+  ui.moneyBadge?.parentElement?.classList.toggle("hidden", hideProgressUi);
+  if (hideProgressUi) ui.shopPanel?.classList.add("hidden");
+  const showExtraBest = Boolean(progress.stages?.extra || progress.cleared?.stage3 || debugModeEnabled) && !hideProgressUi;
+  if (ui.extraHighScoreBadge) {
+    ui.extraHighScoreBadge.classList.toggle("hidden", !showExtraBest);
+    ui.extraHighScoreBadge.textContent = `EX BEST: ${Math.floor(progress.highScores?.extra || 0)}`;
+  }
 }
 
 function updateDebugControls() {
