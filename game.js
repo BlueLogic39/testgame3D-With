@@ -71,6 +71,7 @@ const ui = {
   seVolumeText: document.getElementById("seVolumeText"),
   codexButton: document.getElementById("codexButton"),
   moneyBadge: document.getElementById("moneyBadge"),
+  extraHighScoreBadge: document.getElementById("extraHighScoreBadge"),
   shopButton: document.getElementById("shopButton"),
   shopPanel: document.getElementById("shopPanel"),
   shopMoney: document.getElementById("shopMoney"),
@@ -1140,6 +1141,7 @@ function makePlayer(id, name, x, z, local, character = "archer") {
     rifleAmmo: 30,
     rifleReloadUntil: 0,
     rifleReloading: false,
+    rifleSoundAt: 0,
     grenade: 0,
     grenadeTimer: 3,
     droneSupport: 0,
@@ -2628,7 +2630,7 @@ function setSoldierTankForm(player, active) {
 
 function tankVisualScale(mesh) {
   if (!mesh || mesh.userData.tankScaled) return;
-  mesh.scale.multiplyScalar(4);
+  mesh.scale.multiplyScalar(8 / 3);
   mesh.userData.tankScaled = true;
 }
 
@@ -2682,8 +2684,8 @@ function updateSoldierTank(player, dt) {
     }
     for (const side of [-1, 1]) {
       const sideAngle = angle + Math.PI / 2;
-      const originX = player.x + Math.sin(angle) * 1.55 + Math.sin(sideAngle) * side * 0.54;
-      const originZ = player.z + Math.cos(angle) * 1.55 + Math.cos(sideAngle) * side * 0.54;
+      const originX = player.x + Math.sin(angle) * 3.1 + Math.sin(sideAngle) * side * 0.78;
+      const originZ = player.z + Math.cos(angle) * 3.1 + Math.cos(sideAngle) * side * 0.78;
       fireSoldierBullet(player, angle, {
         originX,
         originZ,
@@ -2699,13 +2701,16 @@ function updateSoldierTank(player, dt) {
 }
 
 function fireTankShell(player, angle) {
+  const muzzleDistance = 5.25;
   const shell = {
     id: crypto.randomUUID(),
-    x: player.x + Math.sin(angle) * 1.85,
-    z: player.z + Math.cos(angle) * 1.85,
+    x: player.x + Math.sin(angle) * muzzleDistance,
+    y: 2.75,
+    z: player.z + Math.cos(angle) * muzzleDistance,
     vx: Math.sin(angle) * 22,
     vz: Math.cos(angle) * 22,
     radius: 0.42,
+    groundRadius: 0.95,
     life: 1.55,
     damage: player.damage * 4.8,
     explosionDamage: player.damage * 3.2,
@@ -2718,7 +2723,7 @@ function fireTankShell(player, angle) {
     mesh: makeProjectileMesh({ kind: "tankShell" }),
   };
   shell.mesh.rotation.y = angle;
-  shell.mesh.position.set(shell.x, 1.1, shell.z);
+  shell.mesh.position.set(shell.x, 2.75, shell.z);
   scene.add(shell.mesh);
   state.arrows.push(shell);
   addRing(player.x, player.z, 1.4, 0xfacc15);
@@ -3118,7 +3123,10 @@ function shootSoldierRifle(player) {
   const base = Math.atan2(player.input.aimX - player.x, player.input.aimZ - player.z);
   fireSoldierBullet(player, base + (Math.random() - 0.5) * 0.035, { damageScale: 1, speed: 34, life: 0.9 });
   player.rifleAmmo -= 1;
-  if (player.local || net.mode !== "client") sfx("soldierRifle", { broadcast: net.mode === "host" });
+  if ((player.local || net.mode !== "client") && state.elapsed >= (player.rifleSoundAt || 0)) {
+    sfx("soldierRifle", { broadcast: net.mode === "host", volumeScale: 0.75 });
+    player.rifleSoundAt = state.elapsed + 0.16;
+  }
 }
 
 function fireSoldierBullet(player, angle, options = {}) {
@@ -4608,14 +4616,17 @@ function updateArrows(dt) {
       updateGrenadeProjectile(arrow, dt);
       continue;
     }
+    const prevX = arrow.x;
+    const prevZ = arrow.z;
     arrow.x += arrow.vx * dt;
     arrow.z += arrow.vz * dt;
     arrow.life -= dt;
-    arrow.mesh.position.set(arrow.x, 1.1, arrow.z);
+    arrow.mesh.position.set(arrow.x, arrow.kind === "tankShell" ? 2.75 : 1.1, arrow.z);
     if (arrow.kind === "shuriken") arrow.mesh.rotation.z += dt * 18;
     for (const enemy of state.enemies) {
       if (arrow.hit.has(enemy)) continue;
-      if (distance(arrow, enemy) < arrow.radius + enemyHitRadius(enemy)) {
+      const tankGroundHit = arrow.kind === "tankShell" && distancePointToSegment(enemy.x, enemy.z, prevX, prevZ, arrow.x, arrow.z) <= (arrow.groundRadius || arrow.radius) + enemyHitRadius(enemy);
+      if (distance(arrow, enemy) < arrow.radius + enemyHitRadius(enemy) || tankGroundHit) {
         const finalDamage = arrow.damage * projectileDamageMultiplier(arrow, enemy);
         damageEnemy(enemy, finalDamage, arrow.owner);
         arrow.hit.add(enemy);
@@ -8635,6 +8646,11 @@ function buyShopItem(itemId) {
 function updateProgressUi() {
   if (ui.moneyBadge) ui.moneyBadge.textContent = `${progress.money}G`;
   ui.moneyBadge?.parentElement?.classList.toggle("hidden", net.phase === "playing" || net.phase === "gameover");
+  const showExtraBest = Boolean(progress.stages?.extra || progress.cleared?.stage3 || debugModeEnabled) && net.phase !== "playing" && net.phase !== "gameover";
+  if (ui.extraHighScoreBadge) {
+    ui.extraHighScoreBadge.classList.toggle("hidden", !showExtraBest);
+    ui.extraHighScoreBadge.textContent = `EX BEST: ${Math.floor(progress.highScores?.extra || 0)}`;
+  }
   if (ui.shopMoney) ui.shopMoney.textContent = `所持金 ${progress.money}G`;
   updateDebugControls();
   renderShop();
