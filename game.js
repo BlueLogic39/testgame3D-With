@@ -221,6 +221,7 @@ const AUDIO_FILES = {
   dragonBreathB: "dragon_bless2.mp3",
   dragonMove: "dragon_idou.mp3",
   dragonRoar: "dragon_nakigoe.mp3",
+  dragonVanish: "dragon_syometsu.mp3",
 };
 
 const SUPABASE_URL = "https://oeizknymvzmokzxksidg.supabase.co";
@@ -403,15 +404,15 @@ upgrades.push(
   { name: "アイススパイク", desc: "一定間隔で近くの敵の足元から氷柱を出す。取得するたび氷柱+2、スロー時間+1秒、威力が少し伸びる。", classes: ["witch"], apply: (p) => (p.iceSpike += 1) },
   { name: "サンダーストーム", desc: "自分の周辺に雷の魔法陣を設置し、無数の雷で敵を翻弄する。取得するたび範囲、設置時間、威力が伸びる。攻撃速度で再設置も早くなる。", classes: ["witch"], apply: (p) => (p.thunderCircle += 1) },
   { name: "ファイア巨大化", desc: "ファイアが大きくなり、魔力爆発の範囲と威力が伸びる。さらに連鎖爆発が+1される。", classes: ["witch"], apply: (p) => { p.magicRadius += 0.12; p.damage *= 1.08; p.magicSplash += 1; p.chainExplosion += 1; } },
-  { name: "剣閃範囲 +8度", desc: "薙ぎ払いの横範囲が8度広がり、奥への届く距離も8%伸びる。", classes: ["saber"], apply: (p) => { p.slashArc += THREE.MathUtils.degToRad(8); p.slashRange *= 1.08; } },
+  { name: "剣閃範囲 +8度", desc: "薙ぎ払いの横範囲が8度広がり、奥への届く距離も5%伸びる。", classes: ["saber"], apply: (p) => { p.slashArc += THREE.MathUtils.degToRad(8); p.slashRange *= 1.05; } },
   { name: "飛燕斬", desc: "通常攻撃と同時に飛ぶ斬撃を放つ。初回は威力67%、貫通0。以後は1回ごとに威力+12%、大きさ+0.08、貫通+2。", classes: ["saber"], apply: (p) => (p.flyingSlash += 1) },
   { name: "二連斬り", desc: "薙ぎ払いの直後に、少しずらした追加の斬撃を放つ。", classes: ["saber"], apply: (p) => (p.doubleSlash += 1) },
   { name: "風魔手裏剣", desc: "手裏剣が風をまとい、取得するたび威力+15%、大きさ+0.1、飛距離が少し伸びる。命中した敵を真空の刃で切り刻む。", classes: ["ninja"], apply: (p) => (p.fumaShuriken += 1) },
   { name: "影分身の術", desc: "離れた場所に分身を召喚し、火遁、雷遁、水遁、土遁を順番に放つ。Lv3とLv5で分身が増える。", classes: ["ninja"], apply: (p) => (p.shadowClone += 1) },
-  { name: "口寄せの術", desc: "3種類の生物からランダムに1匹を呼び出し範囲攻撃を行う。取得するたび持続時間、範囲、威力が少し伸びる。", classes: ["ninja"], apply: (p) => (p.summonJutsu += 1) },
+  { name: "口寄せの術", desc: "敵が集まっている場所へ蝦蟇、鷹、狼を順番に呼び出し、瞬間的な範囲攻撃を行う。取得するたび範囲と威力が伸びる。", classes: ["ninja"], apply: (p) => (p.summonJutsu += 1) },
   { name: "グレネード", desc: "3秒ごとに近くの敵へ分散して投げる。Lv3で2個、Lv5で3個。取得するたび威力と爆発範囲が少し伸びる。", classes: ["soldier"], apply: (p) => (p.grenade += 1) },
   { name: "ドローン支援", desc: "ファンネルのように周囲を浮遊する小型ドローンが機銃掃射。取得するたびドローン+1、威力も少し上がる。", classes: ["soldier"], apply: (p) => (p.droneSupport += 1) },
-  { name: "火炎放射器", desc: "10秒ごとに2秒間、周囲へ激しい炎を放ち続ける。取得するたび範囲と威力が少し伸びる。", classes: ["soldier"], apply: (p) => (p.flamethrower += 1) }
+  { name: "火炎放射器", desc: "8秒ごとに2秒間、周囲へ激しい炎を放ち続ける。取得するたび範囲と威力が伸びる。", classes: ["soldier"], apply: (p) => (p.flamethrower += 1) }
 );
 
 initThree();
@@ -1071,6 +1072,7 @@ function newState(playerInfos, options = {}) {
     linkReadySounded: false,
     linkRequests: {},
     linkCutsceneUntil: 0,
+    dragonDeathComplete: false,
     score: 0,
     kills: 0,
     thunderSoundAt: 0,
@@ -1150,7 +1152,7 @@ function makePlayer(id, name, x, z, local, character = "archer") {
     droneSupport: 0,
     droneTimer: 0,
     flamethrower: 0,
-    flamethrowerTimer: 10,
+    flamethrowerTimer: 8,
     flamethrowerUntil: 0,
     flamethrowerTick: 0,
   tankUntil: 0,
@@ -2364,28 +2366,48 @@ function castNinjaSummon(player, level) {
   const order = ["toad", "hawk", "wolf"];
   const kind = order[player.summonIndex % order.length];
   player.summonIndex = (player.summonIndex || 0) + 1;
-  const target = nearestEnemy(player, 24) || player;
+  const target = densestEnemyCluster(player, 28) || nearestEnemy(player, 24) || player;
   const duration = 1.5 + Math.max(0, level - 1) * 0.6;
-  const radius = 3.0 + level * 0.38;
-  const damage = player.damage * (1.1 + level * 0.11);
+  const radius = 3.4 + level * 0.46;
+  const damage = player.damage * (1.65 + level * 0.24);
   if (kind === "toad") {
     addSummonSmokeEffect(target.x, target.z, radius);
     damageEnemiesInCircle(target.x, target.z, radius, damage, player.id);
     addNinjaSummonEffect(kind, target.x, target.z, radius, 0, duration);
   } else if (kind === "hawk") {
     const angle = Math.atan2(target.x - player.x, target.z - player.z);
-    const length = 7.0 + level * 0.55;
-    const width = 2.0 + level * 0.16;
-    const endX = clamp(player.x + Math.sin(angle) * length, -WORLD.half + 1, WORLD.half - 1);
-    const endZ = clamp(player.z + Math.cos(angle) * length, -WORLD.half + 1, WORLD.half - 1);
-    addSummonSmokeEffect(player.x, player.z, width * 1.5);
-    damageEnemiesOnLine(player.x, player.z, endX, endZ, width, damage * 0.92, player.id);
-    addNinjaSummonEffect(kind, player.x, player.z, width, angle, duration, { length: Math.hypot(endX - player.x, endZ - player.z) });
+    const length = 8.0 + level * 0.7;
+    const width = 2.4 + level * 0.24;
+    const startX = clamp(target.x - Math.sin(angle) * length * 0.5, -WORLD.half + 1, WORLD.half - 1);
+    const startZ = clamp(target.z - Math.cos(angle) * length * 0.5, -WORLD.half + 1, WORLD.half - 1);
+    const endX = clamp(target.x + Math.sin(angle) * length * 0.5, -WORLD.half + 1, WORLD.half - 1);
+    const endZ = clamp(target.z + Math.cos(angle) * length * 0.5, -WORLD.half + 1, WORLD.half - 1);
+    addSummonSmokeEffect(target.x, target.z, width * 1.6);
+    damageEnemiesOnLine(startX, startZ, endX, endZ, width, damage, player.id);
+    addNinjaSummonEffect(kind, target.x, target.z, width, angle, duration, { length: Math.hypot(endX - startX, endZ - startZ) });
   } else {
-    addSummonSmokeEffect(player.x, player.z, radius * 1.08);
-    damageEnemiesInCircle(player.x, player.z, radius * 1.08, damage * 0.86, player.id);
-    addNinjaSummonEffect(kind, player.x, player.z, radius * 1.08, 0, duration);
+    addSummonSmokeEffect(target.x, target.z, radius * 1.08);
+    damageEnemiesInCircle(target.x, target.z, radius * 1.08, damage * 0.94, player.id);
+    addNinjaSummonEffect(kind, target.x, target.z, radius * 1.08, 0, duration);
   }
+}
+
+function densestEnemyCluster(player, maxDistance = 28) {
+  let best = null;
+  let bestScore = 0;
+  const candidates = state.enemies.filter((enemy) => enemy.hp > 0 && !isGhostIntangible(enemy) && distance(player, enemy) <= maxDistance);
+  for (const enemy of candidates) {
+    let score = 0;
+    for (const other of candidates) {
+      const d = distance(enemy, other);
+      if (d <= 6.5) score += 1 + (other.maxHp || other.hp || 0) / 120 - d * 0.035;
+    }
+    if (score > bestScore) {
+      bestScore = score;
+      best = enemy;
+    }
+  }
+  return best;
 }
 
 function nearestEnemy(origin, maxDistance = Infinity) {
@@ -2623,7 +2645,7 @@ function updateSoldierFlamethrower(player, dt) {
     player.flamethrowerTick = (player.flamethrowerTick || 0) - dt;
     if (player.flamethrowerTick <= 0) {
       const radius = 4.3 + level * 0.55;
-      const damage = player.damage * (0.72 + level * 0.09);
+      const damage = player.damage * (0.68 + level * 0.16);
       damageEnemiesInCircle(player.x, player.z, radius, damage, player.id);
       addFlameBurstEffect(player.x, player.z, radius);
       player.flamethrowerTick = Math.max(0.08, 0.18 * attackIntervalMultiplier(player));
@@ -2635,7 +2657,7 @@ function updateSoldierFlamethrower(player, dt) {
   player.flamethrowerUntil = state.elapsed + 2;
   player.flamethrowerTick = 0;
   if (player.local || net.mode !== "client") sfx("soldierFlame", { broadcast: net.mode === "host" });
-  player.flamethrowerTimer = Math.max(4.5, 10 * attackIntervalMultiplier(player));
+  player.flamethrowerTimer = Math.max(3.6, 8 * attackIntervalMultiplier(player));
 }
 
 function addFlameBurstEffect(x, z, radius) {
@@ -2764,11 +2786,11 @@ function fireTankShell(player, angle) {
     vx: Math.sin(angle) * 22,
     vz: Math.cos(angle) * 22,
     radius: 0.5,
-    groundRadius: 1.25,
+    groundRadius: 1.55,
     life: 1.55,
     damage: shellDamage,
     explosionDamage: Math.max(shellDamage * 0.82, player.damage * 3.2),
-    explosionRadius: 4.25,
+    explosionRadius: 5.25,
     pierce: 0,
     owner: player.id,
     kind: "tankShell",
@@ -3826,6 +3848,7 @@ function addEnemy(boss, shooter, bomber = false, role = "") {
 function updateEnemies(dt) {
   for (const enemy of state.enemies) {
     updateEnemyDamageOverTime(enemy, dt);
+    if (enemy.bossRole === "castleDragon" && enemy.dragonDying) continue;
     const target = nearestLivingPlayer(enemy);
     if (!target) continue;
     const angle = Math.atan2(target.x - enemy.x, target.z - enemy.z);
@@ -3878,8 +3901,11 @@ function updateEnemies(dt) {
     }
   }
 
+  updateDragonDeathAnimations(dt);
+
   const dead = state.enemies.filter((enemy) => enemy.hp <= 0);
   for (const enemy of dead) {
+    if (enemy.bossRole === "castleDragon" && enemy.dragonDying && !enemy.dragonDeathDone) continue;
     state.kills += 1;
     if (STAGES[state.stageId]?.scoreAttack) state.score += enemy.boss ? 1400 : enemy.midBoss ? 520 : enemy.enemyType === "castleMage" ? 65 : enemy.bomber ? 52 : enemy.shooter ? 42 : 28;
     const owner = state.players.find((p) => p.id === enemy.lastHitBy) || localPlayer();
@@ -3890,7 +3916,44 @@ function updateEnemies(dt) {
     if (enemy.midBoss) spawnHeartAt(enemy.x, enemy.z);
     addRing(enemy.x, enemy.z, enemy.boss ? 3.2 : enemy.bomber ? 2.2 : 1.4, enemy.bomber ? 0xffd84a : enemy.shooter ? 0x3fb7d6 : enemy.boss ? 0x57c4a7 : 0xf2c14e);
   }
-  removeDead(state.enemies, (enemy) => enemy.hp <= 0);
+  removeDead(state.enemies, (enemy) => enemy.hp <= 0 && (enemy.bossRole !== "castleDragon" || !enemy.dragonDying || enemy.dragonDeathDone));
+}
+
+function updateDragonDeathAnimations(dt) {
+  for (const enemy of state.enemies) {
+    if (enemy.bossRole !== "castleDragon" || !enemy.dragonDying || enemy.dragonDeathDone) continue;
+    const duration = enemy.dragonDeathDuration || 4.2;
+    const elapsed = state.elapsed - (enemy.dragonDeathStartedAt || state.elapsed);
+    const progress = clamp(elapsed / duration, 0, 1);
+    if (enemy.mesh) {
+      const shake = (1 - progress) * 0.36;
+      const sink = progress * 8.5;
+      const baseY = (enemy.radius || 4.2) + 1.25;
+      enemy.mesh.position.set(
+        (enemy.dragonBodyX ?? enemy.x) + Math.sin(state.elapsed * 38) * shake,
+        baseY - sink + Math.sin(state.elapsed * 58) * shake * 0.8,
+        (enemy.dragonBodyZ ?? enemy.z) + Math.cos(state.elapsed * 31) * shake
+      );
+      enemy.mesh.rotation.z = Math.sin(state.elapsed * 46) * shake * 0.22;
+      setMeshOpacity(enemy.mesh, Math.max(0, 1 - progress * 1.1));
+    }
+    if (elapsed >= duration) {
+      enemy.dragonDeathDone = true;
+      state.dragonDeathComplete = true;
+    }
+  }
+}
+
+function setMeshOpacity(root, opacity) {
+  root.traverse?.((child) => {
+    if (!child.material) return;
+    const materials = Array.isArray(child.material) ? child.material : [child.material];
+    for (const material of materials) {
+      material.transparent = true;
+      material.opacity = opacity;
+      material.depthWrite = opacity > 0.35;
+    }
+  });
 }
 
 function updateEnemyDamageOverTime(enemy, dt) {
@@ -4185,6 +4248,7 @@ function addRandomDragonAttack(enemy, target) {
   const phase = bossRagePhase(enemy);
   const attacks = [
     () => addDragonBreath(enemy, target),
+    () => addDragonBodyCharge(enemy, target),
     () => addDragonTailSweep(enemy),
     () => addDragonFireRain(enemy),
     () => addDragonTripleBreath(enemy, target),
@@ -4194,6 +4258,7 @@ function addRandomDragonAttack(enemy, target) {
   ];
   if (phase === "angry" || phase === "critical") {
     attacks.push(
+      () => addDragonBodyCharge(enemy, target),
       () => addDragonTripleBreath(enemy, target),
       () => addDragonRoarShockwaves(enemy),
       () => addDragonDarkRain(enemy),
@@ -4206,6 +4271,42 @@ function addRandomDragonAttack(enemy, target) {
   if (attacks.length > 1 && index === previous) index = (index + 1 + Math.floor(Math.random() * (attacks.length - 1))) % attacks.length;
   enemy.dragonLastAttackIndex = index;
   attacks[index]();
+}
+
+function addDragonBodyCharge(enemy, target) {
+  if (!target) return;
+  const from = dragonChargeStartPoint(target);
+  const angle = Math.atan2(target.x - from.x, target.z - from.z);
+  const length = WORLD.half * 2.5;
+  const startX = clamp(from.x - Math.sin(angle) * 7, -WORLD.half + 2, WORLD.half - 2);
+  const startZ = clamp(from.z - Math.cos(angle) * 7, -WORLD.half + 2, WORLD.half - 2);
+  const endX = clamp(startX + Math.sin(angle) * length, -WORLD.half + 2, WORLD.half - 2);
+  const endZ = clamp(startZ + Math.cos(angle) * length, -WORLD.half + 2, WORLD.half - 2);
+  enemy.x = startX;
+  enemy.z = startZ;
+  enemy.dragonBodyX = startX - Math.sin(angle) * 8.5;
+  enemy.dragonBodyZ = startZ - Math.cos(angle) * 8.5;
+  enemy.dragonFaceX = startX;
+  enemy.dragonFaceZ = startZ;
+  enemy.dragonCenterAttack = false;
+  playDragonMoveSound();
+  addDragonLineZone(enemy, "dragonBodyCharge", startX, startZ, endX, endZ, 13.5, bossScaledDamage(enemy, 48), {
+    life: 3.05,
+    impactAt: 1.72,
+    chargeDuration: 0.92,
+  });
+}
+
+function dragonChargeStartPoint(target) {
+  const spots = [
+    { x: 0, z: -WORLD.half + 4 },
+    { x: WORLD.half - 4, z: 0 },
+    { x: 0, z: WORLD.half - 4 },
+    { x: -WORLD.half + 4, z: 0 },
+  ];
+  return spots
+    .map((spot) => ({ ...spot, distanceToTarget: Math.hypot(target.x - spot.x, target.z - spot.z) + Math.random() * 4 }))
+    .sort((a, b) => b.distanceToTarget - a.distanceToTarget)[0] || spots[0];
 }
 
 function addDragonBreath(enemy, target) {
@@ -4437,6 +4538,7 @@ function addDragonLineZone(enemy, kind, startX, startZ, endX, endZ, width, damag
     slow: options.slow || 0,
     slowDuration: options.slowDuration || 0,
     rotateSpeed: options.rotateSpeed || 0,
+    chargeDuration: options.chargeDuration || 0.55,
     mesh: makeBossZoneMesh({ kind, width, length, role: enemy.bossRole }),
   };
   scene.add(zone.mesh);
@@ -5039,6 +5141,7 @@ function updateBossZones(dt) {
     if ((zone.kind === "charge" || zone.kind === "guardCharge") && zone.retargetOnStart && !zone.retargeted) retargetBossCharge(zone);
     updateBossZoneMesh(zone, zoneElapsed);
     if ((zone.kind === "charge" || zone.kind === "guardCharge") && zone.impacted) updateBossChargeMotion(zone, zoneElapsed);
+    if (zone.kind === "dragonBodyCharge" && zone.impacted) updateDragonBodyChargeMotion(zone, zoneElapsed);
     if (zone.impacted || zoneElapsed < zone.impactAt) continue;
     zone.impacted = true;
     if (zone.kind === "charge" || zone.kind === "guardCharge") {
@@ -5046,8 +5149,9 @@ function updateBossZones(dt) {
       updateBossChargeMotion(zone, zoneElapsed);
       continue;
     }
-    if (zone.kind === "breath" || zone.kind === "lightningBreath" || zone.kind === "dragonFissure") {
+    if (zone.kind === "breath" || zone.kind === "lightningBreath" || zone.kind === "dragonFissure" || zone.kind === "dragonBodyCharge") {
       resolveDragonBreathDamage(zone);
+      if (zone.kind === "dragonBodyCharge") updateDragonBodyChargeMotion(zone, zoneElapsed);
       continue;
     }
     if (zone.kind === "petrifyBeam") {
@@ -5197,6 +5301,21 @@ function updateBossChargeMotion(zone, elapsed) {
   }
 }
 
+function updateDragonBodyChargeMotion(zone, elapsed) {
+  const dragon = state.enemies.find((enemy) => enemy.id === zone.owner && enemy.bossRole === "castleDragon");
+  if (!dragon) return;
+  const t = clamp((elapsed - zone.impactAt) / (zone.chargeDuration || 0.92), 0, 1);
+  const eased = 1 - Math.pow(1 - t, 2);
+  const faceX = THREE.MathUtils.lerp(zone.startX ?? zone.x, zone.endX, eased);
+  const faceZ = THREE.MathUtils.lerp(zone.startZ ?? zone.z, zone.endZ, eased);
+  dragon.x = faceX;
+  dragon.z = faceZ;
+  dragon.dragonBodyX = faceX - Math.sin(zone.angle || 0) * 8.5;
+  dragon.dragonBodyZ = faceZ - Math.cos(zone.angle || 0) * 8.5;
+  dragon.dragonFaceX = faceX;
+  dragon.dragonFaceZ = faceZ;
+}
+
 function distancePointToSegment(px, pz, ax, az, bx, bz) {
   const abx = bx - ax;
   const abz = bz - az;
@@ -5215,6 +5334,7 @@ function makeBossZoneMesh(zone = {}) {
   if (zone.kind === "breath") return makeDragonBreathMesh(zone);
   if (zone.kind === "lightningBreath") return makeDragonBreathMesh({ ...zone, lightning: true });
   if (zone.kind === "dragonFissure") return makeDragonLineMesh({ ...zone, fissure: true });
+  if (zone.kind === "dragonBodyCharge") return makeDragonLineMesh({ ...zone, bodyCharge: true });
   if (zone.kind === "petrifyBeam") return makeDragonLineMesh({ ...zone, petrify: true });
   if (zone.kind === "charge") return makeBossChargeMesh(zone);
   if (zone.kind === "guardCharge") return makeBossChargeMesh({ ...zone, castleGuard: true });
@@ -5285,13 +5405,22 @@ function makeDragonLineMesh(zone = {}) {
   const width = zone.width || 1.2;
   const fissure = Boolean(zone.fissure || zone.kind === "dragonFissure");
   const petrify = Boolean(zone.petrify || zone.kind === "petrifyBeam");
-  const color = petrify ? 0xa78bfa : fissure ? 0xffb020 : 0xff6b2c;
+  const bodyCharge = Boolean(zone.bodyCharge || zone.kind === "dragonBodyCharge");
+  const color = bodyCharge ? 0xff263f : petrify ? 0xa78bfa : fissure ? 0xffb020 : 0xff6b2c;
   const group = new THREE.Group();
   const warning = new THREE.Mesh(new THREE.BoxGeometry(width, 0.045, length), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.34, depthWrite: false }));
   warning.position.set(0, 0.075, length / 2);
-  const core = new THREE.Mesh(new THREE.BoxGeometry(width * (petrify ? 0.42 : 0.26), 0.09, length), new THREE.MeshBasicMaterial({ color: petrify ? 0xe9d5ff : 0xfff0a6, transparent: true, opacity: 0.7, depthWrite: false, blending: THREE.AdditiveBlending }));
+  const core = new THREE.Mesh(new THREE.BoxGeometry(width * (bodyCharge ? 0.7 : petrify ? 0.42 : 0.26), 0.09, length), new THREE.MeshBasicMaterial({ color: bodyCharge ? 0xffd166 : petrify ? 0xe9d5ff : 0xfff0a6, transparent: true, opacity: bodyCharge ? 0.46 : 0.7, depthWrite: false, blending: THREE.AdditiveBlending }));
   core.position.set(0, 0.13, length / 2);
   group.add(warning, core);
+  if (bodyCharge) {
+    const edgeMat = new THREE.MeshBasicMaterial({ color: 0xfff0a6, transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending });
+    for (const side of [-1, 1]) {
+      const edge = new THREE.Mesh(new THREE.BoxGeometry(width * 0.06, 0.12, length), edgeMat.clone());
+      edge.position.set(side * width * 0.5, 0.18, length / 2);
+      group.add(edge);
+    }
+  }
   if (fissure) {
     const crackMat = new THREE.MeshBasicMaterial({ color: 0xff3b18, transparent: true, opacity: 0.78, depthWrite: false, blending: THREE.AdditiveBlending });
     for (let i = 0; i < 12; i += 1) {
@@ -5476,7 +5605,7 @@ function makeExecutionStrikeMesh(zone = {}) {
 function updateBossZoneMesh(zone, elapsed) {
   const mesh = zone.mesh;
   if (!mesh) return;
-  if (zone.kind === "charge" || zone.kind === "guardCharge" || zone.kind === "breath" || zone.kind === "lightningBreath" || zone.kind === "dragonFissure" || zone.kind === "petrifyBeam" || zone.kind === "execution" || zone.kind === "executionPlus" || zone.kind === "shockwave") {
+  if (zone.kind === "charge" || zone.kind === "guardCharge" || zone.kind === "breath" || zone.kind === "lightningBreath" || zone.kind === "dragonFissure" || zone.kind === "dragonBodyCharge" || zone.kind === "petrifyBeam" || zone.kind === "execution" || zone.kind === "executionPlus" || zone.kind === "shockwave") {
     mesh.position.set(zone.x, 0, zone.z);
     mesh.rotation.y = zone.angle || 0;
     const fade = zone.life < 0.35 ? zone.life / 0.35 : 1;
@@ -6192,6 +6321,7 @@ function updateDragonHitboxMesh(enemy, dt = 0.016) {
 
 function damageEnemy(enemy, amount, owner = "") {
   if (!enemy || amount <= 0) return;
+  if (enemy.bossRole === "castleDragon" && enemy.dragonDying) return;
   if (isGhostIntangible(enemy)) {
     addRing(enemy.x, enemy.z, 0.95, 0x9ca3af);
     return;
@@ -6202,7 +6332,24 @@ function damageEnemy(enemy, amount, owner = "") {
   if (enemy.bossRole === "castleDragon") {
     enemy.hitboxFlash = 0.28;
     updateDragonHitboxMesh(enemy, 0);
+    if (enemy.hp <= 0) startDragonDeath(enemy);
   }
+}
+
+function startDragonDeath(enemy) {
+  if (!enemy || enemy.dragonDying) return;
+  enemy.hp = 0;
+  enemy.dragonDying = true;
+  enemy.dragonDeathStartedAt = state.elapsed;
+  enemy.dragonDeathDuration = 4.2;
+  enemy.bossAttackTimer = 999;
+  for (const zone of state.bossZones) scene.remove(zone.mesh);
+  state.bossZones.length = 0;
+  stopBgm();
+  sfx("dragonRoar", { broadcast: net.mode === "host" });
+  window.setTimeout(() => sfx("dragonVanish", { broadcast: net.mode === "host" }), 450);
+  addScreenFlash(0x240814, 0.34, 1.0);
+  showSkillBanner("冥竜、崩れ落ちる", "消滅を見届けろ");
 }
 
 function updateBossHealthVisual(enemy) {
@@ -7298,6 +7445,10 @@ function removeDead(list, predicate) {
 function checkWin() {
   const duration = STAGES[state.stageId]?.duration ?? 180;
   if (!Number.isFinite(duration)) return;
+  if (state.stageId === "stage3") {
+    if (state.elapsed >= duration && state.bossSpawned && state.dragonDeathComplete) endGame(true);
+    return;
+  }
   if (state.elapsed >= duration && state.bossSpawned && !state.enemies.some((enemy) => enemy.boss)) endGame(true);
 }
 
@@ -8072,7 +8223,8 @@ function applySnapshot(data) {
   net.waitingFor = data.waitingFor || null;
   syncPlayers(data.players || []);
   syncSimpleMeshes(state.renderCache.enemies, data.enemies || [], (item) => makeEnemyMesh(item), 0);
-  if ((data.enemies || []).some((enemy) => enemy.bossRole === "castleDragon")) startBgm();
+  if ((data.enemies || []).some((enemy) => enemy.bossRole === "castleDragon" && enemy.hp > 0)) startBgm();
+  else if ((data.enemies || []).some((enemy) => enemy.bossRole === "castleDragon" && enemy.hp <= 0)) stopBgm();
   syncSimpleMeshes(state.renderCache.arrows, data.arrows || [], makeProjectileMesh, 1.1);
   syncSimpleMeshes(state.renderCache.bullets, data.bullets || [], makeBulletMesh, 1.05);
   syncSimpleMeshes(state.renderCache.gems, data.gems || [], makeGemMesh, 0.55);
@@ -8321,7 +8473,7 @@ function syncBossZones(zones) {
   }
   state.bossZones = zones.map((item) => {
     let mesh = cache.get(item.id);
-    if (mesh && ["charge", "guardCharge", "execution", "executionPlus", "shockwave", "breath", "lightningBreath", "dragonFissure", "petrifyBeam"].includes(item.kind) && Math.abs((mesh.userData.syncLength || 0) - (item.length || 0)) > 0.05) {
+    if (mesh && ["charge", "guardCharge", "execution", "executionPlus", "shockwave", "breath", "lightningBreath", "dragonFissure", "dragonBodyCharge", "petrifyBeam"].includes(item.kind) && Math.abs((mesh.userData.syncLength || 0) - (item.length || 0)) > 0.05) {
       scene.remove(mesh);
       cache.delete(item.id);
       mesh = null;
