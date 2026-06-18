@@ -309,7 +309,11 @@ const CHARACTER_CODEX = [
     weapon: "マウス方向へ矢を連射します。矢の本数、貫通、バックショットで攻撃方向を広げられます。",
     passive: "追い風: 遠くの敵に矢を当てるほどダメージが上がります。距離8以上で+20%、距離14以上で+40%。",
     skill: "アローレイン: スペースキーで前方へ大量の矢を一気に放ちます。",
-    upgrades: ["矢の本数 +1", "貫通 +1", "バックショット"],
+    upgrades: [
+      "矢の本数 +1: 通常攻撃の前方矢が1本増える。最大Lv5で前方6本。",
+      "貫通 +1: 矢が追加で1体貫通する。群れを直線で抜きやすくなる。",
+      "バックショット: 通常攻撃と同時に背後へ矢を撃つ。取得ごとに背後矢+1。矢の本数+1の影響は受けない。"
+    ],
   },
   {
     id: "witch",
@@ -317,7 +321,11 @@ const CHARACTER_CODEX = [
     weapon: "火炎弾のファイアを放ちます。弾速は控えめですが、命中時に周囲を巻き込みます。",
     passive: "魔力爆発: ファイアが命中すると範囲ダメージが発生します。ファイア巨大化を取るほど範囲、威力、連鎖回数が伸びます。",
     skill: "魔女の大爆発: スペースキーで周囲を大きく爆発させます。",
-    upgrades: ["アイススパイク", "サンダーストーム", "ファイア巨大化"],
+    upgrades: [
+      "アイススパイク: 近くの敵の足元へ氷柱を出す。取得ごとに氷柱+2、スロー時間+1秒、威力アップ。攻撃速度強化で発動間隔短縮。",
+      "サンダーストーム: 周囲に雷の魔法陣を設置する。取得ごとに範囲、設置時間、威力アップ。攻撃速度強化で再設置が早くなる。",
+      "ファイア巨大化: ファイアと魔力爆発の範囲と威力が伸び、連鎖爆発+1。爆発が次の爆発を呼びやすくなる。"
+    ],
   },
   {
     id: "saber",
@@ -325,7 +333,11 @@ const CHARACTER_CODEX = [
     weapon: "2秒ごとにマウス方向へ90度の剣閃で薙ぎ払います。",
     passive: "バーサーカー: レベルが上がるたびに攻撃速度が5%上がります。",
     skill: "回転突進斬り: スペースキーで2秒間回転斬りしながらマウス方向へ突進します。",
-    upgrades: ["剣閃範囲 +8度", "飛燕斬", "二連斬り"],
+    upgrades: [
+      "剣閃範囲 +8度: 薙ぎ払いの横範囲+8度、奥行き+5%。近距離制圧を広げる。",
+      "飛燕斬: 通常攻撃と同時に飛ぶ斬撃を放つ。ダメージ強化が乗る。初回威力67%、以後Lvごとに威力+12%、大きさ+0.08、貫通+2。",
+      "二連斬り: 薙ぎ払い直後に追加斬撃を出す。前方の取りこぼしを減らす。"
+    ],
   },
   {
     id: "ninja",
@@ -333,7 +345,11 @@ const CHARACTER_CODEX = [
     weapon: "手裏剣を投げた1秒後に刀で斬り、さらに1秒後に手裏剣へ戻る交互攻撃です。",
     passive: "旋風: 移動速度が15%高い。忍具精通: 5レベルごとに手裏剣+1、手裏剣貫通+1。最大4段階。",
     skill: "飛影八閃: 15秒ごとにマウス方向へワープし、八方向へ手裏剣を放ちます。",
-    upgrades: ["風魔手裏剣", "影分身の術", "口寄せの術"],
+    upgrades: [
+      "風魔手裏剣: 手裏剣が風をまとい、Lvごとに威力+15%、大きさ+0.1、飛距離アップ。命中敵へ持続ダメージも付与。",
+      "影分身の術: 離れた位置に分身を召喚し、火遁、雷遁、水遁、土遁を順番に発動。Lv3で2人、Lv5で3人。攻撃速度とダメージ強化が乗る。",
+      "口寄せの術: 敵の密集地へ蝦蟇、鷹、狼を順番に召喚し瞬間範囲攻撃。Lvごとに範囲と威力アップ。攻撃速度とダメージ強化が乗る。"
+    ],
   },
   {
     id: "soldier",
@@ -341,7 +357,11 @@ const CHARACTER_CODEX = [
     weapon: "アサルトライフルを高連射します。30発撃つと2秒間リロードします。",
     passive: "未設定: 今後の調整で追加予定です。",
     skill: "戦車降下: 60秒ごとに戦車へ乗り込み、砲弾と両側バルカンで敵を蹂躙します。",
-    upgrades: ["グレネード", "ドローン支援", "火炎放射器"],
+    upgrades: [
+      "グレネード: 3秒ごとに近い敵へ分散投擲。Lv3で2個、Lv5で3個。Lvごとに威力と爆発範囲アップ。攻撃速度強化で投擲間隔短縮。",
+      "ドローン支援: 浮遊ドローンが追従して機銃掃射。取得ごとにドローン+1、威力少しアップ。",
+      "火炎放射器: 8秒ごとに2秒間、周囲へ炎を放ち続ける。Lvごとに範囲と威力アップ。攻撃速度強化でクールタイム短縮。"
+    ],
   },
 ];
 
@@ -405,7 +425,7 @@ upgrades.push(
   { name: "サンダーストーム", desc: "自分の周辺に雷の魔法陣を設置し、無数の雷で敵を翻弄する。取得するたび範囲、設置時間、威力が伸びる。攻撃速度で再設置も早くなる。", classes: ["witch"], apply: (p) => (p.thunderCircle += 1) },
   { name: "ファイア巨大化", desc: "ファイアが大きくなり、魔力爆発の範囲と威力が伸びる。さらに連鎖爆発が+1される。", classes: ["witch"], apply: (p) => { p.magicRadius += 0.12; p.damage *= 1.08; p.magicSplash += 1; p.chainExplosion += 1; } },
   { name: "剣閃範囲 +8度", desc: "薙ぎ払いの横範囲が8度広がり、奥への届く距離も5%伸びる。", classes: ["saber"], apply: (p) => { p.slashArc += THREE.MathUtils.degToRad(8); p.slashRange *= 1.05; } },
-  { name: "飛燕斬", desc: "通常攻撃と同時に飛ぶ斬撃を放つ。初回は威力67%、貫通0。以後は1回ごとに威力+12%、大きさ+0.08、貫通+2。", classes: ["saber"], apply: (p) => (p.flyingSlash += 1) },
+  { name: "飛燕斬", desc: "通常攻撃と同時に飛ぶ斬撃を放つ。ダメージ強化も乗る。初回は威力67%、貫通0。以後は1回ごとに威力+12%、大きさ+0.08、貫通+2。", classes: ["saber"], apply: (p) => (p.flyingSlash += 1) },
   { name: "二連斬り", desc: "薙ぎ払いの直後に、少しずらした追加の斬撃を放つ。", classes: ["saber"], apply: (p) => (p.doubleSlash += 1) },
   { name: "風魔手裏剣", desc: "手裏剣が風をまとい、取得するたび威力+15%、大きさ+0.1、飛距離が少し伸びる。命中した敵を真空の刃で切り刻む。", classes: ["ninja"], apply: (p) => (p.fumaShuriken += 1) },
   { name: "影分身の術", desc: "離れた場所に分身を召喚し、火遁、雷遁、水遁、土遁を順番に放つ。Lv3とLv5で分身が増える。", classes: ["ninja"], apply: (p) => (p.shadowClone += 1) },
@@ -2065,7 +2085,7 @@ function updateNinjaSummonJutsu(player, dt) {
   player.summonTimer = (player.summonTimer || 0) - dt;
   if (player.summonTimer > 0) return;
   castNinjaSummon(player, level);
-  player.summonTimer = Math.max(3.65, (7.4 - level * 0.28) / 1.2);
+  player.summonTimer = Math.max(2.35, ((7.4 - level * 0.28) / 1.2) * attackIntervalMultiplier(player));
 }
 
 function updateLinkSkill(dt) {
@@ -2445,7 +2465,7 @@ function updateNinjaShadowCloneJutsu(player, dt) {
   player.shadowCloneTimer = (player.shadowCloneTimer || 0) - dt;
   if (player.shadowCloneTimer > 0) return;
   castShadowCloneJutsu(player, level);
-  player.shadowCloneTimer = Math.max(2.45, (6.2 - level * 0.28) / 1.3);
+  player.shadowCloneTimer = Math.max(1.8, ((6.2 - level * 0.28) / 1.3) * attackIntervalMultiplier(player));
 }
 
 function shadowCloneCount(level) {
@@ -2525,9 +2545,9 @@ function throwSoldierGrenade(player, target, index = 0, count = 1, scatterFallba
     life: 2,
     airLife: flightTime + 0.35,
     landed: false,
-    damage: player.damage * (2.2 + (player.grenade || 0) * 0.3),
-    explosionDamage: player.damage * (3.6 + (player.grenade || 0) * 0.52),
-    explosionRadius: 2.4 + (player.grenade || 0) * 0.2,
+    damage: player.damage * (2.4 + (player.grenade || 0) * 0.5),
+    explosionDamage: player.damage * (4.2 + (player.grenade || 0) * 0.9),
+    explosionRadius: 2.85 + (player.grenade || 0) * 0.24,
     pierce: 0,
     owner: player.id,
     kind: "grenade",
@@ -6349,7 +6369,6 @@ function startDragonDeath(enemy) {
   sfx("dragonRoar", { broadcast: net.mode === "host" });
   window.setTimeout(() => sfx("dragonVanish", { broadcast: net.mode === "host" }), 450);
   addScreenFlash(0x240814, 0.34, 1.0);
-  showSkillBanner("冥竜、崩れ落ちる", "消滅を見届けろ");
 }
 
 function updateBossHealthVisual(enemy) {
@@ -7446,7 +7465,7 @@ function checkWin() {
   const duration = STAGES[state.stageId]?.duration ?? 180;
   if (!Number.isFinite(duration)) return;
   if (state.stageId === "stage3") {
-    if (state.elapsed >= duration && state.bossSpawned && state.dragonDeathComplete) endGame(true);
+    if (state.bossSpawned && state.dragonDeathComplete) endGame(true);
     return;
   }
   if (state.elapsed >= duration && state.bossSpawned && !state.enemies.some((enemy) => enemy.boss)) endGame(true);
@@ -9644,15 +9663,15 @@ function upgradeDescForPlayer(up, player) {
   const character = player?.character || "archer";
   if (up.name === "ダメージ +16%") {
     if (character === "witch") return "ファイア、魔力爆発、サンダーストーム、アイススパイク、魔女の大爆発の威力が増える。";
-    if (character === "saber") return "薙ぎ払いの威力が増える。近づいた敵をまとめて倒しやすくなる。";
-    if (character === "ninja") return "刀、手裏剣、飛影八閃の威力が増える。";
+    if (character === "saber") return "薙ぎ払い、飛燕斬、回転突進斬りの威力が増える。";
+    if (character === "ninja") return "刀、手裏剣、影分身の術、口寄せの術、飛影八閃の威力が増える。";
     if (character === "soldier") return "ライフル、グレネード、ドローン、火炎放射、戦車の威力が増える。";
     return "矢の威力が増える。硬い敵に効きやすい。";
   }
   if (up.name === "攻撃速度 +10%") {
     if (character === "witch") return "ファイア、アイススパイク、サンダーストームの発動間隔が短くなる。";
     if (character === "saber") return "薙ぎ払いを出せる間隔が短くなる。隙を減らしやすい。";
-    if (character === "ninja") return "刀と手裏剣を出す間隔が短くなる。";
+    if (character === "ninja") return "刀、手裏剣、影分身の術、口寄せの術の発動間隔が短くなる。";
     if (character === "soldier") return "ライフル、グレネード、火炎放射器の発動間隔が短くなる。";
     return "矢を撃つ間隔が短くなる。";
   }
