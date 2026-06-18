@@ -232,7 +232,7 @@ const LINK_SKILL_CHARGE_SECONDS = 10;
 const LINK_SKILL_RANGE = 6.2;
 
 const SHOP_ITEMS = [
-  { id: "power", type: "permanent", name: "筋力訓練", desc: "全キャラの攻撃力がレベルごとに+5%。", costs: [500, 1000, 1500, 2000, 2500], max: 5 },
+  { id: "power", type: "permanent", name: "筋力訓練", desc: "全キャラの攻撃力がレベルごとに+4%。", costs: [500, 1000, 1500, 2000, 2500], max: 5 },
   { id: "vitality", type: "permanent", name: "体力訓練", desc: "全キャラの最大HPがレベルごとに+5。", costs: [500, 1000, 1500, 2000, 2500], max: 5 },
   { id: "speed", type: "permanent", name: "俊足訓練", desc: "全キャラの移動速度がレベルごとに+3%。", costs: [500, 1000, 1500, 2000, 2500], max: 5 },
   { id: "magnet", type: "permanent", name: "磁力強化", desc: "経験値を吸い寄せる範囲がレベルごとに+8%。", costs: [500, 1000, 1500, 2000, 2500], max: 5 },
@@ -324,7 +324,7 @@ const CHARACTER_CODEX = [
     weapon: "2秒ごとにマウス方向へ90度の剣閃で薙ぎ払います。",
     passive: "バーサーカー: レベルが上がるたびに攻撃速度が5%上がります。",
     skill: "回転突進斬り: スペースキーで2秒間回転斬りしながらマウス方向へ突進します。",
-    upgrades: ["剣閃範囲 +10度", "飛燕斬", "二連斬り"],
+    upgrades: ["剣閃範囲 +8度", "飛燕斬", "二連斬り"],
   },
   {
     id: "ninja",
@@ -386,11 +386,11 @@ const materials = {
 
 const upgrades = [
   { name: "矢の本数 +1", desc: "一度に放つ矢が増える。近距離の制圧力が上がる。", apply: (p) => (p.arrows += 1) },
-  { name: "攻撃速度 +18%", desc: "攻撃間隔が短くなる。迷ったらこれ。", apply: (p) => addAttackSpeed(p, 0.18) },
-  { name: "ダメージ +25%", desc: "通常攻撃の威力が増える。硬い敵に効きやすい。", apply: (p) => (p.damage *= 1.25) },
+  { name: "攻撃速度 +10%", desc: "攻撃間隔が短くなる。迷ったらこれ。", apply: (p) => addAttackSpeed(p, 0.1) },
+  { name: "ダメージ +16%", desc: "通常攻撃の威力が増える。硬い敵に効きやすい。", apply: (p) => (p.damage *= 1.16) },
   { name: "貫通 +1", desc: "矢が追加で敵を貫く。群れに強い。", apply: (p) => (p.pierce += 1) },
-  { name: "移動速度 +15%", desc: "囲まれにくくなり、経験値回収もしやすくなる。", apply: (p) => (p.speed *= 1.15) },
-  { name: "最大HP +25", desc: "最大HPが増え、少し回復する。", apply: (p) => { p.maxHp += 25; p.hp = Math.min(p.maxHp, p.hp + 25); } },
+  { name: "移動速度 +10%", desc: "囲まれにくくなり、経験値回収もしやすくなる。", apply: (p) => (p.speed *= 1.1) },
+  { name: "最大HP +15", desc: "最大HPが増え、少し回復する。", apply: (p) => { p.maxHp += 15; p.hp = Math.min(p.maxHp, p.hp + 15); } },
   { name: "吸血", desc: "敵を倒すたびにHPを少し回復する。", maxLevel: 3, apply: (p) => (p.lifeSteal += 1.2) },
   { name: "バックショット", desc: "通常攻撃と同時にマウス方向の逆へ矢を撃つ。複数取ると後方矢が増える。", apply: (p) => (p.backShots += 1) },
   { name: "磁力 +40%", desc: "経験値を吸い寄せる範囲が広がる。", apply: (p) => (p.magnet *= 1.4) },
@@ -403,7 +403,7 @@ upgrades.push(
   { name: "アイススパイク", desc: "一定間隔で近くの敵の足元から氷柱を出す。取得するたび氷柱+2、スロー時間+1秒、威力が少し伸びる。", classes: ["witch"], apply: (p) => (p.iceSpike += 1) },
   { name: "サンダーストーム", desc: "自分の周辺に雷の魔法陣を設置し、無数の雷で敵を翻弄する。取得するたび範囲、設置時間、威力が伸びる。攻撃速度で再設置も早くなる。", classes: ["witch"], apply: (p) => (p.thunderCircle += 1) },
   { name: "ファイア巨大化", desc: "ファイアが大きくなり、魔力爆発の範囲と威力が伸びる。さらに連鎖爆発が+1される。", classes: ["witch"], apply: (p) => { p.magicRadius += 0.12; p.damage *= 1.08; p.magicSplash += 1; p.chainExplosion += 1; } },
-  { name: "剣閃範囲 +10度", desc: "薙ぎ払いの横範囲が10度広がり、奥への届く距離も10%伸びる。", classes: ["saber"], apply: (p) => { p.slashArc += THREE.MathUtils.degToRad(10); p.slashRange *= 1.1; } },
+  { name: "剣閃範囲 +8度", desc: "薙ぎ払いの横範囲が8度広がり、奥への届く距離も8%伸びる。", classes: ["saber"], apply: (p) => { p.slashArc += THREE.MathUtils.degToRad(8); p.slashRange *= 1.08; } },
   { name: "飛燕斬", desc: "通常攻撃と同時に飛ぶ斬撃を放つ。初回は威力67%、貫通0。以後は1回ごとに威力+12%、大きさ+0.08、貫通+2。", classes: ["saber"], apply: (p) => (p.flyingSlash += 1) },
   { name: "二連斬り", desc: "薙ぎ払いの直後に、少しずらした追加の斬撃を放つ。", classes: ["saber"], apply: (p) => (p.doubleSlash += 1) },
   { name: "風魔手裏剣", desc: "手裏剣が風をまとい、取得するたび威力+15%、大きさ+0.1、飛距離が少し伸びる。命中した敵を真空の刃で切り刻む。", classes: ["ninja"], apply: (p) => (p.fumaShuriken += 1) },
@@ -1096,9 +1096,9 @@ function makePlayer(id, name, x, z, local, character = "archer") {
     speed: 9.4,
     damage: 16,
     arrows: 1,
-    baseFireRate: 0.6,
+    baseFireRate: 0.9,
     attackSpeedBonus: 0,
-    fireRate: 0.6,
+    fireRate: 0.9,
     fireTimer: 0,
     skillCharge: 0,
     skillCooldown: 30,
@@ -2046,7 +2046,7 @@ function updatePlayerIceSpike(player, dt) {
   player.iceTimer = (player.iceTimer || 0) - dt;
   if (player.iceTimer > 0) return;
   castIceSpikes(player);
-  player.iceTimer = Math.max(2.8, 5.2 - player.iceSpike * 0.22);
+  player.iceTimer = Math.max(1.8, (5.2 - player.iceSpike * 0.22) * attackIntervalMultiplier(player));
 }
 
 function updatePlayerThunderCircle(player, dt) {
@@ -2468,7 +2468,7 @@ function updateSoldierGrenades(player, dt) {
   if (player.local || net.mode !== "client") sfx("soldierGrenade", { broadcast: net.mode === "host" });
   const targets = soldierGrenadeTargets(player, count);
   for (let i = 0; i < count; i += 1) throwSoldierGrenade(player, targets[i] || targets[0], i, count, targets.length < count);
-  player.grenadeTimer = 3;
+  player.grenadeTimer = Math.max(1.35, 3 * attackIntervalMultiplier(player));
 }
 
 function soldierGrenadeTargets(player, count) {
@@ -2626,7 +2626,7 @@ function updateSoldierFlamethrower(player, dt) {
       const damage = player.damage * (0.72 + level * 0.09);
       damageEnemiesInCircle(player.x, player.z, radius, damage, player.id);
       addFlameBurstEffect(player.x, player.z, radius);
-      player.flamethrowerTick = 0.18;
+      player.flamethrowerTick = Math.max(0.08, 0.18 * attackIntervalMultiplier(player));
     }
     return;
   }
@@ -2635,7 +2635,7 @@ function updateSoldierFlamethrower(player, dt) {
   player.flamethrowerUntil = state.elapsed + 2;
   player.flamethrowerTick = 0;
   if (player.local || net.mode !== "client") sfx("soldierFlame", { broadcast: net.mode === "host" });
-  player.flamethrowerTimer = 10;
+  player.flamethrowerTimer = Math.max(4.5, 10 * attackIntervalMultiplier(player));
 }
 
 function addFlameBurstEffect(x, z, radius) {
@@ -2755,6 +2755,7 @@ function updateSoldierTank(player, dt) {
 
 function fireTankShell(player, angle) {
   const muzzleDistance = 5.25;
+  const shellDamage = tankShellDamage(player);
   const shell = {
     id: crypto.randomUUID(),
     x: player.x + Math.sin(angle) * muzzleDistance,
@@ -2762,12 +2763,12 @@ function fireTankShell(player, angle) {
     z: player.z + Math.cos(angle) * muzzleDistance,
     vx: Math.sin(angle) * 22,
     vz: Math.cos(angle) * 22,
-    radius: 0.42,
-    groundRadius: 0.95,
+    radius: 0.5,
+    groundRadius: 1.25,
     life: 1.55,
-    damage: player.damage * 4.8,
-    explosionDamage: player.damage * 3.2,
-    explosionRadius: 3.15,
+    damage: shellDamage,
+    explosionDamage: Math.max(shellDamage * 0.82, player.damage * 3.2),
+    explosionRadius: 4.25,
     pierce: 0,
     owner: player.id,
     kind: "tankShell",
@@ -2781,6 +2782,14 @@ function fireTankShell(player, angle) {
   state.arrows.push(shell);
   addRing(player.x, player.z, 1.4, 0xfacc15);
   if (player.local || net.mode !== "client") sfx("soldierTankFire", { broadcast: net.mode === "host" });
+}
+
+function tankShellDamage(player) {
+  const strongestMobHp = state.enemies.reduce((highest, enemy) => {
+    if (!enemy || enemy.hp <= 0 || enemy.boss || enemy.midBoss) return highest;
+    return Math.max(highest, enemy.maxHp || enemy.hp || 0);
+  }, 0);
+  return Math.max(player.damage * 4.8, strongestMobHp + 10);
 }
 
 function makeOldTankMesh() {
@@ -7682,10 +7691,10 @@ function formatBuildSummary(player) {
       handled.add(name);
     }
   };
-  addPercent("攻撃速度 +18%", "攻撃速度", 18);
-  addPercent("移動速度 +15%", "移動速度", 15);
-  addPercent("ダメージ +25%", "ダメージ", 25);
-  addFlat("最大HP +25", "最大HP", 25);
+  addPercent("攻撃速度 +10%", "攻撃速度", 10);
+  addPercent("移動速度 +10%", "移動速度", 10);
+  addPercent("ダメージ +16%", "ダメージ", 16);
+  addFlat("最大HP +15", "最大HP", 15);
   addCount("吸血");
   addPercent("磁力 +40%", "磁力", 40);
   addCount("矢の本数 +1", "矢の本数");
@@ -7694,7 +7703,7 @@ function formatBuildSummary(player) {
   addCount("アイススパイク");
   addCount("サンダーストーム");
   addCount("ファイア巨大化");
-  addCount("剣閃範囲 +10度", "剣閃範囲");
+  addCount("剣閃範囲 +8度", "剣閃範囲");
   addCount("飛燕斬");
   addCount("二連斬り");
   addCount("風魔手裏剣");
@@ -8834,7 +8843,7 @@ function ensureSoldierCharacterButton() {
 function applyPermanentBonuses(player) {
   const permanent = progress.permanent || {};
   const hpBonus = (permanent.vitality || 0) * 5;
-  const damageBonus = 1 + (permanent.power || 0) * 0.05;
+  const damageBonus = 1 + (permanent.power || 0) * 0.04;
   const speedBonus = 1 + (permanent.speed || 0) * 0.03;
   const magnetBonus = 1 + (permanent.magnet || 0) * 0.08;
   player.maxHp += hpBonus;
@@ -9481,18 +9490,18 @@ function showLevelChoices(player, choiceNames) {
 
 function upgradeDescForPlayer(up, player) {
   const character = player?.character || "archer";
-  if (up.name === "ダメージ +25%") {
+  if (up.name === "ダメージ +16%") {
     if (character === "witch") return "ファイア、魔力爆発、サンダーストーム、アイススパイク、魔女の大爆発の威力が増える。";
     if (character === "saber") return "薙ぎ払いの威力が増える。近づいた敵をまとめて倒しやすくなる。";
     if (character === "ninja") return "刀、手裏剣、飛影八閃の威力が増える。";
     if (character === "soldier") return "ライフル、グレネード、ドローン、火炎放射、戦車の威力が増える。";
     return "矢の威力が増える。硬い敵に効きやすい。";
   }
-  if (up.name === "攻撃速度 +18%") {
-    if (character === "witch") return "ファイアを放つ間隔が短くなる。通常攻撃の回転率が上がる。";
+  if (up.name === "攻撃速度 +10%") {
+    if (character === "witch") return "ファイア、アイススパイク、サンダーストームの発動間隔が短くなる。";
     if (character === "saber") return "薙ぎ払いを出せる間隔が短くなる。隙を減らしやすい。";
     if (character === "ninja") return "刀と手裏剣を出す間隔が短くなる。";
-    if (character === "soldier") return "ライフルの連射間隔が短くなる。リロードの隙を火力で補いやすい。";
+    if (character === "soldier") return "ライフル、グレネード、火炎放射器の発動間隔が短くなる。";
     return "矢を撃つ間隔が短くなる。";
   }
   return up.desc;
