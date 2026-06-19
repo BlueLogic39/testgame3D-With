@@ -1296,6 +1296,38 @@ h2 {
     order: 1;
   }
 
+  body.menu-mode #stageSelectPanel:not(.hidden),
+  body.menu-mode #createRoomPanel:not(.hidden),
+  body.menu-mode #joinRoomPanel:not(.hidden),
+  body.menu-mode #lobby:not(.hidden),
+  body.menu-mode #shopPanel:not(.hidden),
+  body.menu-mode #updateInfo:not(.hidden),
+  body.menu-mode #characterCodex:not(.hidden) {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    width: 100vw;
+    height: 100svh;
+    min-height: 0;
+    padding-bottom: calc(max(28px, env(safe-area-inset-bottom)) + 20px);
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+  }
+
+  body.menu-mode #shopPanel .shop-grid {
+    grid-template-columns: 1fr;
+  }
+
+  body.menu-mode #closeShopButton,
+  body.menu-mode #closeUpdateButton,
+  body.menu-mode #closeCodexButton {
+    width: min(760px, 100%);
+    min-height: 50px;
+  }
+
   body.playing-mode .game-wrap {
     position: fixed;
     inset: 0;
