@@ -100,6 +100,15 @@ const ui = {
   voteText: document.getElementById("voteText"),
   restartButton: document.getElementById("restartButton"),
   disbandButton: document.getElementById("disbandButton"),
+  mobileControls: document.getElementById("mobileControls"),
+  mobileMoveStick: document.getElementById("mobileMoveStick"),
+  mobileAimStick: document.getElementById("mobileAimStick"),
+  mobileSkillButton: document.getElementById("mobileSkillButton"),
+  mobilePauseButton: document.getElementById("mobilePauseButton"),
+  mobileCommButton: document.getElementById("mobileCommButton"),
+  mobileCameraButtons: document.getElementById("mobileCameraButtons"),
+  mobileCameraLeft: document.getElementById("mobileCameraLeft"),
+  mobileCameraRight: document.getElementById("mobileCameraRight"),
 };
 
 const WORLD = { half: 34 };
@@ -113,6 +122,7 @@ const aim = new THREE.Vector3(0, 0, -8);
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 let pointerOnCanvas = false;
+const mobileInput = { moveX: 0, moveY: 0, aimX: 0, aimY: -1, aiming: false };
 const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 const TANK_ROTATION_OFFSET = Math.PI;
 
@@ -436,6 +446,7 @@ upgrades.push(
 );
 
 initThree();
+setupMobileControls();
 preloadFbxAssets();
 state = newState([{ id: localPlayerId, name: playerName(), character: selectedCharacter() }]);
 applyStageTheme(state.stageId);
@@ -3006,22 +3017,44 @@ function oldSetPlayerFlashUnused(player, flashing, pulse) {
 }
 
 function getLocalInput() {
-  refreshAimFromPointer();
+  if (!mobileInput.aiming) refreshAimFromPointer();
   let dx = 0;
   let dz = 0;
   if (keys.has("KeyW") || keys.has("ArrowUp")) dz -= 1;
   if (keys.has("KeyS") || keys.has("ArrowDown")) dz += 1;
   if (keys.has("KeyA") || keys.has("ArrowLeft")) dx -= 1;
   if (keys.has("KeyD") || keys.has("ArrowRight")) dx += 1;
+  const mobileMoveLength = Math.hypot(mobileInput.moveX, mobileInput.moveY);
+  const usingMobileMove = mobileMoveLength > 0.08;
+  if (usingMobileMove) {
+    dx = mobileInput.moveX;
+    dz = mobileInput.moveY;
+  }
   const len = Math.hypot(dx, dz) || 1;
-  dx /= len;
-  dz /= len;
-  if (isStage3DragonBossActive()) {
+  if (!usingMobileMove || len > 1) {
+    dx /= len;
+    dz /= len;
+  }
+  const cameraRotated = isStage3DragonBossActive();
+  if (cameraRotated) {
     const angle = cameraQuarterTurn * Math.PI / 2;
     const rotatedX = dx * Math.cos(angle) + dz * Math.sin(angle);
     const rotatedZ = -dx * Math.sin(angle) + dz * Math.cos(angle);
     dx = rotatedX;
     dz = rotatedZ;
+  }
+  if (mobileInput.aiming || Math.hypot(mobileInput.aimX, mobileInput.aimY) > 0.08) {
+    let aimDx = mobileInput.aimX;
+    let aimDz = mobileInput.aimY;
+    if (cameraRotated) {
+      const angle = cameraQuarterTurn * Math.PI / 2;
+      const rotatedX = aimDx * Math.cos(angle) + aimDz * Math.sin(angle);
+      const rotatedZ = -aimDx * Math.sin(angle) + aimDz * Math.cos(angle);
+      aimDx = rotatedX;
+      aimDz = rotatedZ;
+    }
+    const player = localPlayer();
+    if (player) aim.set(player.x + aimDx * 14, 0, player.z + aimDz * 14);
   }
   return { dx, dz, aimX: aim.x, aimZ: aim.z };
 }
@@ -3138,15 +3171,16 @@ function updateCamera() {
     }
   }
   const bossMode = isStage3DragonBossActive();
+  const portrait = canvas.clientHeight > canvas.clientWidth * 1.15;
   if (!bossMode) targetCameraQuarterTurn = 0;
   cameraQuarterTurn += (targetCameraQuarterTurn - cameraQuarterTurn) * 0.16;
   const angle = cameraQuarterTurn * Math.PI / 2;
-  const distance = bossMode ? 38 : 20;
+  const distance = bossMode ? (portrait ? 45 : 38) : (portrait ? 27 : 20);
   const targetX = player.x + Math.sin(angle) * distance;
   const targetZ = player.z + Math.cos(angle) * distance;
   camera.position.x += (targetX - camera.position.x) * 0.08;
   camera.position.z += (targetZ - camera.position.z) * 0.08;
-  camera.position.y += ((bossMode ? 32 : 21) - camera.position.y) * 0.08;
+  camera.position.y += ((bossMode ? (portrait ? 39 : 32) : (portrait ? 27 : 21)) - camera.position.y) * 0.08;
   camera.lookAt(player.x, 0, player.z);
   updateCastleWallVisibility();
 }
@@ -7801,8 +7835,10 @@ function updateUi() {
   ui.skillText.textContent = skillPct >= 1 ? "READY" : `${Math.ceil(skillCooldown - (player.skillCharge || 0))}s`;
   ui.skillText.closest(".skill-hud")?.classList.toggle("ready", skillPct >= 1);
   ui.skillReadyHint?.classList.toggle("hidden", skillPct < 1 || net.phase !== "playing" || !state.running);
+  ui.mobileSkillButton?.classList.toggle("ready", skillPct >= 1);
   updateLinkHud(player);
   ui.bossCameraHint?.classList.toggle("hidden", !(net.phase === "playing" && state.running && isStage3DragonBossActive()));
+  ui.mobileCameraButtons?.classList.toggle("hidden", !isStage3DragonBossActive());
   const buildSummary = formatBuildSummary(player);
   const room = net.roomCode ? ` / 部屋 ${net.roomCode}` : "";
   const revive = player.dead ? ` / 復活まで${Math.max(0, Math.ceil(player.reviveAt - state.elapsed))}秒` : "";
@@ -7818,6 +7854,7 @@ function updateUi() {
           : `${player.arrows}本 / 後方${player.backShots || 0}本 / 貫通${player.pierce}`;
   const score = STAGES[state.stageId]?.scoreAttack ? ` / SCORE ${Math.floor(state.score || 0)}` : "";
   ui.build.textContent = `${characterName} / ${weapon} / 威力${Math.round(player.damage)} / ${buildSummary}${room}${revive}${score}`;
+  syncMobileControlsVisibility();
 }
 
 function updateLinkHud(player) {
@@ -7900,6 +7937,143 @@ function resize() {
   camera.updateProjectionMatrix();
 }
 
+function isMobileControlLayout() {
+  return window.matchMedia("(max-width: 720px), (pointer: coarse)").matches;
+}
+
+function setupMobileControls() {
+  if (!ui.mobileControls) return;
+  bindMobileStick(ui.mobileMoveStick, "move");
+  bindMobileStick(ui.mobileAimStick, "aim");
+  ui.mobileSkillButton?.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    requestSkillUse();
+  });
+  ui.mobilePauseButton?.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    togglePause();
+  });
+  ui.mobileCameraLeft?.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    rotateBossCamera(1);
+  });
+  ui.mobileCameraRight?.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    rotateBossCamera(-1);
+  });
+  ui.mobileCommButton?.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    if (!canUseRadial()) return;
+    const opening = ui.radialMenu.classList.contains("hidden");
+    ui.radialMenu.classList.toggle("hidden", !opening);
+    ui.radialMenu.classList.toggle("mobile-radial-active", opening);
+  });
+  for (const button of ui.radialMenu.querySelectorAll("[data-comm]")) {
+    button.addEventListener("pointerdown", (event) => {
+      if (!ui.radialMenu.classList.contains("mobile-radial-active")) return;
+      event.preventDefault();
+      sendCommunication(button.dataset.comm || "Hello!");
+      closeMobileRadial();
+    });
+  }
+  window.addEventListener("resize", syncMobileControlsVisibility);
+  window.addEventListener("orientationchange", syncMobileControlsVisibility);
+  syncMobileControlsVisibility();
+}
+
+function bindMobileStick(stick, type) {
+  if (!stick) return;
+  let activePointer = null;
+  const update = (event) => {
+    const rect = stick.getBoundingClientRect();
+    const radius = Math.max(1, Math.min(rect.width, rect.height) * 0.5);
+    let x = (event.clientX - (rect.left + rect.width * 0.5)) / radius;
+    let y = (event.clientY - (rect.top + rect.height * 0.5)) / radius;
+    const length = Math.hypot(x, y);
+    if (length > 1) {
+      x /= length;
+      y /= length;
+    }
+    const deadZone = 0.12;
+    if (Math.hypot(x, y) < deadZone) x = y = 0;
+    const knob = stick.querySelector(".mobile-stick-knob");
+    if (knob) knob.style.transform = `translate(calc(-50% + ${x * radius * 0.58}px), calc(-50% + ${y * radius * 0.58}px))`;
+    if (type === "move") {
+      mobileInput.moveX = x;
+      mobileInput.moveY = y;
+    } else {
+      if (Math.hypot(x, y) >= deadZone) {
+        mobileInput.aimX = x;
+        mobileInput.aimY = y;
+      }
+      mobileInput.aiming = true;
+      pointerOnCanvas = false;
+    }
+  };
+  const release = (event) => {
+    if (activePointer !== event.pointerId) return;
+    activePointer = null;
+    try { stick.releasePointerCapture(event.pointerId); } catch {}
+    const knob = stick.querySelector(".mobile-stick-knob");
+    if (knob) knob.style.transform = "translate(-50%, -50%)";
+    if (type === "move") {
+      mobileInput.moveX = 0;
+      mobileInput.moveY = 0;
+    } else {
+      mobileInput.aiming = false;
+    }
+  };
+  stick.addEventListener("pointerdown", (event) => {
+    if (activePointer !== null) return;
+    event.preventDefault();
+    activePointer = event.pointerId;
+    stick.setPointerCapture(event.pointerId);
+    update(event);
+  });
+  stick.addEventListener("pointermove", (event) => {
+    if (activePointer !== event.pointerId) return;
+    event.preventDefault();
+    update(event);
+  });
+  stick.addEventListener("pointerup", release);
+  stick.addEventListener("pointercancel", release);
+  stick.addEventListener("lostpointercapture", (event) => {
+    if (activePointer === event.pointerId) release(event);
+  });
+}
+
+function resetMobileMovement() {
+  mobileInput.moveX = 0;
+  mobileInput.moveY = 0;
+  mobileInput.aiming = false;
+  for (const knob of ui.mobileControls?.querySelectorAll(".mobile-stick-knob") || []) {
+    knob.style.transform = "translate(-50%, -50%)";
+  }
+}
+
+function closeMobileRadial() {
+  ui.radialMenu.classList.add("hidden");
+  ui.radialMenu.classList.remove("mobile-radial-active");
+}
+
+function syncMobileControlsVisibility() {
+  if (!ui.mobileControls) return;
+  const visible = Boolean(
+    isMobileControlLayout() &&
+    state?.running &&
+    net.phase === "playing" &&
+    ui.levelUp.classList.contains("hidden") &&
+    ui.gameOver.classList.contains("hidden") &&
+    ui.lobby.classList.contains("hidden")
+  );
+  ui.mobileControls.classList.toggle("hidden", !visible);
+  ui.mobileControls.setAttribute("aria-hidden", String(!visible));
+  if (!visible) {
+    resetMobileMovement();
+    closeMobileRadial();
+  }
+}
+
 function updateAim(event) {
   const rect = canvas.getBoundingClientRect();
   pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
@@ -7913,11 +8087,13 @@ function showStatus(title, text = "") {
   ui.statusText.textContent = text;
   ui.pauseTitleButton?.classList.add("hidden");
   ui.statusOverlay.classList.remove("hidden");
+  syncMobileControlsVisibility();
 }
 
 function hideStatus() {
   ui.statusOverlay.classList.add("hidden");
   ui.pauseTitleButton?.classList.add("hidden");
+  syncMobileControlsVisibility();
 }
 
 function isGamePaused() {
@@ -8220,6 +8396,7 @@ function handleHostData(data) {
     ui.restartButton.textContent = "コンティニューに投票";
     ui.disbandButton.classList.remove("hidden");
     ui.gameOver.classList.remove("hidden");
+    syncMobileControlsVisibility();
   }
   if (data.type === "gameOver") {
     ui.restartButton.textContent = "コンティニューに投票";
@@ -9305,6 +9482,7 @@ function endGame(won) {
   ui.voteText.textContent = net.mode === "solo" ? "" : `再戦投票: 0/${state.players.length}`;
   ui.disbandButton.classList.remove("hidden");
   ui.gameOver.classList.remove("hidden");
+  syncMobileControlsVisibility();
   if (net.mode === "host") broadcast({ type: "gameOver", won, elapsed: state.elapsed, kills: state.kills, total: state.players.length, stageId: state.stageId, score: state.score });
 }
 
@@ -9605,6 +9783,8 @@ function showTitle() {
 
 function setMenuBackdrop(enabled) {
   document.body.classList.toggle("menu-mode", enabled);
+  document.body.classList.toggle("playing-mode", !enabled);
+  syncMobileControlsVisibility();
 }
 
 function restartMatch() {
@@ -9657,6 +9837,7 @@ function showLevelChoices(player, choiceNames) {
     ui.choices.appendChild(reroll);
   }
   ui.levelUp.classList.remove("hidden");
+  syncMobileControlsVisibility();
 }
 
 function upgradeDescForPlayer(up, player) {

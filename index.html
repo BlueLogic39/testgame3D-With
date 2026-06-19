@@ -2,7 +2,7 @@
 <html lang="ja">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
     <title>ヴァンサバもどき</title>
     <link rel="icon" type="image/png" href="./favicon.png" />
     <link rel="stylesheet" href="./style.css" />
@@ -56,6 +56,30 @@
           <button data-comm="Hello!">Hello!</button>
           <button data-comm="Help!">Help!</button>
           <button data-comm="Nice!">Nice!</button>
+        </div>
+
+        <div id="mobileControls" class="mobile-controls hidden" aria-label="スマホ操作">
+          <div class="mobile-stick-zone mobile-move-zone">
+            <span class="mobile-control-label">MOVE</span>
+            <div id="mobileMoveStick" class="mobile-stick" data-stick="move" aria-label="移動スティック">
+              <div class="mobile-stick-knob"></div>
+            </div>
+          </div>
+          <div class="mobile-actions">
+            <button id="mobilePauseButton" class="mobile-action-button mobile-pause-button" type="button" aria-label="ポーズ">Ⅱ</button>
+            <button id="mobileCommButton" class="mobile-action-button" type="button" aria-label="コミュニケーション">TALK</button>
+            <button id="mobileSkillButton" class="mobile-skill-button" type="button" aria-label="固有スキル">SKILL</button>
+            <div id="mobileCameraButtons" class="mobile-camera-buttons hidden" aria-label="カメラ回転">
+              <button id="mobileCameraLeft" type="button" aria-label="カメラを左へ回転">↶</button>
+              <button id="mobileCameraRight" type="button" aria-label="カメラを右へ回転">↷</button>
+            </div>
+          </div>
+          <div class="mobile-stick-zone mobile-aim-zone">
+            <span class="mobile-control-label">AIM</span>
+            <div id="mobileAimStick" class="mobile-stick mobile-aim-stick" data-stick="aim" aria-label="照準スティック">
+              <div class="mobile-stick-knob"></div>
+            </div>
+          </div>
         </div>
 
         <div id="start" class="overlay">
