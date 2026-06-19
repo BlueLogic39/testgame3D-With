@@ -1200,11 +1200,89 @@ h2 {
     min-height: 100svh;
   }
 
+  body:not(.playing-mode) > .shell > .hud,
+  body:not(.playing-mode) > .shell > .bar {
+    display: none !important;
+  }
+
   body:not(.playing-mode) .game-wrap {
+    display: flex;
+    flex-direction: column;
     min-height: 100svh;
+    height: auto;
+    padding-bottom: max(24px, env(safe-area-inset-bottom));
+    overflow: visible;
     border: 0;
     border-radius: 0;
     aspect-ratio: auto;
+  }
+
+  body:not(.playing-mode) #game {
+    display: none;
+  }
+
+  body:not(.playing-mode) .overlay:not(.hidden) {
+    position: relative;
+    inset: auto;
+    flex: 0 0 auto;
+    width: 100%;
+    min-height: 100svh;
+    overflow: visible;
+  }
+
+  body.menu-mode .money-corner,
+  body.menu-mode .online-badge,
+  body.menu-mode .update-corner,
+  body.menu-mode .codex-corner,
+  body.menu-mode .extra-score-badge {
+    position: relative;
+    inset: auto;
+    z-index: 12;
+    width: auto;
+    margin: 8px 16px 0;
+  }
+
+  body.menu-mode .money-corner {
+    order: 20;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  body.menu-mode .money-corner span,
+  body.menu-mode .money-corner button,
+  body.menu-mode .codex-corner button,
+  body.menu-mode .update-corner button {
+    width: 100%;
+    min-height: 48px;
+  }
+
+  body.menu-mode .extra-score-badge {
+    order: 21;
+  }
+
+  body.menu-mode .online-badge {
+    order: 22;
+    padding: 11px 12px;
+    text-align: center;
+  }
+
+  body.menu-mode .update-corner {
+    order: 23;
+    text-align: center;
+  }
+
+  body.menu-mode .codex-corner {
+    order: 24;
+  }
+
+  body.menu-mode #start,
+  body.menu-mode #stageSelectPanel,
+  body.menu-mode #createRoomPanel,
+  body.menu-mode #joinRoomPanel,
+  body.menu-mode #lobby,
+  body.menu-mode #shopPanel,
+  body.menu-mode #updateInfo,
+  body.menu-mode #characterCodex {
+    order: 1;
   }
 
   body.playing-mode .game-wrap {
@@ -1444,6 +1522,23 @@ h2 {
       max(18px, env(safe-area-inset-bottom))
       max(14px, env(safe-area-inset-left));
     touch-action: pan-y;
+  }
+
+  body.playing-mode #levelUp,
+  body.playing-mode #gameOver {
+    place-items: stretch;
+    align-content: start;
+    padding-top: calc(max(16px, env(safe-area-inset-top)) + 96px);
+    padding-bottom: calc(max(28px, env(safe-area-inset-bottom)) + 24px);
+  }
+
+  body.playing-mode #levelUp h2,
+  body.playing-mode #gameOver h2 {
+    text-align: center;
+  }
+
+  body.playing-mode #gameOver .end-actions {
+    width: 100%;
   }
 
   .overlay button,

@@ -8395,6 +8395,7 @@ function handleHostData(data) {
     ui.endText.textContent = `${endSummaryText(data.elapsed, data.kills, false)}${scoreText}${highScoreText} / ${earnedMoney}G獲得`;
     ui.restartButton.textContent = "コンティニューに投票";
     ui.disbandButton.classList.remove("hidden");
+    ui.gameOver.scrollTop = 0;
     ui.gameOver.classList.remove("hidden");
     syncMobileControlsVisibility();
   }
@@ -9481,6 +9482,7 @@ function endGame(won) {
   ui.disbandButton.textContent = net.mode === "solo" ? "タイトルに戻る" : "解散する";
   ui.voteText.textContent = net.mode === "solo" ? "" : `再戦投票: 0/${state.players.length}`;
   ui.disbandButton.classList.remove("hidden");
+  ui.gameOver.scrollTop = 0;
   ui.gameOver.classList.remove("hidden");
   syncMobileControlsVisibility();
   if (net.mode === "host") broadcast({ type: "gameOver", won, elapsed: state.elapsed, kills: state.kills, total: state.players.length, stageId: state.stageId, score: state.score });
@@ -9836,6 +9838,7 @@ function showLevelChoices(player, choiceNames) {
     reroll.addEventListener("click", () => rerollChoices(player.id));
     ui.choices.appendChild(reroll);
   }
+  ui.levelUp.scrollTop = 0;
   ui.levelUp.classList.remove("hidden");
   syncMobileControlsVisibility();
 }
