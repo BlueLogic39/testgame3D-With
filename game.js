@@ -41,6 +41,7 @@ const ui = {
   joinPasswordPanel: document.getElementById("joinPasswordPanel"),
   joinPasswordLabel: document.getElementById("joinPasswordLabel"),
   joinPasswordInput: document.getElementById("joinPasswordInput"),
+  joinStatus: document.getElementById("joinStatus"),
   confirmJoinButton: document.getElementById("confirmJoinButton"),
   roomStatus: document.getElementById("roomStatus"),
   lobby: document.getElementById("lobby"),
@@ -129,6 +130,7 @@ const TANK_ROTATION_OFFSET = Math.PI;
 let scene;
 let camera;
 let renderer;
+let gameResizeObserver;
 let arenaFloor;
 let arenaGrid;
 let arenaWalls = [];
@@ -180,6 +182,7 @@ let net = {
   restartVotes: new Set(),
 };
 let lobbyHeartbeatTimer = 0;
+let joinConnectionTimer = 0;
 let codexViewer = null;
 let audio = {
   bgm: null,
@@ -194,6 +197,44 @@ let audio = {
   bgmVolume: 0.1,
   seVolume: 0.15,
 };
+
+const PEER_ICE_SERVERS = [
+  { urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302", "stun:stun.cloudflare.com:3478"] },
+  { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" },
+  { urls: "turn:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" },
+  { urls: "turn:openrelay.metered.ca:443?transport=tcp", username: "openrelayproject", credential: "openrelayproject" },
+];
+
+function makeGamePeer(id) {
+  const options = {
+    debug: 1,
+    config: {
+      iceServers: PEER_ICE_SERVERS,
+      iceCandidatePoolSize: 6,
+    },
+  };
+  return id ? new Peer(id, options) : new Peer(options);
+}
+
+function peerErrorText(error) {
+  const type = error?.type || "unknown";
+  if (type === "peer-unavailable") return "ホストへ接続できません。部屋が終了したか、通信経路を作れませんでした。";
+  if (type === "network" || type === "socket-error" || type === "socket-closed") return "通信サーバーへ接続できません。回線を確認して再試行してください。";
+  if (type === "webrtc") return "端末間の通信に失敗しました。Wi-Fiとモバイル回線を切り替えて再試行してください。";
+  if (type === "unavailable-id") return "同じ部屋IDがまだ使用中です。部屋名を変えて作り直してください。";
+  return `通信エラー: ${type}`;
+}
+
+function setJoinStatus(text, error = false) {
+  if (!ui.joinStatus) return;
+  ui.joinStatus.textContent = text || "";
+  ui.joinStatus.classList.toggle("error", Boolean(error));
+}
+
+function clearJoinConnectionTimer() {
+  if (joinConnectionTimer) clearTimeout(joinConnectionTimer);
+  joinConnectionTimer = 0;
+}
 
 const AUDIO_FILES = {
   archerAttack: "arrowsound.mp3",
@@ -459,12 +500,13 @@ loadAudioSettings();
 startPresenceHeartbeat();
 
 function initThree() {
+  const mobileRendering = isMobileControlLayout();
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x101419);
   scene.fog = new THREE.Fog(0x101419, 42, 86);
-  renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  renderer.shadowMap.enabled = true;
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: !mobileRendering, powerPreference: "high-performance" });
+  renderer.setPixelRatio(mobileRendering ? 1 : Math.min(window.devicePixelRatio, 2));
+  renderer.shadowMap.enabled = !mobileRendering;
 
   camera = new THREE.PerspectiveCamera(48, 16 / 9, 0.1, 160);
   camera.position.set(0, 21, 20);
@@ -508,6 +550,8 @@ function initThree() {
 
   resize();
   window.addEventListener("resize", resize);
+  gameResizeObserver = new ResizeObserver(() => resize());
+  gameResizeObserver.observe(canvas.parentElement);
 }
 
 function applyStageTheme(stageId) {
@@ -7932,6 +7976,9 @@ function resize() {
   const rect = canvas.parentElement.getBoundingClientRect();
   const width = Math.max(320, Math.floor(rect.width));
   const height = Math.max(220, Math.floor(rect.height));
+  const mobileRendering = isMobileControlLayout();
+  renderer.setPixelRatio(mobileRendering ? 1 : Math.min(window.devicePixelRatio, 2));
+  renderer.shadowMap.enabled = !mobileRendering;
   renderer.setSize(width, height, false);
   camera.aspect = width / height;
   camera.updateProjectionMatrix();
@@ -8153,14 +8200,19 @@ async function createRoom() {
   rememberRoom({ code, name: roomName, host: playerName(), hasPassword: Boolean(password), password });
   renderRoomList();
   ui.roomStatus.textContent = `準備中: ${code}`;
-  net.peer = new Peer(`vansaba-${code}`);
+  net.peer = makeGamePeer(`vansaba-${code}`);
   net.peer.on("open", () => {
     showLobby("ホストです。参加者が揃ったら開始してください。");
     startLobbyHeartbeat();
   });
   net.peer.on("connection", (conn) => {
     net.clients.set(conn.peer, conn);
+    conn.on("open", () => console.info(`Guest connected: ${conn.peer}`));
     conn.on("data", (data) => handleClientData(conn, data));
+    conn.on("error", (error) => {
+      console.warn("Guest connection error", error);
+      showToast("参加者との通信に失敗しました");
+    });
     conn.on("close", () => {
       net.clients.delete(conn.peer);
       if (conn.playerId) {
@@ -8170,7 +8222,15 @@ async function createRoom() {
     });
   });
   net.peer.on("error", (error) => {
-    ui.roomStatus.textContent = `部屋作成エラー: ${error.type || error.message}`;
+    ui.roomStatus.textContent = `部屋作成エラー: ${peerErrorText(error)}`;
+  });
+  net.peer.on("disconnected", () => {
+    ui.lobbyStatus.textContent = "通信サーバーへ再接続しています…";
+    window.setTimeout(() => {
+      if (net.mode === "host" && net.peer && !net.peer.destroyed && net.peer.disconnected) {
+        try { net.peer.reconnect(); } catch (error) { console.warn("Peer reconnect failed", error); }
+      }
+    }, 900);
   });
 }
 
@@ -8441,14 +8501,14 @@ function applySnapshot(data) {
 function sendClientInput() {
   if (!net.conn || !net.conn.open || net.phase !== "playing") return;
   net.lastSend += 1;
-  if (net.lastSend % 3 !== 0) return;
+  if (net.lastSend % (isMobileControlLayout() ? 4 : 3) !== 0) return;
   sendToHost({ type: "input", id: localPlayerId, input: getLocalInput(), debugInvincible: debugModeEnabled && debugInvincible, name: playerName() });
 }
 
 function sendHostSnapshot(force = false) {
   if (net.mode !== "host" || net.clients.size === 0 || net.phase !== "playing") return;
   net.lastSend += 1;
-  if (!force && net.lastSend % 4 !== 0) return;
+  if (!force && net.lastSend % (isMobileControlLayout() ? 6 : 4) !== 0) return;
   broadcast({
     type: "snapshot",
     elapsed: state.elapsed,
@@ -8950,6 +9010,7 @@ function closeConnections() {
   const closingRoomCode = net.roomCode;
   const closingOwnerToken = net.roomOwnerToken;
   const closingAsHost = net.mode === "host";
+  clearJoinConnectionTimer();
   stopLobbyHeartbeat();
   if (closingAsHost) closeOnlineRoom(closingRoomCode, closingOwnerToken);
   if (net.conn) net.conn.close();
@@ -9657,6 +9718,7 @@ function joinRoom(options = {}) {
     ui.roomStatus.textContent = "参加する部屋を選択してください。";
     return;
   }
+  setJoinStatus("部屋へ接続しています…");
   closeConnections();
   net.mode = "client";
   net.phase = "lobby";
@@ -9665,21 +9727,55 @@ function joinRoom(options = {}) {
   net.roomPassword = password;
   localPlayerId = `guest-${Math.random().toString(36).slice(2, 7)}`;
   heartbeatPresence().catch((error) => console.warn("Failed to heartbeat presence", error));
-  net.peer = new Peer();
+  net.peer = makeGamePeer();
   net.peer.on("open", () => {
-    net.conn = net.peer.connect(`vansaba-${code}`, { reliable: false });
+    setJoinStatus("ホストとの通信経路を確認しています…");
+    net.conn = net.peer.connect(`vansaba-${code}`, { reliable: true, serialization: "json" });
+    clearJoinConnectionTimer();
+    joinConnectionTimer = window.setTimeout(() => {
+      if (net.mode !== "client" || net.conn?.open) return;
+      setJoinStatus("接続に時間がかかっています。通信経路を作れませんでした。もう一度参加してください。", true);
+      showToast("部屋へ接続できませんでした");
+      net.conn?.close();
+    }, 18000);
     net.conn.on("open", () => {
+      clearJoinConnectionTimer();
+      setJoinStatus("");
       sendToHost({ type: "hello", id: localPlayerId, name: playerName(), character: selectedCharacter(), password });
       rememberRoom({ code, name: room?.name || roomName, host: room?.host || "Unknown", hasPassword: Boolean(password), password });
       renderRoomList();
       showLobby("ホストの開始を待っています。");
     });
     net.conn.on("data", handleHostData);
-    net.conn.on("close", () => showLobby("ホストとの接続が切れました。"));
+    net.conn.on("error", (error) => {
+      clearJoinConnectionTimer();
+      console.warn("Host connection error", error);
+      setJoinStatus(peerErrorText(error), true);
+      showToast("ホストとの通信に失敗しました");
+    });
+    net.conn.on("close", () => {
+      clearJoinConnectionTimer();
+      if (net.phase === "lobby" && ui.lobby.classList.contains("hidden")) {
+        setJoinStatus("ホストへ接続できませんでした。もう一度参加してください。", true);
+      } else {
+        showLobby("ホストとの接続が切れました。");
+      }
+    });
   });
   net.peer.on("error", (error) => {
-    ui.roomStatus.textContent = `参加エラー: ${error.type || error.message}`;
-    if (room?.code) removeRememberedRoom(room.code);
+    clearJoinConnectionTimer();
+    const message = peerErrorText(error);
+    ui.roomStatus.textContent = `参加エラー: ${message}`;
+    setJoinStatus(message, true);
+    showToast(message);
+  });
+  net.peer.on("disconnected", () => {
+    setJoinStatus("通信サーバーへ再接続しています…");
+    window.setTimeout(() => {
+      if (net.mode === "client" && net.peer && !net.peer.destroyed && net.peer.disconnected) {
+        try { net.peer.reconnect(); } catch (error) { console.warn("Peer reconnect failed", error); }
+      }
+    }, 900);
   });
 }
 
@@ -9787,6 +9883,9 @@ function setMenuBackdrop(enabled) {
   document.body.classList.toggle("menu-mode", enabled);
   document.body.classList.toggle("playing-mode", !enabled);
   syncMobileControlsVisibility();
+  resize();
+  window.setTimeout(() => resize(), 0);
+  requestAnimationFrame(() => resize());
 }
 
 function restartMatch() {
@@ -10002,6 +10101,7 @@ ui.openJoinRoomButton.addEventListener("click", () => {
   ui.start.classList.add("hidden");
   ui.joinRoomPanel.classList.remove("hidden");
   ui.joinPasswordPanel.classList.add("hidden");
+  setJoinStatus("");
   updateOnlineBadge();
   heartbeatPresence().catch((error) => console.warn("Failed to heartbeat presence", error));
   renderRoomList();

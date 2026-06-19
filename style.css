@@ -743,6 +743,17 @@ h2 {
   gap: 8px;
 }
 
+.join-status {
+  width: min(560px, 100%);
+  min-height: 22px;
+  color: #ffd86b;
+  font-weight: 800;
+}
+
+.join-status.error {
+  color: #ff8f8f;
+}
+
 .character-select {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
