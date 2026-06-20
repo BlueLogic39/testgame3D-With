@@ -3122,7 +3122,9 @@ function oldSetPlayerFlashUnused(player, flashing, pulse) {
 }
 
 function getLocalInput() {
-  if (!mobileInput.aiming) refreshAimFromPointer();
+  const usingMobileAim = isMobileControlLayout()
+    && (mobileInput.aiming || Math.hypot(mobileInput.aimX, mobileInput.aimY) > 0.08);
+  if (!usingMobileAim) refreshAimFromPointer();
   let dx = 0;
   let dz = 0;
   if (keys.has("KeyW") || keys.has("ArrowUp")) dz -= 1;
@@ -3148,7 +3150,7 @@ function getLocalInput() {
     dx = rotatedX;
     dz = rotatedZ;
   }
-  if (mobileInput.aiming || Math.hypot(mobileInput.aimX, mobileInput.aimY) > 0.08) {
+  if (usingMobileAim) {
     let aimDx = mobileInput.aimX;
     let aimDz = mobileInput.aimY;
     if (cameraRotated) {
@@ -3186,7 +3188,9 @@ function animateHumanMesh(mesh, moving, dt) {
     }
     const character = mesh.userData.character || "archer";
     const movingAction = character === "ninja" || character === "soldier" ? ["Run", "Walk"] : ["Walk", "Run"];
-    playModelAction(mesh.userData.modelRoot, forced || (moving ? movingAction : "Idle"));
+    playModelAction(mesh.userData.modelRoot, forced || (moving ? movingAction : "Idle"), {
+      timeScale: forced ? mesh.userData.modelActionTimeScale || 1 : 1,
+    });
     mesh.userData.modelRoot.userData.mixer.update(dt);
   }
   const swing = moving ? Math.sin(mesh.userData.walkTime) * 0.55 : Math.sin(mesh.userData.walkTime) * 0.06;
@@ -3239,8 +3243,10 @@ function triggerPlayerModelAction(player, name, duration = 0.45, options = {}) {
   if (action?.getClip) actionDuration = Math.max(actionDuration, (action.getClip().duration || duration) / timeScale);
   player.modelActionName = name;
   player.modelActionUntil = state.elapsed + actionDuration;
+  player.modelActionTimeScale = timeScale;
   player.mesh.userData.modelActionName = name;
   player.mesh.userData.modelActionUntil = player.modelActionUntil;
+  player.mesh.userData.modelActionTimeScale = timeScale;
   if (model) playModelAction(model, name, { restart: true, timeScale });
 }
 
@@ -7707,11 +7713,29 @@ function playSound(kind, options = {}) {
       audio.activeSounds.add(sound);
       sound.addEventListener("ended", () => audio.activeSounds.delete(sound), { once: true });
     }
-    sound.play().catch(() => {});
+    const playAttempt = () => {
+      sound.currentTime = 0;
+      sound.play().catch(() => {
+        if (!options.retry || sound.dataset.retryAttempted) return;
+        sound.dataset.retryAttempted = "true";
+        window.setTimeout(() => sound.play().catch(() => {}), 140);
+      });
+    };
+    if (options.retry && sound.readyState < 2) {
+      sound.addEventListener("canplay", playAttempt, { once: true });
+      sound.load();
+    } else {
+      playAttempt();
+    }
   }
   if (net.mode === "host" && options.broadcast && !options.remote) {
     broadcast({ type: "sound", kind, volumeScale: options.volumeScale });
   }
+}
+
+function playEndSound(won) {
+  stopEndSounds();
+  playSound(won ? "victory" : "gameover", { retry: true });
 }
 
 function stopEndSounds() {
@@ -8048,7 +8072,7 @@ function resize() {
 }
 
 function isMobileControlLayout() {
-  return window.matchMedia("(max-width: 720px), (pointer: coarse)").matches;
+  return window.matchMedia("(max-width: 720px), (pointer: coarse) and (max-width: 900px)").matches;
 }
 
 function setupMobileControls() {
@@ -8489,7 +8513,7 @@ function handleHostData(data) {
     animationId = requestAnimationFrame(loop);
   }
   if (data.type === "snapshot") applySnapshot(data);
-  if (data.type === "sound") playSound(data.kind, { remote: true, volumeScale: data.volumeScale });
+  if (data.type === "sound") playSound(data.kind, { remote: true, retry: true, volumeScale: data.volumeScale });
   if (data.type === "pause") {
     if (data.paused) applyPause(data.id);
     else clearPause();
@@ -8520,7 +8544,7 @@ function handleHostData(data) {
     net.phase = "gameover";
     state.running = false;
     stopBgm();
-    sfx(data.won ? "victory" : "gameover");
+    playEndSound(Boolean(data.won));
     ui.skillText.closest(".skill-hud")?.classList.add("hidden");
     ui.linkText?.closest(".link-hud")?.classList.add("hidden");
     ui.bossCameraHint?.classList.add("hidden");
@@ -8608,7 +8632,7 @@ function sendHostSnapshot(force = false) {
       angle: isSaberSpinning(p) ? (p.spinSlashAngle || 0) + state.elapsed * 18 : Math.atan2((p.input?.aimX ?? p.x) - p.x, (p.input?.aimZ ?? p.z - 1) - p.z),
       skillCharge: p.skillCharge, skillCooldown: p.skillCooldown,
       spinSlashUntil: p.spinSlashUntil, spinSlashAngle: p.spinSlashAngle,
-      modelActionName: p.modelActionName, modelActionUntil: p.modelActionUntil,
+      modelActionName: p.modelActionName, modelActionUntil: p.modelActionUntil, modelActionTimeScale: p.modelActionTimeScale,
       arrows: p.arrows, backShots: p.backShots, damage: p.damage, pierce: p.pierce,
       flyingSlash: p.flyingSlash, fumaShuriken: p.fumaShuriken, shadowClone: p.shadowClone, summonJutsu: p.summonJutsu,
       rifleAmmo: p.rifleAmmo, rifleReloadUntil: p.rifleReloadUntil, rifleReloading: p.rifleReloading,
@@ -8668,7 +8692,8 @@ function syncPlayers(players) {
       setNetworkTransform(existingPlayer.mesh, p.x, 0, p.z, p.angle);
       existingPlayer.mesh.userData.modelActionName = p.modelActionName || "";
       existingPlayer.mesh.userData.modelActionUntil = p.modelActionUntil || 0;
-      animateHuman(existingPlayer, isSaberSpinning(existingPlayer) || Math.hypot(p.input?.dx || 0, p.input?.dz || 0) > 0.01, 0.033);
+      existingPlayer.mesh.userData.modelActionTimeScale = p.modelActionTimeScale || 1;
+      existingPlayer.mesh.userData.netMoving = isSaberSpinning(existingPlayer) || Math.hypot(p.input?.dx || 0, p.input?.dz || 0) > 0.01;
       setPlayerFlash(existingPlayer.mesh, playerFlashMode(existingPlayer));
       updateMobileDirectionGuide(existingPlayer);
       syncSoldierTankVisual(existingPlayer);
@@ -8689,7 +8714,8 @@ function syncPlayers(players) {
     setNetworkTransform(mesh, p.x, 0, p.z, p.angle, created);
     mesh.userData.modelActionName = p.modelActionName || "";
     mesh.userData.modelActionUntil = p.modelActionUntil || 0;
-    animateHumanMesh(mesh, isSaberSpinning(p) || Math.hypot(p.input?.dx || 0, p.input?.dz || 0) > 0.01, 0.033);
+    mesh.userData.modelActionTimeScale = p.modelActionTimeScale || 1;
+    mesh.userData.netMoving = isSaberSpinning(p) || Math.hypot(p.input?.dx || 0, p.input?.dz || 0) > 0.01;
     setPlayerFlash(mesh, playerFlashMode(p));
     updateMobileDirectionGuide({ ...p, mesh, local: p.id === localPlayerId });
     syncSoldierTankVisual({ ...p, mesh });
@@ -8826,6 +8852,7 @@ function updateClientInterpolation(dt) {
       const delta = Math.atan2(Math.sin(targetRotation - mesh.rotation.y), Math.cos(targetRotation - mesh.rotation.y));
       mesh.rotation.y += delta * rotationAlpha;
     }
+    if (mesh.userData?.parts) animateHumanMesh(mesh, Boolean(mesh.userData.netMoving), dt);
   }
   for (const player of state.players) {
     if (player.mesh?.userData?.tankMesh) {
@@ -9669,7 +9696,7 @@ function endGame(won) {
   state.won = won;
   net.phase = "gameover";
   stopBgm();
-  sfx(won ? "victory" : "gameover");
+  playEndSound(won);
   ui.skillText.closest(".skill-hud")?.classList.add("hidden");
   ui.linkText?.closest(".link-hud")?.classList.add("hidden");
   ui.bossCameraHint?.classList.add("hidden");
