@@ -200,28 +200,8 @@ let audio = {
   seVolume: 0.15,
 };
 
-const PEER_ICE_SERVERS = [
-  { urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302", "stun:stun.cloudflare.com:3478"] },
-  { urls: ["turn:eu-0.turn.peerjs.com:3478", "turn:us-0.turn.peerjs.com:3478"], username: "peerjs", credential: "peerjsp" },
-  { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" },
-  { urls: "turn:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" },
-  { urls: "turn:openrelay.metered.ca:443?transport=tcp", username: "openrelayproject", credential: "openrelayproject" },
-];
-
 function makeGamePeer(id) {
-  const options = {
-    debug: 1,
-    host: "0.peerjs.com",
-    port: 443,
-    path: "/",
-    secure: true,
-    pingInterval: 5000,
-    config: {
-      iceServers: PEER_ICE_SERVERS,
-      iceCandidatePoolSize: 6,
-    },
-  };
-  return id ? new Peer(id, options) : new Peer(options);
+  return id ? new Peer(id) : new Peer();
 }
 
 function peerErrorText(error) {
@@ -1259,7 +1239,7 @@ function makePlayer(id, name, x, z, local, character = "archer") {
     tankMesh: null,
     modelActionName: "",
     modelActionUntil: 0,
-    mesh: makePlayerMesh(name, local, type),
+    mesh: makePlayerMesh(name, local, type, { directionIndicator: local && isMobileControlLayout() }),
   };
   if (type === "witch") {
     player.damage = 14;
@@ -1365,9 +1345,69 @@ function makePlayerMesh(name, local, character = "archer", options = {}) {
   group.userData.characterProps = propMeshes;
   group.userData.externalModelPending = useExternalModel;
   group.userData.character = type;
+  if (options.directionIndicator) {
+    const directionIndicator = makeMobileDirectionIndicator();
+    group.add(directionIndicator);
+    group.userData.directionIndicator = directionIndicator;
+  }
   if (useExternalModel) setFallbackModelVisible(group, false);
   if (!useLegacyModel) attachCharacterModel(group, type);
   return group;
+}
+
+function makeMobileDirectionIndicator() {
+  const shape = new THREE.Shape();
+  shape.moveTo(-0.16, 0);
+  shape.lineTo(0.16, 0);
+  shape.lineTo(0.16, 0.72);
+  shape.lineTo(0.48, 0.72);
+  shape.lineTo(0, 1.42);
+  shape.lineTo(-0.48, 0.72);
+  shape.lineTo(-0.16, 0.72);
+  shape.closePath();
+  const material = new THREE.MeshBasicMaterial({
+    color: 0xffdf63,
+    transparent: true,
+    opacity: 0.95,
+    side: THREE.DoubleSide,
+    depthTest: false,
+    depthWrite: false,
+  });
+  const arrow = new THREE.Mesh(new THREE.ShapeGeometry(shape), material);
+  arrow.name = "mobileDirectionIndicator";
+  arrow.rotation.x = Math.PI / 2;
+  arrow.position.set(0, 0.09, 1.05);
+  arrow.renderOrder = 90;
+
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(0.82, 0.9, 40),
+    new THREE.MeshBasicMaterial({ color: 0xffdf63, transparent: true, opacity: 0.38, side: THREE.DoubleSide, depthTest: false, depthWrite: false })
+  );
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.y = 0.01;
+  ring.renderOrder = 89;
+
+  const group = new THREE.Group();
+  group.name = "mobileDirectionGuide";
+  group.add(ring, arrow);
+  return group;
+}
+
+function updateMobileDirectionGuide(player) {
+  if (!player?.mesh) return;
+  const shouldShow = Boolean(player.local && isMobileControlLayout() && !player.dead && player.hp > 0);
+  let guide = player.mesh.userData.directionIndicator;
+  if (shouldShow && !guide) {
+    guide = makeMobileDirectionIndicator();
+    player.mesh.add(guide);
+    player.mesh.userData.directionIndicator = guide;
+  }
+  if (!guide) return;
+  guide.visible = shouldShow;
+  if (shouldShow) {
+    const pulse = 1 + Math.sin((state?.elapsed || 0) * 5.5) * 0.06;
+    guide.scale.setScalar(pulse);
+  }
 }
 
 function addCharacterProps(group, character, bodyMat, useLegacyModel = false) {
@@ -2109,6 +2149,7 @@ function updatePlayers(dt) {
 
     const angle = Math.atan2(player.input.aimX - player.x, player.input.aimZ - player.z);
     player.mesh.rotation.y = spinning ? (player.spinSlashAngle || angle) + state.elapsed * 18 : angle;
+    updateMobileDirectionGuide(player);
     animateHuman(player, moving, dt);
     updateSaberSpinSlash(player, dt);
     updateSoldierTank(player, dt);
@@ -8627,6 +8668,7 @@ function syncPlayers(players) {
       existingPlayer.mesh.userData.modelActionUntil = p.modelActionUntil || 0;
       animateHuman(existingPlayer, isSaberSpinning(existingPlayer) || Math.hypot(p.input?.dx || 0, p.input?.dz || 0) > 0.01, 0.033);
       setPlayerFlash(existingPlayer.mesh, playerFlashMode(existingPlayer));
+      updateMobileDirectionGuide(existingPlayer);
       syncSoldierTankVisual(existingPlayer);
       updateSoldierDroneVisuals(existingPlayer, existingPlayer.character === "soldier" && !isSoldierInTank(existingPlayer) ? existingPlayer.droneSupport || 0 : 0);
       continue;
@@ -8646,6 +8688,7 @@ function syncPlayers(players) {
     mesh.userData.modelActionUntil = p.modelActionUntil || 0;
     animateHumanMesh(mesh, isSaberSpinning(p) || Math.hypot(p.input?.dx || 0, p.input?.dz || 0) > 0.01, 0.033);
     setPlayerFlash(mesh, playerFlashMode(p));
+    updateMobileDirectionGuide({ ...p, mesh, local: p.id === localPlayerId });
     syncSoldierTankVisual({ ...p, mesh });
     updateSoldierDroneVisuals({ ...p, mesh }, p.character === "soldier" && !(state.elapsed < (p.tankUntil || 0)) ? p.droneSupport || 0 : 0);
   }
@@ -9771,7 +9814,7 @@ function joinRoom(options = {}) {
   net.peer = makeGamePeer();
   net.peer.on("open", () => {
     setJoinStatus("ホストとの通信経路を確認しています…");
-    net.conn = net.peer.connect(`vansaba-${code}`, { reliable: true, serialization: "json" });
+    net.conn = net.peer.connect(`vansaba-${code}`, { reliable: false });
     clearJoinConnectionTimer();
     joinConnectionTimer = window.setTimeout(() => {
       if (net.mode !== "client" || net.conn?.open) return;
