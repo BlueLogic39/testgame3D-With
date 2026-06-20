@@ -2079,6 +2079,7 @@ function loop(now) {
   if (state.running) {
     if (net.mode === "client") {
       sendClientInput();
+      updateClientInterpolation(dt);
     } else if (!isGamePaused()) {
       try {
         update(dt);
@@ -3280,12 +3281,14 @@ function updateCamera() {
   cameraQuarterTurn += (targetCameraQuarterTurn - cameraQuarterTurn) * 0.16;
   const angle = cameraQuarterTurn * Math.PI / 2;
   const distance = bossMode ? (portrait ? 45 : 38) : (portrait ? 27 : 20);
-  const targetX = player.x + Math.sin(angle) * distance;
-  const targetZ = player.z + Math.cos(angle) * distance;
+  const playerX = net.mode === "client" && player.mesh ? player.mesh.position.x : player.x;
+  const playerZ = net.mode === "client" && player.mesh ? player.mesh.position.z : player.z;
+  const targetX = playerX + Math.sin(angle) * distance;
+  const targetZ = playerZ + Math.cos(angle) * distance;
   camera.position.x += (targetX - camera.position.x) * 0.08;
   camera.position.z += (targetZ - camera.position.z) * 0.08;
   camera.position.y += ((bossMode ? (portrait ? 39 : 32) : (portrait ? 27 : 21)) - camera.position.y) * 0.08;
-  camera.lookAt(player.x, 0, player.z);
+  camera.lookAt(playerX, 0, playerZ);
   updateCastleWallVisibility();
 }
 
@@ -8582,14 +8585,14 @@ function applySnapshot(data) {
 function sendClientInput() {
   if (!net.conn || !net.conn.open || net.phase !== "playing") return;
   net.lastSend += 1;
-  if (net.lastSend % (isMobileControlLayout() ? 4 : 3) !== 0) return;
+  if (net.lastSend % 3 !== 0) return;
   sendToHost({ type: "input", id: localPlayerId, input: getLocalInput(), debugInvincible: debugModeEnabled && debugInvincible, name: playerName() });
 }
 
 function sendHostSnapshot(force = false) {
   if (net.mode !== "host" || net.clients.size === 0 || net.phase !== "playing") return;
   net.lastSend += 1;
-  if (!force && net.lastSend % (isMobileControlLayout() ? 6 : 4) !== 0) return;
+  if (!force && net.lastSend % 4 !== 0) return;
   broadcast({
     type: "snapshot",
     elapsed: state.elapsed,
@@ -8662,8 +8665,7 @@ function syncPlayers(players) {
       Object.assign(existingPlayer, p);
       existingPlayer.local = p.id === localPlayerId;
       setPlayerDeadVisual(existingPlayer, Boolean(p.dead));
-      existingPlayer.mesh.position.set(p.x, 0, p.z);
-      if (typeof p.angle === "number") existingPlayer.mesh.rotation.y = p.angle;
+      setNetworkTransform(existingPlayer.mesh, p.x, 0, p.z, p.angle);
       existingPlayer.mesh.userData.modelActionName = p.modelActionName || "";
       existingPlayer.mesh.userData.modelActionUntil = p.modelActionUntil || 0;
       animateHuman(existingPlayer, isSaberSpinning(existingPlayer) || Math.hypot(p.input?.dx || 0, p.input?.dz || 0) > 0.01, 0.033);
@@ -8674,16 +8676,17 @@ function syncPlayers(players) {
       continue;
     }
     let mesh = state.renderCache.players.get(p.id);
+    let created = false;
     if (!mesh) {
       mesh = makePlayerMesh(p.name, false, p.character || "archer");
       scene.add(mesh);
       state.renderCache.players.set(p.id, mesh);
+      created = true;
     }
     mesh.visible = true;
     const pseudo = { mesh };
     setPlayerDeadVisual(pseudo, Boolean(p.dead));
-    mesh.position.set(p.x, 0, p.z);
-    if (typeof p.angle === "number") mesh.rotation.y = p.angle;
+    setNetworkTransform(mesh, p.x, 0, p.z, p.angle, created);
     mesh.userData.modelActionName = p.modelActionName || "";
     mesh.userData.modelActionUntil = p.modelActionUntil || 0;
     animateHumanMesh(mesh, isSaberSpinning(p) || Math.hypot(p.input?.dx || 0, p.input?.dz || 0) > 0.01, 0.033);
@@ -8736,11 +8739,17 @@ function syncSimpleMeshes(cache, items, factory, y) {
   }
   for (const item of items) {
     let mesh = cache.get(item.id);
+    let created = false;
     if (!mesh) {
       mesh = factory(item);
       scene.add(mesh);
       cache.set(item.id, mesh);
+      created = true;
     }
+    let targetX = item.x;
+    let targetY = y || item.radius || 0.6;
+    let targetZ = item.z;
+    let targetAngle = item.angle;
     if (item.bossRole === "castleDragon") {
       if (!mesh.userData.hitboxMesh) {
         mesh.userData.hitboxMesh = makeDragonHitboxMesh(item);
@@ -8748,12 +8757,14 @@ function syncSimpleMeshes(cache, items, factory, y) {
       }
       item.hitboxMesh = mesh.userData.hitboxMesh;
       const tailActive = Boolean(item.dragonCenterAttack && state.elapsed < (item.dragonTailSweepUntil || 0));
-      mesh.position.set(item.dragonBodyX ?? item.x, tailActive ? 0.55 : (item.radius || 4.2) + 1.25 + Math.sin(state.elapsed * 4.2) * 0.65, item.dragonBodyZ ?? item.z);
+      targetX = item.dragonBodyX ?? item.x;
+      targetY = tailActive ? 0.55 : (item.radius || 4.2) + 1.25 + Math.sin(state.elapsed * 4.2) * 0.65;
+      targetZ = item.dragonBodyZ ?? item.z;
       if (tailActive) {
         const progress = clamp((state.elapsed - (item.dragonTailSweepStart || state.elapsed)) / Math.max(0.1, (item.dragonTailSweepUntil || state.elapsed) - (item.dragonTailSweepStart || state.elapsed)), 0, 1);
-        mesh.rotation.y = (item.dragonTailBaseAngle || 0) + progress * Math.PI * 2.15;
+        targetAngle = (item.dragonTailBaseAngle || 0) + progress * Math.PI * 2.15;
       } else {
-        mesh.rotation.y = Math.atan2(item.x - (item.dragonBodyX ?? item.x), item.z - (item.dragonBodyZ ?? item.z));
+        targetAngle = Math.atan2(item.x - (item.dragonBodyX ?? item.x), item.z - (item.dragonBodyZ ?? item.z));
       }
       for (const child of mesh.children) {
         if (child.userData?.side) child.rotation.z = child.userData.side * (0.34 + Math.sin(state.elapsed * 9.5) * 0.62);
@@ -8761,23 +8772,66 @@ function syncSimpleMeshes(cache, items, factory, y) {
       updateDragonHitboxMesh(item, 0.033);
     } else if (item.bossRole === "castleGuard") {
       const bob = Math.abs(Math.sin(state.elapsed * 7.2 + (item.walkSeed || 0))) * 0.06;
-      mesh.position.set(item.x, bob, item.z);
+      targetY = bob;
     } else if (item.enemyType === "castleGhost") {
-      mesh.position.set(item.x, item.radius || 0.9, item.z);
+      targetY = item.radius || 0.9;
       const pseudo = { ...item, mesh };
       updateGhostVisual(pseudo);
     } else if (item.enemyType === "castleMage" || item.enemyType?.startsWith("castle")) {
       const bob = Math.sin(state.elapsed * 8.5 + (item.walkSeed || 0)) * 0.08;
-      mesh.position.set(item.x, (item.radius || 0.9) + bob, item.z);
+      targetY = (item.radius || 0.9) + bob;
     } else if (typeof item.y === "number") {
-      mesh.position.set(item.x, item.y, item.z);
-    } else {
-      mesh.position.set(item.x, y || item.radius || 0.6, item.z);
+      targetY = item.y;
     }
-    if (typeof item.angle === "number") mesh.rotation.y = item.angle;
+    setNetworkTransform(mesh, targetX, targetY, targetZ, targetAngle, created);
     if (item.kind === "magic") mesh.scale.setScalar((item.radius || 0.34) / 0.34);
     if (item.boss || item.midBoss) applyHealthAura(mesh, healthPhase(item.hp, item.maxHp), item.radius || 1.5);
   }
+}
+
+function setNetworkTransform(mesh, x, y, z, angle, snap = false) {
+  if (!mesh) return;
+  mesh.userData.netTarget ||= new THREE.Vector3();
+  mesh.userData.netTarget.set(x, y, z);
+  if (typeof angle === "number") mesh.userData.netTargetRotation = angle;
+  if (snap || !mesh.userData.netTransformReady) {
+    mesh.position.set(x, y, z);
+    if (typeof angle === "number") mesh.rotation.y = angle;
+    mesh.userData.netTransformReady = true;
+  }
+}
+
+function updateClientInterpolation(dt) {
+  const positionAlpha = 1 - Math.exp(-Math.max(0, dt) * 18);
+  const rotationAlpha = 1 - Math.exp(-Math.max(0, dt) * 22);
+  const caches = [
+    state.renderCache.players,
+    state.renderCache.enemies,
+    state.renderCache.arrows,
+    state.renderCache.bullets,
+    state.renderCache.gems,
+    state.renderCache.hearts,
+    state.renderCache.magnets,
+    state.renderCache.circles,
+  ];
+  for (const cache of caches) {
+    for (const mesh of cache.values()) {
+      const target = mesh.userData?.netTarget;
+      if (target) mesh.position.lerp(target, positionAlpha);
+      const targetRotation = mesh.userData?.netTargetRotation;
+      if (typeof targetRotation === "number") {
+        const delta = Math.atan2(Math.sin(targetRotation - mesh.rotation.y), Math.cos(targetRotation - mesh.rotation.y));
+        mesh.rotation.y += delta * rotationAlpha;
+      }
+    }
+  }
+  for (const player of state.players) {
+    if (player.mesh?.userData?.tankMesh) {
+      player.mesh.userData.tankMesh.position.x = player.mesh.position.x;
+      player.mesh.userData.tankMesh.position.z = player.mesh.position.z;
+    }
+  }
+  updateCamera();
 }
 
 function syncRockfalls(rockfalls) {

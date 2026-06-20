@@ -1402,6 +1402,34 @@ h2 {
     padding: 7px 9px;
   }
 
+  body.playing-mode .toast {
+    top: auto;
+    bottom: clamp(170px, 25svh, 230px);
+    width: max-content;
+    max-width: calc(100% - 28px);
+    text-align: center;
+  }
+
+  body.playing-mode .skill-banner {
+    top: auto;
+    bottom: clamp(190px, 29svh, 265px);
+    width: min(360px, calc(100% - 28px));
+  }
+
+  body.playing-mode #statusOverlay {
+    place-items: center;
+    align-content: end;
+    padding-top: calc(max(16px, env(safe-area-inset-top)) + 118px);
+    padding-bottom: clamp(180px, 27svh, 245px);
+  }
+
+  body.playing-mode #statusOverlay h2,
+  body.playing-mode #statusOverlay p {
+    max-width: min(440px, calc(100vw - 30px));
+    margin-left: auto;
+    margin-right: auto;
+  }
+
   body.playing-mode .skill-ready-hint {
     font-size: 10px;
   }
@@ -1571,7 +1599,7 @@ h2 {
   body.playing-mode #gameOver {
     place-items: stretch;
     align-content: start;
-    padding-top: calc(max(16px, env(safe-area-inset-top)) + 96px);
+    padding-top: calc(max(16px, env(safe-area-inset-top)) + 138px);
     padding-bottom: calc(max(28px, env(safe-area-inset-bottom)) + 24px);
   }
 
