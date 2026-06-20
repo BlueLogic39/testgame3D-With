@@ -2870,7 +2870,7 @@ function updateSoldierTank(player, dt) {
   if (!player.tankLanded) {
     player.tankLanded = true;
     playPlayerSound(player, "soldierTankLanding");
-    const landingRadius = 3.0;
+    const landingRadius = 4.5;
     damageEnemiesInCircle(player.x, player.z, landingRadius, 50, player.id);
     addRing(player.x, player.z, landingRadius, 0x9ca3af);
   }
