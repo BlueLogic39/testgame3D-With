@@ -8804,6 +8804,7 @@ function setNetworkTransform(mesh, x, y, z, angle, snap = false) {
 function updateClientInterpolation(dt) {
   const positionAlpha = 1 - Math.exp(-Math.max(0, dt) * 18);
   const rotationAlpha = 1 - Math.exp(-Math.max(0, dt) * 22);
+  const meshes = new Set(state.players.map((player) => player.mesh).filter(Boolean));
   const caches = [
     state.renderCache.players,
     state.renderCache.enemies,
@@ -8815,14 +8816,15 @@ function updateClientInterpolation(dt) {
     state.renderCache.circles,
   ];
   for (const cache of caches) {
-    for (const mesh of cache.values()) {
-      const target = mesh.userData?.netTarget;
-      if (target) mesh.position.lerp(target, positionAlpha);
-      const targetRotation = mesh.userData?.netTargetRotation;
-      if (typeof targetRotation === "number") {
-        const delta = Math.atan2(Math.sin(targetRotation - mesh.rotation.y), Math.cos(targetRotation - mesh.rotation.y));
-        mesh.rotation.y += delta * rotationAlpha;
-      }
+    for (const mesh of cache.values()) meshes.add(mesh);
+  }
+  for (const mesh of meshes) {
+    const target = mesh.userData?.netTarget;
+    if (target) mesh.position.lerp(target, positionAlpha);
+    const targetRotation = mesh.userData?.netTargetRotation;
+    if (typeof targetRotation === "number") {
+      const delta = Math.atan2(Math.sin(targetRotation - mesh.rotation.y), Math.cos(targetRotation - mesh.rotation.y));
+      mesh.rotation.y += delta * rotationAlpha;
     }
   }
   for (const player of state.players) {
