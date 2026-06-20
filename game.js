@@ -2176,7 +2176,7 @@ function updateSoldierReloadState(player) {
   if (state.elapsed < (player.rifleReloadUntil || 0)) return;
   player.rifleReloading = false;
   player.rifleAmmo = 30;
-  if (player.local || net.mode !== "client") sfx("soldierReloadFinish", { broadcast: net.mode === "host" });
+  playPlayerSound(player, "soldierReloadFinish");
 }
 
 function updatePlayerIceSpike(player, dt) {
@@ -2623,7 +2623,7 @@ function updateSoldierGrenades(player, dt) {
   if (player.grenadeTimer > 0) return;
   const count = level >= 5 ? 3 : level >= 3 ? 2 : 1;
   triggerPlayerModelAction(player, "SwordSlash", 0.42, { timeScale: 1.5 });
-  if (player.local || net.mode !== "client") sfx("soldierGrenade", { broadcast: net.mode === "host" });
+  playPlayerSound(player, "soldierGrenade");
   const targets = soldierGrenadeTargets(player, count);
   for (let i = 0; i < count; i += 1) throwSoldierGrenade(player, targets[i] || targets[0], i, count, targets.length < count);
   player.grenadeTimer = Math.max(1.35, 3 * attackIntervalMultiplier(player));
@@ -2792,7 +2792,7 @@ function updateSoldierFlamethrower(player, dt) {
   if (player.flamethrowerTimer > 0) return;
   player.flamethrowerUntil = state.elapsed + 2;
   player.flamethrowerTick = 0;
-  if (player.local || net.mode !== "client") sfx("soldierFlame", { broadcast: net.mode === "host" });
+  playPlayerSound(player, "soldierFlame");
   player.flamethrowerTimer = Math.max(3.6, 8 * attackIntervalMultiplier(player));
 }
 
@@ -2869,7 +2869,7 @@ function updateSoldierTank(player, dt) {
   if (!grounded) return;
   if (!player.tankLanded) {
     player.tankLanded = true;
-    sfx("soldierTankLanding", { broadcast: net.mode === "host" });
+    playPlayerSound(player, "soldierTankLanding");
     const landingRadius = 3.0;
     damageEnemiesInCircle(player.x, player.z, landingRadius, 50, player.id);
     addRing(player.x, player.z, landingRadius, 0x9ca3af);
@@ -2888,7 +2888,7 @@ function updateSoldierTank(player, dt) {
   if (player.tankVulcanBurst) {
     player.tankVulcanSoundTimer = (player.tankVulcanSoundTimer || 0) - dt;
     if (player.tankVulcanSoundTimer <= 0) {
-      sfx("soldierRifle", { broadcast: net.mode === "host", volumeScale: 0.25 });
+      playPlayerSound(player, "soldierRifle", { volumeScale: 0.25 });
       player.tankVulcanSoundTimer = 0.12;
     }
     for (const side of [-1, 1]) {
@@ -2939,7 +2939,7 @@ function fireTankShell(player, angle) {
   scene.add(shell.mesh);
   state.arrows.push(shell);
   addRing(player.x, player.z, 1.4, 0xfacc15);
-  if (player.local || net.mode !== "client") sfx("soldierTankFire", { broadcast: net.mode === "host" });
+  playPlayerSound(player, "soldierTankFire");
 }
 
 function tankShellDamage(player) {
@@ -3341,12 +3341,12 @@ function shoot(player) {
     return;
   }
   if (player.character === "witch") {
-    if (player.local || net.mode !== "client") sfx(attackSoundKey(player.character));
+    playPlayerSound(player, attackSoundKey(player.character));
     shootMagic(player);
     return;
   }
   if (player.character === "saber") {
-    if (player.local || net.mode !== "client") sfx(attackSoundKey(player.character));
+    playPlayerSound(player, attackSoundKey(player.character));
     swingSaber(player);
     return;
   }
@@ -3354,7 +3354,7 @@ function shoot(player) {
     attackNinja(player);
     return;
   }
-  if (player.local || net.mode !== "client") sfx(attackSoundKey(player.character));
+  playPlayerSound(player, attackSoundKey(player.character));
   shootArrows(player);
 }
 
@@ -3368,14 +3368,14 @@ function shootSoldierRifle(player) {
     player.rifleReloading = true;
     player.fireTimer = 2;
     addRing(player.x, player.z, 1.0, 0x9ca3af);
-    if (player.local || net.mode !== "client") sfx("soldierReloadStart", { broadcast: net.mode === "host" });
+    playPlayerSound(player, "soldierReloadStart");
     return;
   }
   const base = Math.atan2(player.input.aimX - player.x, player.input.aimZ - player.z);
   fireSoldierBullet(player, base + (Math.random() - 0.5) * 0.035, { damageScale: 1, speed: 34, life: 0.9 });
   player.rifleAmmo -= 1;
-  if ((player.local || net.mode !== "client") && state.elapsed >= (player.rifleSoundAt || 0)) {
-    sfx("soldierRifle", { broadcast: net.mode === "host", volumeScale: 0.75 });
+  if (state.elapsed >= (player.rifleSoundAt || 0)) {
+    playPlayerSound(player, "soldierRifle", { volumeScale: 0.75 });
     player.rifleSoundAt = state.elapsed + 0.16;
   }
 }
@@ -3571,15 +3571,15 @@ function ninjaShurikenPierce(player) {
 }
 
 function fireNinjaShurikenSpread(player, base, count, options = {}) {
+  if (!options.silent) playPlayerSound(player, "ninjaShuriken");
   const spread = Math.min(0.62, 0.18 * (count - 1));
   for (let i = 0; i < count; i += 1) {
     const offset = count === 1 ? 0 : -spread / 2 + (spread * i) / Math.max(1, count - 1);
-    fireNinjaShuriken(player, base + offset, options);
+    fireNinjaShuriken(player, base + offset, { ...options, silent: true });
   }
 }
 
 function fireNinjaShuriken(player, angle, options = {}) {
-  if (!options.silent && (player.local || net.mode !== "client")) sfx("ninjaShuriken");
   const fuma = player.fumaShuriken || 0;
   const radius = 0.32 + fuma * 0.1;
   const speed = 23 + fuma * 1.2;
@@ -3614,7 +3614,7 @@ function fireNinjaShuriken(player, angle, options = {}) {
 }
 
 function applyNinjaSlash(player, angle) {
-  if (player.local || net.mode !== "client") sfx("saberAttack");
+  playPlayerSound(player, "saberAttack");
   const range = player.slashRange || 3.75;
   const arc = THREE.MathUtils.degToRad(180);
   for (const enemy of state.enemies) {
@@ -3778,7 +3778,7 @@ function activateSkill(player) {
   if (!canUseSkill(player)) return false;
   player.skillCharge = 0;
   const soundKey = skillSoundKey(player.character);
-  if (soundKey) sfx(soundKey, { broadcast: net.mode === "host" });
+  if (soundKey) playPlayerSound(player, soundKey);
   const angle = Math.atan2(player.input.aimX - player.x, player.input.aimZ - player.z);
   if (player.character === "witch") castWitchSkill(player);
   else if (player.character === "saber") castSaberSkill(player, angle);
@@ -4966,7 +4966,7 @@ function updateArrows(dt) {
         const finalDamage = arrow.damage * projectileDamageMultiplier(arrow, enemy);
         damageEnemy(enemy, finalDamage, arrow.owner);
         arrow.hit.add(enemy);
-        if (arrow.kind === "magic") sfx("fire", { broadcast: net.mode === "host" });
+        if (arrow.kind === "magic") playPlayerSound(state.players.find((player) => player.id === arrow.owner), "fire");
         const hitColor = arrow.kind === "magic" ? 0xff6b2c : arrow.kind === "flyingSlash" ? 0x91c7ff : arrow.kind === "shuriken" ? 0x2dd4bf : 0xf2c14e;
         addRing(enemy.x, enemy.z, arrow.kind === "magic" ? 1.0 : arrow.kind === "flyingSlash" ? 1.15 : arrow.kind === "shuriken" ? 0.95 : 0.8, hitColor);
         if (arrow.kind === "shuriken") {
@@ -5022,8 +5022,9 @@ function updateGrenadeProjectile(grenade, dt) {
 
 function explodePlayerProjectile(projectile, radius, damage, color = 0xf97316) {
   addRing(projectile.x, projectile.z, radius, color);
-  if (projectile.kind === "grenade") sfx("soldierGrenadeExplosion", { broadcast: net.mode === "host" });
-  if (projectile.kind === "tankShell") sfx("soldierTankShell", { broadcast: net.mode === "host" });
+  const owner = state.players.find((player) => player.id === projectile.owner);
+  if (projectile.kind === "grenade") playPlayerSound(owner, "soldierGrenadeExplosion");
+  if (projectile.kind === "tankShell") playPlayerSound(owner, "soldierTankShell");
   for (const enemy of state.enemies) {
     if (distance(projectile, enemy) <= radius + enemyHitRadius(enemy)) {
       damageEnemy(enemy, damage, projectile.owner);
@@ -5066,13 +5067,13 @@ function updateGems(dt) {
       const xpGain = (gem.kind === "boss" ? player.xpNext : gem.value) * xpGainMultiplier();
       player.xp += xpGain;
       gem.collected = true;
-      if (player.local || net.mode === "host") sfx("gem", { broadcast: net.mode === "host" });
+      playPlayerSound(player, "gem");
       while (player.xp >= player.xpNext) {
         player.xp -= player.xpNext;
         player.level += 1;
         player.xpNext = Math.floor(player.xpNext * 1.28 + 7);
         if (player.character === "saber") addAttackSpeed(player, 0.05);
-        if (player.local || net.mode === "host") sfx("level", { broadcast: net.mode === "host" });
+        playPlayerSound(player, "level");
         openLevelUp(player);
       }
     }
@@ -5113,7 +5114,7 @@ function updateHearts(dt) {
       if (distance(heart, player) < heart.radius + player.radius) {
         player.hp = Math.min(player.maxHp, player.hp + heart.heal);
         heart.collected = true;
-        if (player.local || net.mode === "host") sfx("heal", { broadcast: net.mode === "host" });
+        playPlayerSound(player, "heal");
         addRing(player.x, player.z, 1.8, 0xff4f7b);
         break;
       }
@@ -5150,7 +5151,7 @@ function updateMagnets(dt) {
       if (distance(magnet, player) < magnet.radius + player.radius) {
         magnet.collected = true;
         for (const gem of state.gems) gem.forceTarget = player.id;
-        if (player.local || net.mode === "host") sfx("gem", { broadcast: net.mode === "host" });
+        playPlayerSound(player, "gem");
         addRing(player.x, player.z, 2.6, 0x5aa7ff);
         showToast(`${player.name}が磁石を拾いました`);
         break;
@@ -6008,7 +6009,7 @@ function castIceSpikes(player) {
     addIceSpike(enemy.x, enemy.z, radius);
     addRing(enemy.x, enemy.z, 0.72, 0x9fe8ff);
   }
-  if (targets.length) sfx("witchIceSpike", { broadcast: net.mode === "host" });
+  if (targets.length) playPlayerSound(player, "witchIceSpike");
 }
 
 function addIceSpike(x, z, radius = 0.72) {
@@ -6037,10 +6038,11 @@ function makeIceSpikeMesh(effect = {}) {
 }
 
 function addThunderStorm(circle, count) {
+  playPlayerSound(state.players.find((player) => player.id === circle.owner), "thunder");
   for (let i = 0; i < count; i += 1) {
     const angle = Math.random() * Math.PI * 2;
     const radius = Math.sqrt(Math.random()) * circle.radius;
-    addThunderBolt(circle.x + Math.cos(angle) * radius, circle.z + Math.sin(angle) * radius);
+    addThunderBolt(circle.x + Math.cos(angle) * radius, circle.z + Math.sin(angle) * radius, { silent: true });
   }
 }
 
@@ -6053,7 +6055,9 @@ function explode(x, z, radius, damage) {
 }
 
 function magicExplosion(x, z, radius, damage, chainLeft = 0, owner = "", chained = new Set()) {
-  sfx("explode", { broadcast: net.mode === "host" });
+  const ownerPlayer = state.players.find((player) => player.id === owner);
+  if (ownerPlayer) playPlayerSound(ownerPlayer, "explode");
+  else sfx("explode", { broadcast: net.mode === "host" });
   addRing(x, z, radius, 0xff6b2c);
   addRing(x, z, radius * 0.55, 0xffd166);
   const nextBursts = [];
@@ -7084,12 +7088,12 @@ function makeRingMesh(effect) {
   return mesh;
 }
 
-function addThunderBolt(x, z) {
+function addThunderBolt(x, z, options = {}) {
   const mesh = makeThunderBoltMesh();
   mesh.position.set(x, 0.12, z);
   scene.add(mesh);
   state.effects.push({ id: crypto.randomUUID(), kind: "thunder", x, z, mesh, life: 0.18, start: 0.18 });
-  thunderSfx();
+  if (!options.silent) thunderSfx();
 }
 
 function makeThunderBoltMesh() {
@@ -7736,6 +7740,21 @@ function playSound(kind, options = {}) {
 function playEndSound(won) {
   stopEndSounds();
   playSound(won ? "victory" : "gameover", { retry: true });
+}
+
+function playPlayerSound(player, kind, options = {}) {
+  if (!player || !kind) return;
+  if (player.id === localPlayerId) {
+    playSound(kind, options);
+    return;
+  }
+  if (net.mode !== "host") return;
+  for (const conn of net.clients.values()) {
+    if (conn.playerId === player.id && conn.open) {
+      conn.send({ type: "playerSound", kind, volumeScale: options.volumeScale });
+      break;
+    }
+  }
 }
 
 function stopEndSounds() {
@@ -8514,6 +8533,7 @@ function handleHostData(data) {
   }
   if (data.type === "snapshot") applySnapshot(data);
   if (data.type === "sound") playSound(data.kind, { remote: true, retry: true, volumeScale: data.volumeScale });
+  if (data.type === "playerSound") playSound(data.kind, { remote: true, retry: true, volumeScale: data.volumeScale });
   if (data.type === "pause") {
     if (data.paused) applyPause(data.id);
     else clearPause();
@@ -8933,9 +8953,6 @@ function syncEffects(effects) {
       mesh = effect.kind === "slash" ? makeSlashMesh(effect) : effect.kind === "ninjaSlash" ? makeNinjaSlashMesh(effect) : effect.kind === "thunder" ? makeThunderBoltMesh(effect) : effect.kind === "ice" ? makeIceSpikeMesh(effect) : effect.kind === "ninjaClone" ? makeNinjaCloneMesh(effect) : effect.kind === "ninjaSummon" ? makeNinjaSummonMesh(effect) : effect.kind === "ninjaJutsu" ? makeNinjaJutsuMesh(effect) : effect.kind === "linkSkill" ? makeLinkEffectMesh(effect) : effect.kind === "substitutionLog" ? makeSubstitutionLogMesh(effect) : makeRingMesh(effect);
       scene.add(mesh);
       cache.set(effect.id, mesh);
-      if (effect.kind === "slash" && effect.owner && !effect.skill) sfx("saberAttack");
-      if (effect.kind === "thunder") thunderSfx();
-      if (effect.kind === "ice") sfx("witchIceSpike");
     }
     const t = 1 - effect.life / effect.start;
     mesh.position.set(effect.x, 0.12, effect.z);
