@@ -2085,6 +2085,8 @@ function loop(now) {
     if (net.mode === "client") {
       sendClientInput();
       updateClientInterpolation(dt);
+      // ドラゴン襲来カットイン中もカメラを顔へ向けるため更新する
+      if (isDragonEntranceActive()) updateCamera();
     } else if (!isGamePaused()) {
       try {
         update(dt);
@@ -2095,6 +2097,8 @@ function loop(now) {
       }
     } else {
       updateEffects(dt);
+      // ポーズ中でもドラゴン襲来中はカメラを顔へ向け続ける
+      if (isDragonEntranceActive()) updateCamera();
       sendHostSnapshot();
     }
   }
