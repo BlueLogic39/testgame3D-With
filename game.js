@@ -4775,13 +4775,31 @@ function addDragonFireRain(enemy) {
   }
 }
 
+function chargeEndWithinWorld(startX, startZ, angle, length, margin = 1.2) {
+  // 角度に沿ったまま、ワールド境界を超えない最大距離で端点を求める。
+  // X/Zを別々にclampすると突進方向が予告ラインからずれてしまうため、
+  // 進行方向のスカラー距離側を制限する。
+  const dx = Math.sin(angle);
+  const dz = Math.cos(angle);
+  const lo = -WORLD.half + margin;
+  const hi = WORLD.half - margin;
+  let maxLen = length;
+  if (dx > 1e-6) maxLen = Math.min(maxLen, (hi - startX) / dx);
+  else if (dx < -1e-6) maxLen = Math.min(maxLen, (lo - startX) / dx);
+  if (dz > 1e-6) maxLen = Math.min(maxLen, (hi - startZ) / dz);
+  else if (dz < -1e-6) maxLen = Math.min(maxLen, (lo - startZ) / dz);
+  maxLen = Math.max(0, maxLen);
+  return { x: startX + dx * maxLen, z: startZ + dz * maxLen };
+}
+
 function addBossChargeLine(enemy, target, delay = 0, origin = null, options = {}) {
   const startX = origin?.x ?? enemy.x;
   const startZ = origin?.z ?? enemy.z;
   const angle = Math.atan2(target.x - startX, target.z - startZ);
   const length = options.length || 24;
-  const endX = clamp(startX + Math.sin(angle) * length, -WORLD.half + enemy.radius, WORLD.half - enemy.radius);
-  const endZ = clamp(startZ + Math.cos(angle) * length, -WORLD.half + enemy.radius, WORLD.half - enemy.radius);
+  const end = chargeEndWithinWorld(startX, startZ, angle, length, enemy.radius);
+  const endX = end.x;
+  const endZ = end.z;
   const duration = options.duration || 2.05;
   const width = options.width || 2.6;
   const zoneLength = Math.hypot(endX - startX, endZ - startZ);
@@ -5435,8 +5453,9 @@ function retargetBossCharge(zone) {
   const startZ = boss.z;
   const angle = Math.atan2(target.x - startX, target.z - startZ);
   const length = zone.chargeLength || zone.length || 24;
-  const endX = clamp(startX + Math.sin(angle) * length, -WORLD.half + boss.radius, WORLD.half - boss.radius);
-  const endZ = clamp(startZ + Math.cos(angle) * length, -WORLD.half + boss.radius, WORLD.half - boss.radius);
+  const end = chargeEndWithinWorld(startX, startZ, angle, length, boss.radius);
+  const endX = end.x;
+  const endZ = end.z;
   zone.x = startX;
   zone.z = startZ;
   zone.startX = startX;
