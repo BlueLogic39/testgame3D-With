@@ -408,7 +408,7 @@ const CHARACTER_CODEX = [
   {
     id: "soldier",
     role: "高連射の手数型アタッカー",
-    weapon: "アサルトライフルを高連射します。30発撃つと2秒間リロードします。",
+    weapon: "アサルトライフルを高連射します。30発撃つとリロード（基準2秒）。攻撃速度強化でリロード時間が短くなります。",
     passive: "戦場適応: 自分の攻撃で敵を1体倒すごとに、ライフルダメージが永続的に+0.1%（そのプレイ中）上がります。",
     skill: "戦車降下: 60秒ごとに戦車へ乗り込み、砲弾と両側バルカンで敵を蹂躙します。",
     upgrades: [
@@ -2164,9 +2164,14 @@ function updatePlayers(dt) {
     player.fireTimer -= dt;
     if (!spinning && !isSoldierInTank(player) && player.fireTimer <= 0) {
       shoot(player);
-      player.fireTimer = player.character === "soldier" && state.elapsed < (player.rifleReloadUntil || 0)
-        ? Math.max(0.05, (player.rifleReloadUntil || 0) - state.elapsed)
-        : player.fireRate;
+      if (player.character === "soldier") {
+        // 攻撃速度ボーナスはリロード短縮に回すため、1発ごとの連射間隔は基準値で固定する
+        player.fireTimer = state.elapsed < (player.rifleReloadUntil || 0)
+          ? Math.max(0.05, (player.rifleReloadUntil || 0) - state.elapsed)
+          : (player.baseFireRate || player.fireRate);
+      } else {
+        player.fireTimer = player.fireRate;
+      }
     }
     updatePlayerIceSpike(player, dt);
     updatePlayerThunderCircle(player, dt);
@@ -3359,15 +3364,21 @@ function shoot(player) {
   shootArrows(player);
 }
 
+function soldierReloadDuration(player) {
+  // 攻撃速度ボーナスは射撃間隔ではなくリロード時間を短縮する(基準2秒・最短0.6秒)
+  return Math.max(0.6, 2 * attackIntervalMultiplier(player));
+}
+
 function shootSoldierRifle(player) {
   if (state.elapsed < (player.rifleReloadUntil || 0)) {
     player.fireTimer = Math.max(player.fireTimer || 0, (player.rifleReloadUntil || 0) - state.elapsed);
     return;
   }
   if ((player.rifleAmmo ?? 30) <= 0) {
-    player.rifleReloadUntil = state.elapsed + 2;
+    const reload = soldierReloadDuration(player);
+    player.rifleReloadUntil = state.elapsed + reload;
     player.rifleReloading = true;
-    player.fireTimer = 2;
+    player.fireTimer = reload;
     addRing(player.x, player.z, 1.0, 0x9ca3af);
     playPlayerSound(player, "soldierReloadStart");
     return;
@@ -10217,7 +10228,7 @@ function upgradeDescForPlayer(up, player) {
     if (character === "witch") return "ファイア、アイススパイク、サンダーストームの発動間隔が短くなる。";
     if (character === "saber") return "薙ぎ払いを出せる間隔が短くなる。隙を減らしやすい。";
     if (character === "ninja") return "刀、手裏剣、影分身の術、口寄せの術の発動間隔が短くなる。";
-    if (character === "soldier") return "ライフル、グレネード、火炎放射器の発動間隔が短くなる。";
+    if (character === "soldier") return "ライフルのリロード時間が短くなる(連射速度は一定)。グレネードや火炎放射器の発動間隔も短くなる。";
     return "矢を撃つ間隔が短くなる。";
   }
   return up.desc;
