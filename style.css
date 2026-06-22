@@ -558,6 +558,19 @@ canvas {
   width: min(760px, 100%);
 }
 
+.shop-actions {
+  width: min(760px, 100%);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+}
+
+.shop-actions .danger {
+  border-color: rgba(255, 107, 107, 0.65);
+  color: #ffd4d4;
+  background: rgba(106, 26, 32, 0.82);
+}
+
 .shop-card {
   display: grid;
   gap: 7px;
@@ -1306,6 +1319,8 @@ h2 {
     position: fixed;
     inset: 0;
     z-index: 50;
+    /* 全画面サブパネルは不透明にして、背景のメニュー隅要素が透けないようにする */
+    background: #0b0d10;
     width: 100vw;
     height: 100svh;
     min-height: 0;
@@ -1318,6 +1333,10 @@ h2 {
   }
 
   body.menu-mode #shopPanel .shop-grid {
+    grid-template-columns: 1fr;
+  }
+
+  body.menu-mode #shopPanel .shop-actions {
     grid-template-columns: 1fr;
   }
 

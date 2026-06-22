@@ -78,6 +78,7 @@ const ui = {
   shopPanel: document.getElementById("shopPanel"),
   shopMoney: document.getElementById("shopMoney"),
   shopItems: document.getElementById("shopItems"),
+  shopResetButton: document.getElementById("shopResetButton"),
   closeShopButton: document.getElementById("closeShopButton"),
   characterCodex: document.getElementById("characterCodex"),
   closeCodexButton: document.getElementById("closeCodexButton"),
@@ -281,6 +282,8 @@ const PROGRESS_KEY = "vansabaProgress";
 const UPGRADE_MAX_LEVEL = 5;
 const LINK_SKILL_CHARGE_SECONDS = 10;
 const LINK_SKILL_RANGE = 6.2;
+const MAX_ACTIVE_ENEMIES = 220;
+const MAX_WORLD_GEMS = 240;
 
 const SHOP_ITEMS = [
   { id: "power", type: "permanent", name: "筋力訓練", desc: "全キャラの攻撃力がレベルごとに+4%。", costs: [500, 1000, 1500, 2000, 2500], max: 5 },
@@ -288,6 +291,7 @@ const SHOP_ITEMS = [
   { id: "speed", type: "permanent", name: "俊足訓練", desc: "全キャラの移動速度がレベルごとに+3%。", costs: [500, 1000, 1500, 2000, 2500], max: 5 },
   { id: "magnet", type: "permanent", name: "磁力強化", desc: "経験値を吸い寄せる範囲がレベルごとに+8%。", costs: [500, 1000, 1500, 2000, 2500], max: 5 },
   { id: "learning", type: "permanent", name: "学習術", desc: "取得する経験値がレベルごとに+10%。最大+50%。", costs: [1000, 2000, 3000, 4000, 5000], max: 5 },
+  { id: "haste", type: "permanent", name: "連撃訓練", desc: "全キャラの攻撃速度がレベルごとに+5%。最大+25%。", costs: [1000, 1500, 2000, 2500, 3000], max: 5 },
   { id: "witch", type: "character", name: "ウィッチ購入", desc: "元素魔法を操るウィッチを使用可能にする。", cost: 1000 },
   { id: "saber", type: "character", name: "セイバー購入", desc: "近距離を薙ぎ払うセイバーを使用可能にする。", cost: 1500 },
   { id: "ninja", type: "character", name: "忍者購入", desc: "刀と手裏剣を使い分ける隠密アタッカーを使用可能にする。", cost: 5000, requiresClear: "stage2" },
@@ -393,7 +397,7 @@ const CHARACTER_CODEX = [
     id: "ninja",
     role: "刀と手裏剣を交互に使う高速アタッカー",
     weapon: "手裏剣を投げた1秒後に刀で斬り、さらに1秒後に手裏剣へ戻る交互攻撃です。",
-    passive: "旋風: 移動速度が15%高い。忍具精通: 5レベルごとに手裏剣+1、手裏剣貫通+1。最大4段階。",
+    passive: "旋風: 移動速度が15%高い。忍具精通: 5レベルごとに手裏剣+1、手裏剣貫通+1、刀ダメージ+50%。最大4段階（刀は最大+200%）。",
     skill: "飛影八閃: 15秒ごとにマウス方向へワープし、八方向へ手裏剣を放ちます。",
     upgrades: [
       "風魔手裏剣: 手裏剣が風をまとい、Lvごとに威力+15%、大きさ+0.1、飛距離アップ。命中敵へ持続ダメージも付与。",
@@ -409,8 +413,8 @@ const CHARACTER_CODEX = [
     skill: "戦車降下: 60秒ごとに戦車へ乗り込み、砲弾と両側バルカンで敵を蹂躙します。",
     upgrades: [
       "グレネード: 3秒ごとに近い敵へ分散投擲。Lv3で2個、Lv5で3個。Lvごとに威力と爆発範囲アップ。攻撃速度強化で投擲間隔短縮。",
-      "ドローン支援: 浮遊ドローンが追従して機銃掃射。取得ごとにドローン+1、威力少しアップ。",
-      "火炎放射器: 8秒ごとに2秒間、周囲へ炎を放ち続ける。Lvごとに範囲と威力アップ。攻撃速度強化でクールタイム短縮。"
+      "ドローン支援: 浮遊ドローンが追従して機銃掃射。取得ごとにドローン+1、威力と索敵範囲が大きく伸びる。",
+      "火炎放射器: 8秒ごとに2秒間、周囲へ高威力の炎を放ち続ける。Lvごとに範囲と威力が大きく伸び、攻撃速度強化でクールタイムも短縮。"
     ],
   },
 ];
@@ -457,11 +461,11 @@ const materials = {
 
 const upgrades = [
   { name: "矢の本数 +1", desc: "一度に放つ矢が増える。近距離の制圧力が上がる。", apply: (p) => (p.arrows += 1) },
-  { name: "攻撃速度 +10%", desc: "攻撃間隔が短くなる。迷ったらこれ。", apply: (p) => addAttackSpeed(p, 0.1) },
-  { name: "ダメージ +16%", desc: "通常攻撃の威力が増える。硬い敵に効きやすい。", apply: (p) => (p.damage *= 1.16) },
+  { name: "攻撃速度 +15%", desc: "攻撃間隔が短くなる。迷ったらこれ。", apply: (p) => addAttackSpeed(p, 0.15) },
+  { name: "ダメージ +20%", desc: "通常攻撃の威力が増える。硬い敵に効きやすい。", apply: (p) => (p.damage *= 1.2) },
   { name: "貫通 +1", desc: "矢が追加で敵を貫く。群れに強い。", apply: (p) => (p.pierce += 1) },
   { name: "移動速度 +10%", desc: "囲まれにくくなり、経験値回収もしやすくなる。", apply: (p) => (p.speed *= 1.1) },
-  { name: "最大HP +15", desc: "最大HPが増え、少し回復する。", apply: (p) => { p.maxHp += 15; p.hp = Math.min(p.maxHp, p.hp + 15); } },
+  { name: "最大HP +20", desc: "最大HPが増え、少し回復する。", apply: (p) => { p.maxHp += 20; p.hp = Math.min(p.maxHp, p.hp + 20); } },
   { name: "吸血", desc: "敵を倒すたびにHPを少し回復する。", maxLevel: 3, apply: (p) => (p.lifeSteal += 1.2) },
   { name: "バックショット", desc: "通常攻撃と同時にマウス方向の逆へ矢を撃つ。複数取ると後方矢が増える。", apply: (p) => (p.backShots += 1) },
   { name: "磁力 +40%", desc: "経験値を吸い寄せる範囲が広がる。", apply: (p) => (p.magnet *= 1.4) },
@@ -481,8 +485,8 @@ upgrades.push(
   { name: "影分身の術", desc: "離れた場所に分身を召喚し、火遁、雷遁、水遁、土遁を順番に放つ。Lv3とLv5で分身が増える。", classes: ["ninja"], apply: (p) => (p.shadowClone += 1) },
   { name: "口寄せの術", desc: "敵が集まっている場所へ蝦蟇、鷹、狼を順番に呼び出し、瞬間的な範囲攻撃を行う。取得するたび範囲と威力が伸びる。", classes: ["ninja"], apply: (p) => (p.summonJutsu += 1) },
   { name: "グレネード", desc: "3秒ごとに近くの敵へ分散して投げる。Lv3で2個、Lv5で3個。取得するたび威力と爆発範囲が少し伸びる。", classes: ["soldier"], apply: (p) => (p.grenade += 1) },
-  { name: "ドローン支援", desc: "ファンネルのように周囲を浮遊する小型ドローンが機銃掃射。取得するたびドローン+1、威力も少し上がる。", classes: ["soldier"], apply: (p) => (p.droneSupport += 1) },
-  { name: "火炎放射器", desc: "8秒ごとに2秒間、周囲へ激しい炎を放ち続ける。取得するたび範囲と威力が伸びる。", classes: ["soldier"], apply: (p) => (p.flamethrower += 1) }
+  { name: "ドローン支援", desc: "ファンネルのように周囲を浮遊する小型ドローンが機銃掃射。取得するたびドローン+1、威力と索敵範囲が大きく伸びる。", classes: ["soldier"], apply: (p) => (p.droneSupport += 1) },
+  { name: "火炎放射器", desc: "8秒ごとに2秒間、周囲へ高威力の炎を放ち続ける。取得するたび範囲と威力が大きく伸びる。", classes: ["soldier"], apply: (p) => (p.flamethrower += 1) }
 );
 
 initThree();
@@ -2687,7 +2691,7 @@ function updateSoldierDrones(player, dt) {
     const orbit = (Math.PI * 2 * i) / Math.max(1, count) + state.elapsed * 1.8;
     const originX = player.x + Math.sin(orbit) * 1.9;
     const originZ = player.z + Math.cos(orbit) * 1.9;
-    const target = nearestEnemy({ x: originX, z: originZ }, 20);
+    const target = nearestEnemy({ x: originX, z: originZ }, 20 + level * 3);
     addDroneEffect(originX, originZ, orbit);
     if (!target) continue;
     const angle = Math.atan2(target.x - originX, target.z - originZ);
@@ -2698,8 +2702,8 @@ function updateSoldierDrones(player, dt) {
       kind: "vulcanBullet",
       radius: 0.13,
       speed: 30,
-      life: 0.75,
-      damageScale: 0.72 + level * 0.05,
+      life: 0.75 + level * 0.08,
+      damageScale: 0.8 + level * 0.18,
     });
   }
   player.droneTimer = Math.max(0.22, 0.42 - level * 0.025);
@@ -2780,8 +2784,8 @@ function updateSoldierFlamethrower(player, dt) {
   if (state.elapsed < (player.flamethrowerUntil || 0)) {
     player.flamethrowerTick = (player.flamethrowerTick || 0) - dt;
     if (player.flamethrowerTick <= 0) {
-      const radius = 4.3 + level * 0.55;
-      const damage = player.damage * (0.68 + level * 0.16);
+      const radius = 4.8 + level * 0.85;
+      const damage = Math.max(player.damage * (5.8 + level * 1.2), 48 + (level - 1) * 18);
       damageEnemiesInCircle(player.x, player.z, radius, damage, player.id);
       addFlameBurstEffect(player.x, player.z, radius);
       player.flamethrowerTick = Math.max(0.08, 0.18 * attackIntervalMultiplier(player));
@@ -2878,14 +2882,10 @@ function updateSoldierTank(player, dt) {
   player.tankShellTimer = (player.tankShellTimer || 0) - dt;
   if (player.tankShellTimer <= 0) {
     fireTankShell(player, angle);
-    player.tankShellTimer = 0.9;
+    player.tankShellTimer = 0.64;
   }
-  player.tankVulcanTimer = (player.tankVulcanTimer || 0) - dt;
-  if (player.tankVulcanTimer <= 0) {
-    player.tankVulcanBurst = player.tankVulcanBurst > 0 ? 0 : 1;
-    player.tankVulcanTimer = player.tankVulcanBurst ? 1 : 1;
-  }
-  if (player.tankVulcanBurst) {
+  player.tankVulcanBurst = 1;
+  {
     player.tankVulcanSoundTimer = (player.tankVulcanSoundTimer || 0) - dt;
     if (player.tankVulcanSoundTimer <= 0) {
       playPlayerSound(player, "soldierRifle", { volumeScale: 0.25 });
@@ -3559,7 +3559,7 @@ function attackNinja(player) {
 }
 
 function ninjaLevelBonus(player) {
-  return Math.min(4, Math.floor(Math.max(0, (player.level || 1) - 1) / 5));
+  return Math.min(4, Math.floor(Math.max(0, player.level || 1) / 5));
 }
 
 function ninjaShurikenCount(player) {
@@ -3622,7 +3622,8 @@ function applyNinjaSlash(player, angle) {
     if (d > range + enemyHitRadius(enemy)) continue;
     const toEnemy = Math.atan2(enemy.x - player.x, enemy.z - player.z);
     if (Math.abs(angleDiff(toEnemy, angle)) > arc / 2) continue;
-    damageEnemy(enemy, player.damage * 0.72, player.id);
+    const masteryMultiplier = 1 + ninjaLevelBonus(player) * 0.5;
+    damageEnemy(enemy, player.damage * 0.72 * masteryMultiplier, player.id);
   }
   addNinjaSlashEffect(player.x, player.z, range, arc, angle, player.id);
 }
@@ -3898,6 +3899,8 @@ function spawnEnemies(dt) {
   const allowShooters = DIFFICULTIES[state.difficultyId]?.shooterEnemies !== false;
   const allowBombers = STAGES[state.stageId]?.bomberEnemies;
   for (let i = 0; i < count; i += 1) {
+    const normalEnemyLimit = MAX_ACTIVE_ENEMIES + Math.max(0, state.players.length - 1) * 25;
+    if (state.enemies.filter((enemy) => !enemy.boss && !enemy.midBoss).length >= normalEnemyLimit) break;
     const shooter = allowShooters && state.elapsed > 18 && Math.random() < Math.min(0.12, 0.03 + state.elapsed / 960);
     const bomber = !shooter && allowBombers && state.elapsed >= 180 && Math.random() < Math.min(0.106, 0.026 + state.elapsed / 1800);
     const castleRole = stage3SpawnRole(shooter, bomber);
@@ -4912,7 +4915,7 @@ function updateEnemyBullets(dt) {
 function damagePlayer(player, damage) {
   if ((debugModeEnabled && debugInvincible && player.local) || player.debugInvincible) return;
   if (player.dead || state.elapsed < (player.invincibleUntil || 0)) return;
-  const finalDamage = isSoldierInTank(player) ? damage * 0.25 : damage;
+  const finalDamage = isSoldierInTank(player) ? 1 : damage;
   player.hp -= finalDamage;
   player.hitFlash = 0.45;
   if (player.local) sfx("hit");
@@ -5043,6 +5046,22 @@ function projectileDamageMultiplier(projectile, target) {
 }
 
 function dropGem(x, z, value, kind = "normal") {
+  if (kind !== "boss" && state.gems.length >= MAX_WORLD_GEMS) {
+    let nearest = null;
+    let nearestDistance = Infinity;
+    for (const gem of state.gems) {
+      if (gem.kind === "boss" || gem.collected) continue;
+      const d = Math.hypot(gem.x - x, gem.z - z);
+      if (d < nearestDistance) {
+        nearest = gem;
+        nearestDistance = d;
+      }
+    }
+    if (nearest) {
+      nearest.value += value;
+      return;
+    }
+  }
   const gem = { id: crypto.randomUUID(), x, z, value, kind, radius: 0.42, wobble: Math.random() * Math.PI * 2, mesh: makeGemMesh({ kind }) };
   gem.mesh.position.set(x, 0.55, z);
   scene.add(gem.mesh);
@@ -8048,10 +8067,10 @@ function formatBuildSummary(player) {
       handled.add(name);
     }
   };
-  addPercent("攻撃速度 +10%", "攻撃速度", 10);
+  addPercent("攻撃速度 +15%", "攻撃速度", 15);
   addPercent("移動速度 +10%", "移動速度", 10);
-  addPercent("ダメージ +16%", "ダメージ", 16);
-  addFlat("最大HP +15", "最大HP", 15);
+  addPercent("ダメージ +20%", "ダメージ", 20);
+  addFlat("最大HP +20", "最大HP", 20);
   addCount("吸血");
   addPercent("磁力 +40%", "磁力", 40);
   addCount("矢の本数 +1", "矢の本数");
@@ -8259,18 +8278,22 @@ function isDragonEntranceActive() {
 
 function applyPause(playerId) {
   net.pausedBy = playerId;
-  if (playerId === localPlayerId) showStatus("ポーズ中", "Escで再開します。");
+  if (playerId === localPlayerId) showStatus("ポーズ中", isMobileControlLayout() ? "Ⅱ ボタンで再開します。" : "Escで再開します。");
   else showStatus("他のプレイヤーがポーズ中です", `${playerNameById(playerId)} がポーズしています。`);
   ui.pauseTitleButton?.classList.remove("hidden");
 }
 
 function clearPause() {
   net.pausedBy = null;
-  if (!net.waitingFor) hideStatus();
+  if (!net.waitingFor) {
+    state.paused = false;
+    hideStatus();
+  }
 }
 
 function togglePause() {
-  if (!state.running || state.pendingLevel) return;
+  if (!state.running || state.pendingLevel || localPlayer()?.dead) return;
+  if (net.pausedBy && net.pausedBy !== localPlayerId) return;
   const paused = net.pausedBy !== localPlayerId;
   if (net.mode === "client") {
     sendToHost({ type: "pause", id: localPlayerId, paused });
@@ -8467,9 +8490,10 @@ function handleClientData(conn, data) {
     }
   }
   if (data.type === "pause") {
-    if (data.paused) applyPause(data.id);
-    else if (net.pausedBy === data.id) clearPause();
-    broadcast({ type: "pause", id: data.id, paused: data.paused });
+    if (data.paused && (!net.pausedBy || net.pausedBy === data.id)) applyPause(data.id);
+    else if (!data.paused && net.pausedBy === data.id) clearPause();
+    broadcast({ type: "pause", id: net.pausedBy || data.id, paused: Boolean(net.pausedBy) });
+    sendHostSnapshot(true);
   }
   if (data.type === "levelChoice") chooseUpgrade(data.id, data.upgrade);
   if (data.type === "rerollRequest") rerollChoices(data.id);
@@ -8509,6 +8533,8 @@ function handleHostData(data) {
     net.stageId = data.stageId || net.stageId || "stage1";
     net.difficultyId = data.difficultyId || net.difficultyId || "normal";
     net.restartVotes = new Set();
+    net.pausedBy = null;
+    net.waitingFor = null;
     initAudio();
     sfx("start");
     startBgm();
@@ -8606,6 +8632,11 @@ function applySnapshot(data) {
   state.remoteEnemies = data.enemies || [];
   net.pausedBy = data.pausedBy || null;
   net.waitingFor = data.waitingFor || null;
+  state.paused = Boolean(net.waitingFor);
+  if (!net.waitingFor) {
+    state.pendingLevel = null;
+    ui.levelUp.classList.add("hidden");
+  }
   syncPlayers(data.players || []);
   syncSimpleMeshes(state.renderCache.enemies, data.enemies || [], (item) => makeEnemyMesh(item), 0);
   if ((data.enemies || []).some((enemy) => enemy.bossRole === "castleDragon" && enemy.hp > 0)) startBgm();
@@ -8636,7 +8667,9 @@ function sendClientInput() {
 function sendHostSnapshot(force = false) {
   if (net.mode !== "host" || net.clients.size === 0 || net.phase !== "playing") return;
   net.lastSend += 1;
-  if (!force && net.lastSend % 4 !== 0) return;
+  const networkLoad = state.enemies.length + state.arrows.length + state.enemyBullets.length + state.gems.length + state.effects.length;
+  const snapshotInterval = networkLoad > 420 ? 6 : networkLoad > 260 ? 5 : 4;
+  if (!force && net.lastSend % snapshotInterval !== 0) return;
   broadcast({
     type: "snapshot",
     elapsed: state.elapsed,
@@ -9260,7 +9293,7 @@ function defaultProgress() {
     characters: { archer: true, witch: false, saber: false, ninja: false, soldier: false },
     stages: { stage1: true, stage2: false, stage3: false, extra: false },
     cleared: { stage1: false, stage2: false, stage3: false, extra: false },
-    permanent: { power: 0, vitality: 0, speed: 0, magnet: 0, learning: 0 },
+    permanent: { power: 0, vitality: 0, speed: 0, magnet: 0, learning: 0, haste: 0 },
     highScores: { extra: 0 },
   };
 }
@@ -9325,6 +9358,28 @@ function buyShopItem(itemId) {
     selectCodexCharacter(item.type === "character" ? item.id : codexViewer?.character || "archer");
   }
   showToast(`${item.name}を購入しました`);
+}
+
+function resetPermanentUpgrades() {
+  const permanentItems = SHOP_ITEMS.filter((item) => item.type === "permanent");
+  let refund = 0;
+  for (const item of permanentItems) {
+    const level = Math.min(item.max, progress.permanent?.[item.id] || 0);
+    if (Array.isArray(item.costs)) {
+      refund += item.costs.slice(0, level).reduce((sum, cost) => sum + cost, 0);
+    } else {
+      for (let current = 0; current < level; current += 1) refund += item.baseCost + item.costStep * current;
+    }
+    progress.permanent[item.id] = 0;
+  }
+  if (refund <= 0) {
+    showToast("リセットできる固定強化がありません");
+    return;
+  }
+  progress.money += refund;
+  saveProgress();
+  updateProgressUi();
+  showToast(`固定強化をリセットし、${refund}G返金しました`);
 }
 
 function updateProgressUi() {
@@ -9440,11 +9495,13 @@ function applyPermanentBonuses(player) {
   const damageBonus = 1 + (permanent.power || 0) * 0.04;
   const speedBonus = 1 + (permanent.speed || 0) * 0.03;
   const magnetBonus = 1 + (permanent.magnet || 0) * 0.08;
+  const attackSpeedBonus = (permanent.haste || 0) * 0.05;
   player.maxHp += hpBonus;
   player.hp = player.maxHp;
   player.damage *= damageBonus;
   player.speed *= speedBonus;
   player.magnet *= magnetBonus;
+  player.attackSpeedBonus = (player.attackSpeedBonus || 0) + attackSpeedBonus;
 }
 
 function xpGainMultiplier() {
@@ -9859,9 +9916,14 @@ function removePlayerEverywhere(id) {
   }
   if (net.waitingFor === id) {
     net.waitingFor = null;
+    state.pendingLevel = null;
     state.paused = false;
     hideStatus();
     broadcast({ type: "levelDone", playerId: id });
+  }
+  if (net.pausedBy === id) {
+    clearPause();
+    broadcast({ type: "pause", id, paused: false });
   }
   showToast(`${leaving}が退室しました`);
   broadcast({ type: "toast", text: `${leaving}が退室しました` });
@@ -10135,14 +10197,14 @@ function showLevelChoices(player, choiceNames) {
 
 function upgradeDescForPlayer(up, player) {
   const character = player?.character || "archer";
-  if (up.name === "ダメージ +16%") {
+  if (up.name === "ダメージ +20%") {
     if (character === "witch") return "ファイア、魔力爆発、サンダーストーム、アイススパイク、魔女の大爆発の威力が増える。";
     if (character === "saber") return "薙ぎ払い、飛燕斬、回転突進斬りの威力が増える。";
     if (character === "ninja") return "刀、手裏剣、影分身の術、口寄せの術、飛影八閃の威力が増える。";
     if (character === "soldier") return "ライフル、グレネード、ドローン、火炎放射、戦車の威力が増える。";
     return "矢の威力が増える。硬い敵に効きやすい。";
   }
-  if (up.name === "攻撃速度 +10%") {
+  if (up.name === "攻撃速度 +15%") {
     if (character === "witch") return "ファイア、アイススパイク、サンダーストームの発動間隔が短くなる。";
     if (character === "saber") return "薙ぎ払いを出せる間隔が短くなる。隙を減らしやすい。";
     if (character === "ninja") return "刀、手裏剣、影分身の術、口寄せの術の発動間隔が短くなる。";
@@ -10346,6 +10408,11 @@ ui.closeCodexButton.addEventListener("click", closeCharacterCodex);
 ui.shopButton?.addEventListener("click", () => {
   renderShop();
   ui.shopPanel.classList.remove("hidden");
+});
+ui.shopResetButton?.addEventListener("click", () => {
+  if (window.confirm("固定強化をすべてLv0に戻し、使ったお金を返金します。キャラクター解放は維持されます。実行しますか？")) {
+    resetPermanentUpgrades();
+  }
 });
 ui.closeShopButton?.addEventListener("click", () => ui.shopPanel.classList.add("hidden"));
 ui.characterSelect?.addEventListener("click", (event) => {
