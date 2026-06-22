@@ -376,7 +376,7 @@ const CHARACTER_CODEX = [
     passive: "魔力爆発: ファイアが命中すると範囲ダメージが発生します。ファイア巨大化を取るほど範囲、威力、連鎖回数が伸びます。",
     skill: "魔女の大爆発: スペースキーで周囲を大きく爆発させます。",
     upgrades: [
-      "アイススパイク: 近くの敵の足元へ氷柱を出す。取得ごとに氷柱+2、スロー時間+1秒、威力アップ。攻撃速度強化で発動間隔短縮。",
+      "アイススパイク: Lv1で氷柱3本。Lv2～4は取得ごとに+3本、Lv5でさらに+6本（最大18本）。スロー時間+1秒、威力アップ。",
       "サンダーストーム: 周囲に雷の魔法陣を設置する。取得ごとに範囲、設置時間、威力アップ。攻撃速度強化で再設置が早くなる。",
       "ファイア巨大化: ファイアと魔力爆発の範囲と威力が伸び、連鎖爆発+1。爆発が次の爆発を呼びやすくなる。"
     ],
@@ -409,7 +409,7 @@ const CHARACTER_CODEX = [
     id: "soldier",
     role: "高連射の手数型アタッカー",
     weapon: "アサルトライフルを高連射します。30発撃つと2秒間リロードします。",
-    passive: "未設定: 今後の調整で追加予定です。",
+    passive: "戦場適応: 自分の攻撃で敵を1体倒すごとに、ライフルダメージが永続的に+0.1%（そのプレイ中）上がります。",
     skill: "戦車降下: 60秒ごとに戦車へ乗り込み、砲弾と両側バルカンで敵を蹂躙します。",
     upgrades: [
       "グレネード: 3秒ごとに近い敵へ分散投擲。Lv3で2個、Lv5で3個。Lvごとに威力と爆発範囲アップ。攻撃速度強化で投擲間隔短縮。",
@@ -475,9 +475,9 @@ upgrades[0].classes = ["archer"];
 upgrades[3].classes = ["archer"];
 upgrades[7].classes = ["archer"];
 upgrades.push(
-  { name: "アイススパイク", desc: "一定間隔で近くの敵の足元から氷柱を出す。取得するたび氷柱+2、スロー時間+1秒、威力が少し伸びる。", classes: ["witch"], apply: (p) => (p.iceSpike += 1) },
+  { name: "アイススパイク", desc: "Lv1で氷柱3本。Lv2～4は取得ごとに+3本、Lv5でさらに+6本（最大18本）。スロー時間+1秒、威力も伸びる。", classes: ["witch"], apply: (p) => (p.iceSpike += 1) },
   { name: "サンダーストーム", desc: "自分の周辺に雷の魔法陣を設置し、無数の雷で敵を翻弄する。取得するたび範囲、設置時間、威力が伸びる。攻撃速度で再設置も早くなる。", classes: ["witch"], apply: (p) => (p.thunderCircle += 1) },
-  { name: "ファイア巨大化", desc: "ファイアが大きくなり、魔力爆発の範囲と威力が伸びる。さらに連鎖爆発が+1される。", classes: ["witch"], apply: (p) => { p.magicRadius += 0.12; p.damage *= 1.08; p.magicSplash += 1; p.chainExplosion += 1; } },
+  { name: "ファイア巨大化", desc: "ファイアが大きくなり、魔力爆発の範囲と威力が伸びる。連鎖爆発は最大+3まで増える。", classes: ["witch"], apply: (p) => { p.magicRadius += 0.12; p.damage *= 1.08; p.magicSplash += 1; p.chainExplosion = Math.min(3, (p.chainExplosion || 0) + 1); } },
   { name: "剣閃範囲 +8度", desc: "薙ぎ払いの横範囲が8度広がり、奥への届く距離も5%伸びる。", classes: ["saber"], apply: (p) => { p.slashArc += THREE.MathUtils.degToRad(8); p.slashRange *= 1.05; } },
   { name: "飛燕斬", desc: "通常攻撃と同時に飛ぶ斬撃を放つ。ダメージ強化も乗る。初回は威力67%、貫通0。以後は1回ごとに威力+12%、大きさ+0.08、貫通+2。", classes: ["saber"], apply: (p) => (p.flyingSlash += 1) },
   { name: "二連斬り", desc: "薙ぎ払いの直後に、少しずらした追加の斬撃を放つ。", classes: ["saber"], apply: (p) => (p.doubleSlash += 1) },
@@ -1225,6 +1225,7 @@ function makePlayer(id, name, x, z, local, character = "archer") {
     rifleReloadUntil: 0,
     rifleReloading: false,
     rifleSoundAt: 0,
+    rifleKillBonus: 0,
     grenade: 0,
     grenadeTimer: 3,
     droneSupport: 0,
@@ -3381,6 +3382,8 @@ function shootSoldierRifle(player) {
 }
 
 function fireSoldierBullet(player, angle, options = {}) {
+  const kind = options.kind || "soldierBullet";
+  const rifleMultiplier = kind === "soldierBullet" ? 1 + (player.rifleKillBonus || 0) : 1;
   const bullet = {
     id: crypto.randomUUID(),
     x: (options.originX ?? player.x) + Math.sin(angle) * (options.offset ?? 1.1),
@@ -3391,13 +3394,13 @@ function fireSoldierBullet(player, angle, options = {}) {
     radius: options.radius || 0.16,
     groundRadius: options.groundRadius || 0,
     life: options.life || 0.9,
-    damage: player.damage * (options.damageScale || 1),
+    damage: player.damage * (options.damageScale || 1) * rifleMultiplier,
     pierce: options.pierce || 0,
     owner: player.id,
-    kind: options.kind || "soldierBullet",
+    kind,
     angle,
     hit: new Set(),
-    mesh: makeProjectileMesh({ kind: options.kind || "soldierBullet", radius: options.radius || 0.16 }),
+    mesh: makeProjectileMesh({ kind, radius: options.radius || 0.16 }),
   };
   bullet.mesh.rotation.y = angle;
   bullet.mesh.position.set(bullet.x, bullet.y, bullet.z);
@@ -3469,7 +3472,7 @@ function shootMagic(player) {
       owner: player.id,
       kind: "magic",
       splash: player.magicSplash || 0,
-      chain: player.chainExplosion || 0,
+      chain: Math.min(3, player.chainExplosion || 0),
       angle,
       hit: new Set(),
       mesh: makeProjectileMesh({ kind: "magic" }),
@@ -4078,10 +4081,13 @@ function updateEnemies(dt) {
     if (enemy.bossRole === "castleDragon" && enemy.dragonDying && !enemy.dragonDeathDone) continue;
     state.kills += 1;
     if (STAGES[state.stageId]?.scoreAttack) state.score += enemy.boss ? 1400 : enemy.midBoss ? 520 : enemy.enemyType === "castleMage" ? 65 : enemy.bomber ? 52 : enemy.shooter ? 42 : 28;
-    const owner = state.players.find((p) => p.id === enemy.lastHitBy) || localPlayer();
+    const owner = state.players.find((p) => p.id === enemy.lastHitBy);
     dropGem(enemy.x, enemy.z, enemy.xp, enemy.boss || enemy.midBoss ? "boss" : enemy.enemyType === "castleMage" ? "orange" : enemy.bomber || enemy.enemyType === "castleShield" || enemy.enemyType === "castleGhost" ? "bomber" : enemy.shooter ? "shooter" : "normal");
     if (owner) {
       owner.hp = Math.min(owner.maxHp, owner.hp + owner.lifeSteal);
+      if (owner.character === "soldier") {
+        owner.rifleKillBonus = (owner.rifleKillBonus || 0) + 0.001;
+      }
     }
     if (enemy.midBoss) spawnHeartAt(enemy.x, enemy.z);
     addRing(enemy.x, enemy.z, enemy.boss ? 3.2 : enemy.bomber ? 2.2 : 1.4, enemy.bomber ? 0xffd84a : enemy.shooter ? 0x3fb7d6 : enemy.boss ? 0x57c4a7 : 0xf2c14e);
@@ -4859,7 +4865,8 @@ function explodeBomber(enemy) {
     if (other === enemy || other.hp <= 0) continue;
     if (distance(enemy, other) <= radius + other.radius) {
       other.hp -= 42;
-      other.lastHitBy = enemy.lastHitBy || nearestLivingPlayer(enemy)?.id || "";
+      other.lastHitBy = enemy.lastHitBy || "";
+      other.lastHitSource = enemy.lastHitSource || "";
     }
   }
 }
@@ -4967,7 +4974,7 @@ function updateArrows(dt) {
         && distancePointToSegment(enemy.x, enemy.z, prevX, prevZ, arrow.x, arrow.z) <= (arrow.groundRadius || arrow.radius) + enemyHitRadius(enemy);
       if (distance(arrow, enemy) < arrow.radius + enemyHitRadius(enemy) || groundLineHit) {
         const finalDamage = arrow.damage * projectileDamageMultiplier(arrow, enemy);
-        damageEnemy(enemy, finalDamage, arrow.owner);
+        damageEnemy(enemy, finalDamage, arrow.owner, arrow.kind);
         arrow.hit.add(enemy);
         if (arrow.kind === "magic") playPlayerSound(state.players.find((player) => player.id === arrow.owner), "fire");
         const hitColor = arrow.kind === "magic" ? 0xff6b2c : arrow.kind === "flyingSlash" ? 0x91c7ff : arrow.kind === "shuriken" ? 0x2dd4bf : 0xf2c14e;
@@ -5275,8 +5282,6 @@ function updateRockfalls(dt, applyDamage) {
     if (isGolemEnemy(enemy)) continue;
         if (distance(rockfall, enemy) > rockfall.radius + enemyHitRadius(enemy)) continue;
         damageEnemy(enemy, rockfall.enemyDamage);
-        const owner = nearestLivingPlayer(enemy);
-        if (owner) enemy.lastHitBy = owner.id;
       }
     }
   }
@@ -6014,7 +6019,7 @@ function updateMagicCircles(dt) {
 
 function castIceSpikes(player) {
   const level = player.iceSpike || 0;
-  const count = Math.max(1, level * 2);
+  const count = level >= 5 ? 18 : Math.max(3, level * 3);
   const slowDuration = 0.5 + level * 1;
   const damage = witchSpellDamage(player, 0.52 + level * 0.12);
   const radius = 0.72;
@@ -6057,7 +6062,7 @@ function makeIceSpikeMesh(effect = {}) {
 }
 
 function addThunderStorm(circle, count) {
-  playPlayerSound(state.players.find((player) => player.id === circle.owner), "thunder");
+  playPlayerSound(state.players.find((player) => player.id === circle.owner), "thunder", { volumeScale: 0.5 });
   for (let i = 0; i < count; i += 1) {
     const angle = Math.random() * Math.PI * 2;
     const radius = Math.sqrt(Math.random()) * circle.radius;
@@ -6509,7 +6514,7 @@ function updateDragonHitboxMesh(enemy, dt = 0.016) {
   }
 }
 
-function damageEnemy(enemy, amount, owner = "") {
+function damageEnemy(enemy, amount, owner = "", source = "") {
   if (!enemy || amount <= 0) return;
   if (enemy.bossRole === "castleDragon" && enemy.dragonDying) return;
   if (isGhostIntangible(enemy)) {
@@ -6518,7 +6523,10 @@ function damageEnemy(enemy, amount, owner = "") {
   }
   const finalAmount = enemy.castleGuardDefenseUntil && state.elapsed < enemy.castleGuardDefenseUntil ? amount * 0.1 : amount;
   enemy.hp -= finalAmount;
-  if (owner) enemy.lastHitBy = owner;
+  if (owner) {
+    enemy.lastHitBy = owner;
+    enemy.lastHitSource = source;
+  }
   if (enemy.bossRole === "castleDragon") {
     enemy.hitboxFlash = 0.28;
     updateDragonHitboxMesh(enemy, 0);
@@ -8019,7 +8027,7 @@ function updateUi() {
       : player.character === "ninja"
         ? `刀 / 手裏剣${ninjaShurikenCount(player)}個 / 貫通${ninjaShurikenPierce(player)}`
         : player.character === "soldier"
-          ? `ライフル ${Math.max(0, player.rifleAmmo ?? 30)}/30`
+          ? `ライフル ${Math.max(0, player.rifleAmmo ?? 30)}/30 / 撃破強化+${((player.rifleKillBonus || 0) * 100).toFixed(1)}%`
           : `${player.arrows}本 / 後方${player.backShots || 0}本 / 貫通${player.pierce}`;
   const score = STAGES[state.stageId]?.scoreAttack ? ` / SCORE ${Math.floor(state.score || 0)}` : "";
   ui.build.textContent = `${characterName} / ${weapon} / 威力${Math.round(player.damage)} / ${buildSummary}${room}${revive}${score}`;
@@ -8224,6 +8232,7 @@ function resetMobileMovement() {
 }
 
 function closeMobileRadial() {
+  radialActive = false;
   ui.radialMenu.classList.add("hidden");
   ui.radialMenu.classList.remove("mobile-radial-active");
 }
@@ -8688,7 +8697,7 @@ function sendHostSnapshot(force = false) {
       modelActionName: p.modelActionName, modelActionUntil: p.modelActionUntil, modelActionTimeScale: p.modelActionTimeScale,
       arrows: p.arrows, backShots: p.backShots, damage: p.damage, pierce: p.pierce,
       flyingSlash: p.flyingSlash, fumaShuriken: p.fumaShuriken, shadowClone: p.shadowClone, summonJutsu: p.summonJutsu,
-      rifleAmmo: p.rifleAmmo, rifleReloadUntil: p.rifleReloadUntil, rifleReloading: p.rifleReloading,
+      rifleAmmo: p.rifleAmmo, rifleReloadUntil: p.rifleReloadUntil, rifleReloading: p.rifleReloading, rifleKillBonus: p.rifleKillBonus,
       grenade: p.grenade, droneSupport: p.droneSupport, flamethrower: p.flamethrower,
       tankUntil: p.tankUntil, tankDropUntil: p.tankDropUntil, tankVulcanBurst: p.tankVulcanBurst,
       baseFireRate: p.baseFireRate, attackSpeedBonus: p.attackSpeedBonus, fireRate: p.fireRate,
@@ -10300,7 +10309,7 @@ window.addEventListener("keydown", (event) => {
     if (!event.repeat) requestSkillUse();
     return;
   }
-  if (event.code === "KeyT" && !radialActive && canUseRadial()) {
+  if (event.code === "KeyT" && !event.repeat && canUseRadial()) {
     radialActive = true;
     radialChoice = "Hello!";
     ui.radialMenu.classList.remove("hidden");
@@ -10328,6 +10337,11 @@ window.addEventListener("keyup", (event) => {
     return;
   }
   keys.delete(event.code);
+});
+window.addEventListener("blur", () => {
+  radialActive = false;
+  ui.radialMenu.classList.add("hidden");
+  keys.clear();
 });
 canvas.addEventListener("mousemove", (event) => {
   updateAim(event);
