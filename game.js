@@ -144,7 +144,6 @@ let localPlayerId = "host";
 let spectateIndex = 0;
 let radialActive = false;
 let radialChoice = "Hello!";
-let radialOpenedAt = 0;
 let selectedRoomKey = "";
 let selectedOnlineRoom = null;
 let selectedCharacterId = "archer";
@@ -8286,7 +8285,7 @@ function syncMobileControlsVisibility() {
   ui.mobileControls.setAttribute("aria-hidden", String(!visible));
   if (!visible) {
     resetMobileMovement();
-    closeMobileRadial();
+    if (ui.radialMenu.classList.contains("mobile-radial-active")) closeMobileRadial();
   }
 }
 
@@ -10345,17 +10344,9 @@ window.addEventListener("keydown", (event) => {
     return;
   }
   if (event.code === "KeyT" && !event.repeat && canUseRadial()) {
-    if (radialActive) {
-      // すでに開いている(タップで開いた状態)→ もう一度押すと選択を確定して閉じる
-      radialActive = false;
-      ui.radialMenu.classList.add("hidden");
-      sendCommunication(radialChoice);
-    } else {
-      radialActive = true;
-      radialOpenedAt = performance.now();
-      radialChoice = "Hello!";
-      ui.radialMenu.classList.remove("hidden");
-    }
+    radialActive = true;
+    radialChoice = "Hello!";
+    ui.radialMenu.classList.remove("hidden");
     event.preventDefault();
     return;
   }
@@ -10373,12 +10364,9 @@ window.addEventListener("keydown", (event) => {
 });
 window.addEventListener("keyup", (event) => {
   if (event.code === "KeyT" && radialActive) {
-    // 長押し(220ms以上)で離した時は確定して閉じる。短いタップでは開いたまま(トグル)。
-    if (performance.now() - radialOpenedAt > 220) {
-      radialActive = false;
-      ui.radialMenu.classList.add("hidden");
-      sendCommunication(radialChoice);
-    }
+    radialActive = false;
+    ui.radialMenu.classList.add("hidden");
+    sendCommunication(radialChoice);
     event.preventDefault();
     return;
   }
