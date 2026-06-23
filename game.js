@@ -144,6 +144,7 @@ let localPlayerId = "host";
 let spectateIndex = 0;
 let radialActive = false;
 let radialChoice = "Hello!";
+let radialOpenedAt = 0;
 let selectedRoomKey = "";
 let selectedOnlineRoom = null;
 let selectedCharacterId = "archer";
@@ -3283,8 +3284,8 @@ function updateCamera() {
       const outward = new THREE.Vector3((focus.dragonBodyX ?? focus.x) - focus.x, 0, (focus.dragonBodyZ ?? focus.z) - focus.z);
       if (outward.lengthSq() < 0.01) outward.set(0, 0, 1);
       outward.normalize();
-      const camPos = face.clone().add(outward.multiplyScalar(-7.2));
-      camPos.y = 16.2;
+      const camPos = face.clone().add(outward.multiplyScalar(-16));
+      camPos.y = 20;
       camera.position.lerp(camPos, 0.5);
       camera.lookAt(face.x, face.y + 1.35, face.z);
       updateCastleWallVisibility();
@@ -3314,8 +3315,8 @@ function focusDragonEntranceCameraNow(focus = dragonEntranceFocus) {
   const outward = new THREE.Vector3((focus.dragonBodyX ?? focus.x) - focus.x, 0, (focus.dragonBodyZ ?? focus.z) - focus.z);
   if (outward.lengthSq() < 0.01) outward.set(0, 0, 1);
   outward.normalize();
-  const camPos = face.clone().add(outward.multiplyScalar(-7.2));
-  camPos.y = 16.2;
+  const camPos = face.clone().add(outward.multiplyScalar(-16));
+  camPos.y = 20;
   camera.position.copy(camPos);
   camera.lookAt(face.x, face.y + 1.35, face.z);
   updateCastleWallVisibility();
@@ -10344,9 +10345,17 @@ window.addEventListener("keydown", (event) => {
     return;
   }
   if (event.code === "KeyT" && !event.repeat && canUseRadial()) {
-    radialActive = true;
-    radialChoice = "Hello!";
-    ui.radialMenu.classList.remove("hidden");
+    if (radialActive) {
+      // すでに開いている(タップで開いた状態)→ もう一度押すと選択を確定して閉じる
+      radialActive = false;
+      ui.radialMenu.classList.add("hidden");
+      sendCommunication(radialChoice);
+    } else {
+      radialActive = true;
+      radialOpenedAt = performance.now();
+      radialChoice = "Hello!";
+      ui.radialMenu.classList.remove("hidden");
+    }
     event.preventDefault();
     return;
   }
@@ -10364,9 +10373,12 @@ window.addEventListener("keydown", (event) => {
 });
 window.addEventListener("keyup", (event) => {
   if (event.code === "KeyT" && radialActive) {
-    radialActive = false;
-    ui.radialMenu.classList.add("hidden");
-    sendCommunication(radialChoice);
+    // 長押し(220ms以上)で離した時は確定して閉じる。短いタップでは開いたまま(トグル)。
+    if (performance.now() - radialOpenedAt > 220) {
+      radialActive = false;
+      ui.radialMenu.classList.add("hidden");
+      sendCommunication(radialChoice);
+    }
     event.preventDefault();
     return;
   }
