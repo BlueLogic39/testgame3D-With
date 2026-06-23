@@ -389,8 +389,8 @@ const CHARACTER_CODEX = [
     skill: "回転突進斬り: スペースキーで2秒間回転斬りしながらマウス方向へ突進します。",
     upgrades: [
       "剣閃範囲 +8度: 薙ぎ払いの横範囲+8度、奥行き+5%。近距離制圧を広げる。",
-      "飛燕斬: 通常攻撃と同時に飛ぶ斬撃を放つ。ダメージ強化が乗る。初回威力67%、以後Lvごとに威力+12%、大きさ+0.08、貫通+2。",
-      "二連斬り: 薙ぎ払い直後に追加斬撃を出す。前方の取りこぼしを減らす。"
+      "飛燕斬: 通常攻撃と同時に飛ぶ斬撃を放つ。Lvごとに大きさ+0.1。貫通はLv1～5で+2/+4/+7/+10/+15。",
+      "会心の太刀: 薙ぎ払いが一定確率で会心になり大ダメージ＋派手な斬撃。Lvで会心率(最大40%)と倍率(最大3倍)が上がる。"
     ],
   },
   {
@@ -487,8 +487,8 @@ upgrades.push(
   { name: "サンダーストーム", desc: "自分の周辺に雷の魔法陣を設置し、無数の雷で敵を翻弄する。取得するたび範囲、設置時間、威力が伸びる。攻撃速度で再設置も早くなる。", classes: ["witch"], apply: (p) => (p.thunderCircle += 1) },
   { name: "ファイア巨大化", desc: "ファイアが大きくなり、魔力爆発の範囲と威力が伸びる。連鎖爆発は最大+3まで増える。", classes: ["witch"], apply: (p) => { p.magicRadius += 0.12; p.damage *= 1.08; p.magicSplash += 1; p.chainExplosion = Math.min(3, (p.chainExplosion || 0) + 1); } },
   { name: "剣閃範囲 +8度", desc: "薙ぎ払いの横範囲が8度広がり、奥への届く距離も5%伸びる。", classes: ["saber"], apply: (p) => { p.slashArc += THREE.MathUtils.degToRad(8); p.slashRange *= 1.05; } },
-  { name: "飛燕斬", desc: "通常攻撃と同時に飛ぶ斬撃を放つ。ダメージ強化も乗る。初回は威力67%、貫通0。以後は1回ごとに威力+12%、大きさ+0.08、貫通+2。", classes: ["saber"], apply: (p) => (p.flyingSlash += 1) },
-  { name: "二連斬り", desc: "薙ぎ払いの直後に、少しずらした追加の斬撃を放つ。", classes: ["saber"], apply: (p) => (p.doubleSlash += 1) },
+  { name: "飛燕斬", desc: "通常攻撃と同時に飛ぶ斬撃を放つ。Lvごとに大きさ+0.1。貫通はLv1～5で+2/+4/+7/+10/+15。ダメージ強化も乗る。", classes: ["saber"], apply: (p) => (p.flyingSlash += 1) },
+  { name: "会心の太刀", desc: "薙ぎ払いが一定確率で会心になり大ダメージ＋派手な斬撃。Lvごとに会心率+8%(Lv5で40%)、倍率はLv1-2で2倍/Lv3-4で2.5倍/Lv5で3倍。", classes: ["saber"], apply: (p) => (p.critLevel += 1) },
   { name: "風魔手裏剣", desc: "手裏剣が風をまとい、取得するたび威力+15%、大きさ+0.1、飛距離が少し伸びる。命中した敵を真空の刃で切り刻む。", classes: ["ninja"], apply: (p) => (p.fumaShuriken += 1) },
   { name: "影分身の術", desc: "離れた場所に分身を召喚し、火遁、雷遁、水遁、土遁を順番に放つ。Lv3とLv5で分身が増える。", classes: ["ninja"], apply: (p) => (p.shadowClone += 1) },
   { name: "口寄せの術", desc: "敵が集まっている場所へ蝦蟇、鷹、狼を順番に呼び出し、瞬間的な範囲攻撃を行う。取得するたび範囲と威力が伸びる。", classes: ["ninja"], apply: (p) => (p.summonJutsu += 1) },
@@ -1216,7 +1216,7 @@ function makePlayer(id, name, x, z, local, character = "archer") {
     slashArc: THREE.MathUtils.degToRad(90),
     slashRange: 5.2,
     flyingSlash: 0,
-    doubleSlash: 0,
+    critLevel: 0,
     spinSlashUntil: 0,
     spinSlashAngle: 0,
     spinSlashTick: 0,
@@ -3523,18 +3523,16 @@ function isGhostIntangible(enemy) {
 
 function swingSaber(player) {
   const base = Math.atan2(player.input.aimX - player.x, player.input.aimZ - player.z);
-  const swings = Math.max(1, 1 + (player.doubleSlash || 0));
-  for (let i = 0; i < swings; i += 1) {
-    const angle = base + (i === 0 ? 0 : (i % 2 === 0 ? -0.28 : 0.28));
-    applySaberSlash(player, angle);
-  }
+  applySaberSlash(player, base);
   fireFlyingSlash(player, base);
 }
 
 function fireFlyingSlash(player, angle) {
   const level = player.flyingSlash || 0;
   if (level <= 0) return;
-  const radius = 0.56 + level * 0.08;
+  const radius = 0.56 + level * 0.1;
+  // 貫通: Lv1=2, Lv2=4, Lv3=7, Lv4=10, Lv5=15(増分 +2,+2,+3,+3,+5)
+  const pierceTable = [0, 2, 4, 7, 10, 15];
   const slash = {
     id: crypto.randomUUID(),
     x: player.x + Math.sin(angle) * 1.45,
@@ -3544,7 +3542,7 @@ function fireFlyingSlash(player, angle) {
     radius,
     life: 1.15 + level * 0.08,
     damage: player.damage * (0.55 + level * 0.12),
-    pierce: Math.max(0, (level - 1) * 2),
+    pierce: pierceTable[Math.min(5, level)],
     owner: player.id,
     kind: "flyingSlash",
     angle,
@@ -3560,16 +3558,27 @@ function fireFlyingSlash(player, angle) {
 function applySaberSlash(player, angle) {
   const range = player.slashRange || 5.2;
   const arc = player.slashArc || THREE.MathUtils.degToRad(90);
-  let hit = false;
+  // 会心の太刀: Lvごとに会心率+8%、倍率はLv1-2で2倍/Lv3-4で2.5倍/Lv5で3倍
+  const critLevel = player.critLevel || 0;
+  const crit = critLevel > 0 && Math.random() < critLevel * 0.08;
+  const critMult = critLevel >= 5 ? 3 : critLevel >= 3 ? 2.5 : 2;
+  const damage = crit ? player.damage * critMult : player.damage;
   for (const enemy of state.enemies) {
     const d = distance(player, enemy);
     if (d > range + enemyHitRadius(enemy)) continue;
     const toEnemy = Math.atan2(enemy.x - player.x, enemy.z - player.z);
     if (Math.abs(angleDiff(toEnemy, angle)) > arc / 2) continue;
-    damageEnemy(enemy, player.damage, player.id);
-    hit = true;
+    damageEnemy(enemy, damage, player.id);
   }
-  addSlashEffect(player.x, player.z, range, arc, angle, hit ? 0xfff1a6 : 0x91c7ff, player.id);
+  addSlashEffect(player.x, player.z, range, arc, angle, 0xdfe8f3, player.id);
+  if (crit) addCritSlashEffect(player.x, player.z, range, arc, angle, critLevel, player.id);
+}
+
+// 会心演出は実際の薙ぎ払い範囲内だけに収める。
+function addCritSlashEffect(x, z, range, arc, angle, level, owner = "") {
+  const tier = level >= 5 ? 3 : level >= 3 ? 2 : 1;
+  const color = tier === 3 ? 0xff2d2d : tier === 2 ? 0xff8a1f : 0xffd23b;
+  addSlashEffect(x, z, range, arc, angle, color, owner, false, { critical: true, criticalTier: tier });
 }
 
 function attackNinja(player) {
@@ -7178,13 +7187,15 @@ function makeThunderBoltMesh() {
   return new THREE.Line(geometry, material);
 }
 
-function addSlashEffect(x, z, radius, arc, angle, color, owner = "", skill = false) {
-  const mesh = makeSlashMesh({ radius, arc, color, skill });
+function addSlashEffect(x, z, radius, arc, angle, color, owner = "", skill = false, options = {}) {
+  const critical = Boolean(options.critical);
+  const criticalTier = options.criticalTier || 0;
+  const mesh = makeSlashMesh({ radius, arc, color, skill, critical, criticalTier });
   mesh.position.set(x, 0.18, z);
   mesh.rotation.y = angle;
   scene.add(mesh);
   const life = skill ? 0.18 : 0.34;
-  state.effects.push({ id: crypto.randomUUID(), kind: "slash", owner, skill, x, z, radius, arc, angle, color, mesh, life, start: life });
+  state.effects.push({ id: crypto.randomUUID(), kind: "slash", owner, skill, critical, criticalTier, x, z, radius, arc, angle, color, mesh, life, start: life });
 }
 
 function addNinjaSlashEffect(x, z, radius, arc, angle, owner = "") {
@@ -7520,31 +7531,30 @@ function makeSlashMesh(effect) {
   const color = effect.color || 0xdfe8f3;
   const group = new THREE.Group();
 
-  const shape = new THREE.Shape();
-  shape.moveTo(0, 0);
-  const steps = 28;
-  for (let i = 0; i <= steps; i += 1) {
-    const a = -arc / 2 + (arc * i) / steps;
-    shape.lineTo(Math.sin(a) * radius, Math.cos(a) * radius);
-  }
-  shape.lineTo(0, 0);
-  const fanMaterial = new THREE.MeshBasicMaterial({
-    color,
-    transparent: true,
-    opacity: effect.skill ? 0.34 : 0.22,
-    side: THREE.DoubleSide,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-  });
-  const fan = new THREE.Mesh(new THREE.ShapeGeometry(shape), fanMaterial);
-  fan.rotation.x = -Math.PI / 2;
-  group.add(fan);
-
   if (effect.skill) {
     const arcMesh = makeSlashArcMesh(radius, arc, 0.09, 0xffffff, 0.92);
     const glowMesh = makeSlashArcMesh(radius * 0.86, arc * 0.9, 0.035, color, 0.72);
     const innerMesh = makeSlashArcMesh(radius * 0.58, arc * 0.76, 0.025, 0xdfe8f3, 0.48);
     group.add(arcMesh, glowMesh, innerMesh);
+  } else if (effect.critical) {
+    const tier = Math.max(1, effect.criticalTier || 1);
+    const arcCount = tier + 1;
+    for (let i = 0; i < arcCount; i += 1) {
+      const ratio = 1 - i * 0.15;
+      const criticalArc = makeSlashArcMesh(radius * ratio, arc * (0.96 - i * 0.08), 0.055 + tier * 0.018, i === 0 ? 0xffffff : color, 0.92 - i * 0.12);
+      criticalArc.rotation.y = (i - (arcCount - 1) / 2) * 0.035;
+      group.add(criticalArc);
+    }
+    const sparkleCount = tier === 3 ? 22 : tier === 2 ? 14 : 8;
+    const sparkleMaterial = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.95, depthWrite: false, blending: THREE.AdditiveBlending });
+    for (let i = 0; i < sparkleCount; i += 1) {
+      const sparkle = new THREE.Mesh(new THREE.OctahedronGeometry(0.07 + (i % 3) * 0.025, 0), sparkleMaterial.clone());
+      const a = -arc * 0.43 + (arc * 0.86 * (i + 0.5)) / sparkleCount;
+      const distanceRatio = 0.34 + ((i * 7) % 11) / 18;
+      sparkle.position.set(Math.sin(a) * radius * distanceRatio, 0.14 + (i % 4) * 0.045, Math.cos(a) * radius * distanceRatio);
+      sparkle.rotation.set(i * 0.37, i * 0.61, i * 0.23);
+      group.add(sparkle);
+    }
   } else {
     const edge = makeSlashArcMesh(radius, arc, 0.075, 0xffffff, 0.95);
     const rangeLineA = makeSlashRangeLine(-arc / 2, radius, color);
@@ -8131,7 +8141,7 @@ function formatBuildSummary(player) {
   addCount("ファイア巨大化");
   addCount("剣閃範囲 +8度", "剣閃範囲");
   addCount("飛燕斬");
-  addCount("二連斬り");
+  addCount("会心の太刀");
   addCount("風魔手裏剣");
   addCount("影分身の術");
   addCount("影分身", "影分身の術");
@@ -8780,7 +8790,7 @@ function sendHostSnapshot(force = false) {
     linkReady: state.linkReady,
     linkCutsceneUntil: state.linkCutsceneUntil,
     score: state.score,
-    effects: state.effects.filter((fx) => fx.kind !== "tempMesh").map((fx) => ({ id: fx.id, kind: fx.kind, summonKind: fx.summonKind, jutsuKind: fx.jutsuKind, linkKind: fx.linkKind, owner: fx.owner, skill: fx.skill, x: fx.x, z: fx.z, radius: fx.radius, arc: fx.arc, angle: fx.angle, length: fx.length, color: fx.color, life: fx.life, start: fx.start })),
+    effects: state.effects.filter((fx) => fx.kind !== "tempMesh").map((fx) => ({ id: fx.id, kind: fx.kind, summonKind: fx.summonKind, jutsuKind: fx.jutsuKind, linkKind: fx.linkKind, owner: fx.owner, skill: fx.skill, critical: fx.critical, criticalTier: fx.criticalTier, x: fx.x, z: fx.z, radius: fx.radius, arc: fx.arc, angle: fx.angle, length: fx.length, color: fx.color, life: fx.life, start: fx.start })),
   });
 }
 
