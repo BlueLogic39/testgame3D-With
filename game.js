@@ -459,6 +459,14 @@ const materials = {
   bossWarning: new THREE.MeshBasicMaterial({ color: 0xff3b66, transparent: true, opacity: 0.3, depthWrite: false }),
 };
 
+// 大量に生成/破棄される小オブジェクト用の共有ジオメトリ。
+// 毎回 new ...Geometry() するとGC・GPU負荷が高いため使い回す(見た目は不変)。
+const geometries = {
+  gem: new THREE.OctahedronGeometry(0.34),
+  gemBoss: new THREE.OctahedronGeometry(0.52),
+  bullet: new THREE.SphereGeometry(0.26, 12, 8),
+};
+
 const upgrades = [
   { name: "矢の本数 +1", desc: "一度に放つ矢が増える。近距離の制圧力が上がる。", apply: (p) => (p.arrows += 1) },
   { name: "攻撃速度 +15%", desc: "攻撃間隔が短くなる。迷ったらこれ。", apply: (p) => addAttackSpeed(p, 0.15) },
@@ -6971,7 +6979,7 @@ function makeBulletMesh(item = {}) {
   if (item.kind === "bolt") return makeBoltBulletMesh();
   if (item.kind === "mage") return makeMageBulletMesh();
   if (item.kind === "shockwave") return makeShieldShockwaveBulletMesh();
-  const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.26, 12, 8), materials.bullet);
+  const mesh = new THREE.Mesh(geometries.bullet, materials.bullet);
   mesh.castShadow = true;
   return mesh;
 }
@@ -7058,7 +7066,7 @@ function makeCrystalBulletMesh(colorIndex = 0) {
 
 function makeGemMesh(gem = {}) {
   const material = gem.kind === "boss" ? materials.bossGem : gem.kind === "orange" ? materials.orangeGem : gem.kind === "bomber" ? materials.bomberGem : gem.kind === "shooter" ? materials.shooterGem : materials.gem;
-  const mesh = new THREE.Mesh(new THREE.OctahedronGeometry(gem.kind === "boss" ? 0.52 : 0.34), material);
+  const mesh = new THREE.Mesh(gem.kind === "boss" ? geometries.gemBoss : geometries.gem, material);
   mesh.castShadow = true;
   return mesh;
 }
@@ -8707,6 +8715,11 @@ function sendClientInput() {
   sendToHost({ type: "input", id: localPlayerId, input: getLocalInput(), debugInvincible: debugModeEnabled && debugInvincible, name: playerName() });
 }
 
+// 座標を小数2桁に丸めて送信量を削減する(0.01単位、補間されるので見た目影響なし)
+function rnd(n) {
+  return Math.round(n * 100) / 100;
+}
+
 function sendHostSnapshot(force = false) {
   if (net.mode !== "host" || net.clients.size === 0 || net.phase !== "playing") return;
   net.lastSend += 1;
@@ -8739,7 +8752,7 @@ function sendHostSnapshot(force = false) {
       rerolls: p.rerolls, upgrades: p.upgrades,
     })),
     enemies: state.enemies.map((e) => ({
-      id: e.id, x: e.x, z: e.z, radius: e.radius, hp: e.hp, maxHp: e.maxHp,
+      id: e.id, x: rnd(e.x), z: rnd(e.z), radius: e.radius, hp: e.hp, maxHp: e.maxHp,
       hitRadius: e.hitRadius,
       boss: e.boss, shooter: e.shooter, bomber: e.bomber, enemyType: e.enemyType,
       walkSeed: e.walkSeed, midBoss: e.midBoss, bossRole: e.bossRole,
@@ -8749,9 +8762,9 @@ function sendHostSnapshot(force = false) {
       dragonTailSweepStart: e.dragonTailSweepStart, dragonTailSweepUntil: e.dragonTailSweepUntil,
       dragonTailBaseAngle: e.dragonTailBaseAngle, hitboxFlash: e.hitboxFlash,
     })),
-    arrows: state.arrows.map((a) => ({ id: a.id, x: a.x, y: a.y, z: a.z, angle: a.angle, kind: a.kind, radius: a.radius, owner: a.owner, skill: a.skill, fuma: a.fuma, landed: a.landed })),
-    bullets: state.enemyBullets.map((b) => ({ id: b.id, x: b.x, z: b.z, kind: b.kind, colorIndex: b.colorIndex, angle: b.angle })),
-    gems: state.gems.map((g) => ({ id: g.id, x: g.x, z: g.z, kind: g.kind, forceTarget: g.forceTarget })),
+    arrows: state.arrows.map((a) => ({ id: a.id, x: rnd(a.x), y: rnd(a.y), z: rnd(a.z), angle: rnd(a.angle), kind: a.kind, radius: a.radius, owner: a.owner, skill: a.skill, fuma: a.fuma, landed: a.landed })),
+    bullets: state.enemyBullets.map((b) => ({ id: b.id, x: rnd(b.x), z: rnd(b.z), kind: b.kind, colorIndex: b.colorIndex, angle: rnd(b.angle) })),
+    gems: state.gems.map((g) => ({ id: g.id, x: rnd(g.x), z: rnd(g.z), kind: g.kind, forceTarget: g.forceTarget })),
     hearts: state.hearts.map((h) => ({ id: h.id, x: h.x, z: h.z })),
     magnets: state.magnets.map((m) => ({ id: m.id, x: m.x, z: m.z })),
     circles: state.magicCircles.map((c) => ({ id: c.id, x: c.x, z: c.z, radius: c.radius, life: c.life, duration: c.duration })),
