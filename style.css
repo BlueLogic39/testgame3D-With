@@ -253,6 +253,7 @@ canvas {
 .settings-corner,
 .settings-panel,
 .codex-corner,
+.ranking-corner,
 .online-badge,
 .radial,
 .status-overlay,
@@ -535,6 +536,112 @@ canvas {
   background: rgba(18, 24, 28, 0.84);
   font-weight: 900;
   text-align: center;
+  cursor: pointer;
+}
+
+.ranking-corner {
+  position: absolute;
+  right: 10px;
+  bottom: 148px;
+  z-index: 30;
+}
+
+.ranking-corner button {
+  min-width: 132px;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+.ranking-list {
+  width: min(560px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: min(60vh, 560px);
+  overflow-y: auto;
+  margin: 4px 0;
+}
+
+.ranking-row {
+  display: grid;
+  grid-template-columns: 44px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 7px;
+  background: rgba(18, 24, 28, 0.7);
+}
+
+.ranking-rank {
+  font-weight: 900;
+  color: #9fb4c8;
+  text-align: center;
+}
+
+.ranking-name {
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ranking-score {
+  font-weight: 900;
+  color: #c8f7ff;
+  font-variant-numeric: tabular-nums;
+}
+
+.ranking-top1 {
+  border-color: rgba(255, 216, 107, 0.7);
+  background: rgba(60, 50, 18, 0.7);
+}
+
+.ranking-top1 .ranking-rank {
+  color: #ffd86b;
+}
+
+.ranking-top2 {
+  border-color: rgba(208, 220, 232, 0.6);
+}
+
+.ranking-top2 .ranking-rank {
+  color: #e6edf5;
+}
+
+.ranking-top3 {
+  border-color: rgba(214, 158, 110, 0.6);
+}
+
+.ranking-top3 .ranking-rank {
+  color: #e3a978;
+}
+
+.ranking-delete {
+  padding: 4px 8px;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.ranking-actions {
+  width: min(560px, 100%);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+  margin-top: 8px;
+}
+
+#rankingPanel {
+  align-content: start;
+  place-items: center;
+  overflow-y: auto;
+  padding-top: 28px;
+  padding-bottom: 36px;
+}
+
+#rankingPanel h2 {
+  width: min(560px, 100%);
 }
 
 .shop-grid {
@@ -1258,12 +1365,22 @@ h2 {
   body.menu-mode .online-badge,
   body.menu-mode .update-corner,
   body.menu-mode .codex-corner,
+  body.menu-mode .ranking-corner,
   body.menu-mode .extra-score-badge {
     position: relative;
     inset: auto;
     z-index: 12;
     width: auto;
     margin: 8px 16px 0;
+  }
+
+  body.menu-mode .ranking-corner {
+    order: 19;
+  }
+
+  body.menu-mode .ranking-corner button {
+    width: 100%;
+    min-height: 48px;
   }
 
   body.menu-mode .money-corner {
@@ -1460,6 +1577,7 @@ h2 {
 
   body.playing-mode .update-corner,
   body.playing-mode .codex-corner,
+  body.playing-mode .ranking-corner,
   body.playing-mode .money-corner,
   body.playing-mode .extra-score-badge,
   body.playing-mode .online-badge {

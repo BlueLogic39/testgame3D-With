@@ -50,6 +50,9 @@
           <button id="shopButton" class="secondary" type="button">ショップ</button>
         </div>
         <div id="extraHighScoreBadge" class="extra-score-badge hidden">EX BEST: 0</div>
+        <div class="ranking-corner">
+          <button id="rankingButton" class="secondary" type="button">🏆 ランキング</button>
+        </div>
         <div id="onlineBadge" class="online-badge">オンライン人数: 1</div>
 
         <div id="radialMenu" class="radial hidden">
@@ -208,6 +211,17 @@
           <div class="shop-actions">
             <button id="shopResetButton" class="danger" type="button">固定強化をリセット・返金</button>
             <button id="closeShopButton" type="button">閉じる</button>
+          </div>
+        </div>
+
+        <div id="rankingPanel" class="overlay hidden">
+          <h2>全世界ランキング</h2>
+          <p class="small">エクストラ「無限試練」スコアアタック 上位100位</p>
+          <div id="rankingList" class="ranking-list"></div>
+          <p id="rankingStatus" class="small"></p>
+          <div class="ranking-actions">
+            <button id="rankingClearButton" class="danger hidden" type="button">記録を全削除（デバッグ）</button>
+            <button id="closeRankingButton" type="button">閉じる</button>
           </div>
         </div>
 

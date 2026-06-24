@@ -74,6 +74,12 @@ const ui = {
   codexButton: document.getElementById("codexButton"),
   moneyBadge: document.getElementById("moneyBadge"),
   extraHighScoreBadge: document.getElementById("extraHighScoreBadge"),
+  rankingButton: document.getElementById("rankingButton"),
+  rankingPanel: document.getElementById("rankingPanel"),
+  rankingList: document.getElementById("rankingList"),
+  rankingStatus: document.getElementById("rankingStatus"),
+  rankingClearButton: document.getElementById("rankingClearButton"),
+  closeRankingButton: document.getElementById("closeRankingButton"),
   shopButton: document.getElementById("shopButton"),
   shopPanel: document.getElementById("shopPanel"),
   shopMoney: document.getElementById("shopMoney"),
@@ -277,6 +283,12 @@ const AUDIO_FILES = {
 
 const SUPABASE_URL = "https://oeizknymvzmokzxksidg.supabase.co";
 const SUPABASE_KEY = "sb_publishable_dGQHfQBP0GXAv1ILQXn3lA_I_SSPrcz";
+// エクストラ(無限試練)のスコア倍率。基準を従来の1/10に。計算を変えたら下のSCORE_RULESETも更新する。
+const SCORE_SCALE = 0.1;
+// スコア計算ルールのバージョン。計算式を変えたら日付などを更新し、必要なら旧記録をデバッグ削除する。
+const SCORE_RULESET = "2026-06-24";
+// 全世界ランキングのデバッグ削除用の合言葉。Supabase側のRPC(clear/delete)と必ず一致させること。
+const RANKING_ADMIN_SECRET = "vasamodo-rank-admin-7f3a9c2e";
 const ONLINE_ROOM_TTL_SECONDS = 45;
 const PROGRESS_KEY = "vansabaProgress";
 const UPGRADE_MAX_LEVEL = 5;
@@ -2121,7 +2133,7 @@ function update(dt) {
     updateUi();
     return;
   }
-  if (STAGES[state.stageId]?.scoreAttack) state.score += dt * (2 + Math.min(14, state.elapsed / 45));
+  if (STAGES[state.stageId]?.scoreAttack) state.score += dt * (2 + Math.min(14, state.elapsed / 45)) * SCORE_SCALE;
   updatePlayers(dt);
   updateLinkSkill(dt);
   updateCamera();
@@ -4112,7 +4124,7 @@ function updateEnemies(dt) {
   for (const enemy of dead) {
     if (enemy.bossRole === "castleDragon" && enemy.dragonDying && !enemy.dragonDeathDone) continue;
     state.kills += 1;
-    if (STAGES[state.stageId]?.scoreAttack) state.score += enemy.boss ? 1400 : enemy.midBoss ? 520 : enemy.enemyType === "castleMage" ? 65 : enemy.bomber ? 52 : enemy.shooter ? 42 : 28;
+    if (STAGES[state.stageId]?.scoreAttack) state.score += (enemy.boss ? 1400 : enemy.midBoss ? 520 : enemy.enemyType === "castleMage" ? 65 : enemy.bomber ? 52 : enemy.shooter ? 42 : 28) * SCORE_SCALE;
     const owner = state.players.find((p) => p.id === enemy.lastHitBy);
     dropGem(enemy.x, enemy.z, enemy.xp, enemy.boss || enemy.midBoss ? "boss" : enemy.enemyType === "castleMage" ? "orange" : enemy.bomber || enemy.enemyType === "castleShield" || enemy.enemyType === "castleGhost" ? "bomber" : enemy.shooter ? "shooter" : "normal");
     if (owner) {
@@ -9238,6 +9250,114 @@ async function cleanupOldPresence() {
   await supabaseRequest("rpc/cleanup_old_presence", { method: "POST", body: "{}" });
 }
 
+// ---- エクストラ(無限試練)全世界ランキング ----
+async function submitExtraScore(score) {
+  if (!supabaseReady()) return;
+  const value = Math.floor(score || 0);
+  if (value <= 0) return;
+  await supabaseRequest("rpc/submit_extra_score", {
+    method: "POST",
+    body: JSON.stringify({ p_name: playerName(), p_score: value, p_version: SCORE_RULESET }),
+  });
+}
+
+async function fetchExtraRanking() {
+  const rows = await supabaseRequest(
+    "extra_scores?select=id,name,score,created_at&order=score.desc,created_at.asc&limit=100",
+  );
+  return rows || [];
+}
+
+async function clearExtraRanking() {
+  await supabaseRequest("rpc/clear_extra_scores", {
+    method: "POST",
+    body: JSON.stringify({ p_secret: RANKING_ADMIN_SECRET }),
+  });
+}
+
+async function deleteExtraScore(id) {
+  await supabaseRequest("rpc/delete_extra_score", {
+    method: "POST",
+    body: JSON.stringify({ p_id: id, p_secret: RANKING_ADMIN_SECRET }),
+  });
+}
+
+async function openRanking() {
+  if (!ui.rankingPanel) return;
+  ui.rankingPanel.classList.remove("hidden");
+  ui.rankingClearButton?.classList.toggle("hidden", !debugModeEnabled);
+  await refreshRanking();
+}
+
+function closeRanking() {
+  ui.rankingPanel?.classList.add("hidden");
+}
+
+async function refreshRanking() {
+  if (!ui.rankingList || !ui.rankingStatus) return;
+  if (!supabaseReady()) {
+    ui.rankingList.innerHTML = "";
+    ui.rankingStatus.textContent = "ランキングは現在利用できません。";
+    return;
+  }
+  ui.rankingStatus.textContent = "読み込み中...";
+  try {
+    const rows = await fetchExtraRanking();
+    renderRankingRows(rows);
+    ui.rankingStatus.textContent = rows.length ? "" : "まだ記録がありません。最初の1位を狙おう！";
+  } catch (error) {
+    console.warn("Failed to fetch ranking", error);
+    ui.rankingList.innerHTML = "";
+    ui.rankingStatus.textContent = "ランキングの取得に失敗しました。時間をおいて再度開いてください。";
+  }
+}
+
+function renderRankingRows(rows) {
+  ui.rankingList.innerHTML = "";
+  rows.forEach((row, index) => {
+    const rank = index + 1;
+    const item = document.createElement("div");
+    item.className = "ranking-row";
+    if (rank <= 3) item.classList.add(`ranking-top${rank}`);
+
+    const rankEl = document.createElement("span");
+    rankEl.className = "ranking-rank";
+    rankEl.textContent = String(rank);
+
+    const nameEl = document.createElement("span");
+    nameEl.className = "ranking-name";
+    // 名前は世界中のプレイヤー入力なのでtextContentで安全に表示する。
+    nameEl.textContent = row.name || "Player";
+
+    const scoreEl = document.createElement("span");
+    scoreEl.className = "ranking-score";
+    scoreEl.textContent = String(Math.floor(row.score || 0));
+
+    item.append(rankEl, nameEl, scoreEl);
+
+    if (debugModeEnabled && row.id) {
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "ranking-delete";
+      del.textContent = "🗑";
+      del.title = "この記録を削除";
+      del.addEventListener("click", async () => {
+        if (!window.confirm(`「${row.name || "Player"}」の記録（${Math.floor(row.score || 0)}）を削除しますか？`)) return;
+        try {
+          await deleteExtraScore(row.id);
+          await refreshRanking();
+        } catch (error) {
+          console.warn("Failed to delete score", error);
+          showToast("削除に失敗しました");
+        }
+      });
+      item.appendChild(del);
+    }
+
+    ui.rankingList.appendChild(item);
+  });
+}
+
 function startPresenceHeartbeat() {
   stopPresenceHeartbeat();
   heartbeatPresence().catch((error) => console.warn("Failed to heartbeat presence", error));
@@ -9854,6 +9974,10 @@ function endGame(won) {
   ui.gameOver.classList.remove("hidden");
   syncMobileControlsVisibility();
   if (net.mode === "host") broadcast({ type: "gameOver", won, elapsed: state.elapsed, kills: state.kills, total: state.players.length, stageId: state.stageId, score: state.score });
+  // エクストラのスコアを全世界ランキングへ送信(クライアントはホストの集計を二重送信しないよう除外)。
+  if (STAGES[state.stageId]?.scoreAttack && net.mode !== "client") {
+    submitExtraScore(state.score).catch((error) => console.warn("Failed to submit score", error));
+  }
 }
 
 function updateExtraHighScore() {
@@ -10476,6 +10600,25 @@ for (const root of [ui.difficultySelect, ui.roomDifficultySelect]) {
 }
 ui.codexButton.addEventListener("click", openCharacterCodex);
 ui.closeCodexButton.addEventListener("click", closeCharacterCodex);
+ui.rankingButton?.addEventListener("click", () => {
+  openRanking().catch((error) => console.warn("Failed to open ranking", error));
+});
+ui.closeRankingButton?.addEventListener("click", closeRanking);
+ui.extraHighScoreBadge?.addEventListener("click", () => {
+  openRanking().catch((error) => console.warn("Failed to open ranking", error));
+});
+ui.rankingClearButton?.addEventListener("click", async () => {
+  if (!debugModeEnabled) return;
+  if (!window.confirm("全世界ランキングの記録をすべて削除します。元に戻せません。実行しますか？")) return;
+  try {
+    await clearExtraRanking();
+    await refreshRanking();
+    showToast("ランキングを全削除しました");
+  } catch (error) {
+    console.warn("Failed to clear ranking", error);
+    showToast("削除に失敗しました");
+  }
+});
 ui.shopButton?.addEventListener("click", () => {
   renderShop();
   ui.shopPanel.classList.remove("hidden");
