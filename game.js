@@ -9587,6 +9587,8 @@ function updateProgressVisibility() {
     ui.extraHighScoreBadge.classList.toggle("hidden", !showExtraBest);
     ui.extraHighScoreBadge.textContent = `EX BEST: ${Math.floor(progress.highScores?.extra || 0)}`;
   }
+  // ランキングボタンもEX BESTと同じ条件(エクストラ解放済み かつ プレイ中でない)で出し分ける。
+  ui.rankingButton?.closest(".ranking-corner")?.classList.toggle("hidden", !showExtraBest);
 }
 
 function updateDebugControls() {
