@@ -3987,12 +3987,95 @@ function castleGuardTierFromTime() {
 
 function spawnStageMidBosses() {
   if (DIFFICULTIES[state.difficultyId]?.midBosses === false) return;
+  if (STAGES[state.stageId]?.scoreAttack) {
+    spawnScoreAttackMidBosses();
+    return;
+  }
   const times = STAGES[state.stageId]?.midBossTimes || [];
   for (const time of times) {
     if (state.elapsed < time || state.midBossSpawned[time]) continue;
     state.midBossSpawned[time] = true;
     addEnemy(false, false, false, "mid");
   }
+}
+
+// エクストラ(無限試練)の中ボス枠。周回(180秒ごと=ドラゴン周期)が進むほど短間隔・強敵化し、
+// 他ステージの大ボス(黒晶ゴーレム/森の番人)をゲスト中ボスとして投入する。
+function spawnScoreAttackMidBosses() {
+  if (state.nextMidBossTime == null) state.nextMidBossTime = 90;
+  if (state.elapsed < state.nextMidBossTime) return;
+  const loop = Math.floor(state.elapsed / 180); // 0=1週目, 1=2週目, 2=3週目 ...
+  spawnEscalatingMidBoss(loop);
+  const interval = Math.max(38, 90 - loop * 8); // 周回が深いほど詰める(最短38秒)
+  state.nextMidBossTime = state.elapsed + interval;
+}
+
+function spawnEscalatingMidBoss(loop) {
+  if (loop <= 0) {
+    addEnemy(false, false, false, "mid"); // 1週目は通常の城中ボス
+    return;
+  }
+  const guests = [];
+  if (loop === 1) {
+    guests.push("forestTree"); // 2週目: 森の番人が中ボス枠に登場
+  } else if (loop === 2) {
+    guests.push(Math.random() < 0.5 ? "crystalGolem" : "forestTree"); // 3週目: ゴーレムも
+  } else {
+    guests.push(Math.random() < 0.5 ? "crystalGolem" : "forestTree");
+    // 4週目以降は深いほど2体同時の確率が上がる
+    if (Math.random() < Math.min(0.65, 0.18 + loop * 0.09)) {
+      guests.push(Math.random() < 0.5 ? "crystalGolem" : "forestTree");
+    }
+  }
+  let golem = false;
+  let tree = false;
+  for (const kind of guests) {
+    spawnExtraGuestBoss(kind);
+    if (kind === "crystalGolem") golem = true;
+    else tree = true;
+  }
+  showToast(golem && tree ? "大ボス・黒晶ゴーレムと森の番人が襲来！" : golem ? "大ボス・黒晶ゴーレム襲来！" : "大ボス・森の番人襲来！");
+}
+
+// 他ステージの大ボスを、中ボス枠(midBoss=true)のゲストとしてエクストラに出現させる。
+// midBoss扱いなので、ドラゴンの大ボス枠(!some(boss))や勝利判定を邪魔せず、撃破スコアも中ボス相当になる。
+function spawnExtraGuestBoss(kind) {
+  const pos = [
+    { x: -WORLD.half, z: randomEdge() },
+    { x: WORLD.half, z: randomEdge() },
+    { x: randomEdge(), z: -WORLD.half },
+    { x: randomEdge(), z: WORLD.half },
+  ][Math.floor(Math.random() * 4)];
+  const scale = 1 + state.elapsed / 155; // 時間が進むほどHP上昇(=周回ごとに強く)
+  const hp = (kind === "crystalGolem" ? 2600 : 2100) * scale;
+  const enemy = {
+    id: crypto.randomUUID(),
+    x: pos.x,
+    z: pos.z,
+    radius: 2.2,
+    hp,
+    maxHp: hp,
+    speed: kind === "crystalGolem" ? 2.05 : 2.2,
+    damage: 30,
+    touchTimer: 0,
+    shotTimer: 0,
+    xp: 90,
+    walkSeed: Math.random() * Math.PI * 2,
+    boss: false,
+    shooter: false,
+    bomber: false,
+    enemyType: "",
+    midBoss: true,
+    bossRole: kind,
+    bossAttackTimer: 2.0,
+    bossShotTimer: 3.6,
+    castleGuardTier: 0,
+    ghostPhaseSeed: Math.random() * Math.PI * 2,
+  };
+  enemy.mesh = makeEnemyMesh(enemy);
+  scene.add(enemy.mesh);
+  state.enemies.push(enemy);
+  return enemy;
 }
 
 function addEnemy(boss, shooter, bomber = false, role = "") {
