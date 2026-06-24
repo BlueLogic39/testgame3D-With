@@ -3342,8 +3342,10 @@ function focusDragonEntranceCameraNow(focus = dragonEntranceFocus) {
 }
 
 function isStage3DragonBossActive() {
+  // ドラゴンボス戦の演出(専用カメラ・Q/E回転・当たり位置を示すヒットリング)が有効かどうか。
+  // stage3だけでなく、城ステージのエクストラ(無限試練)でも有効にする。castleフラグを持つのはstage3とextraのみ。
   const enemies = state?.enemies?.length ? state.enemies : state?.remoteEnemies || [];
-  return Boolean(state?.stageId === "stage3" && enemies.some((enemy) => enemy.bossRole === "castleDragon" && enemy.hp > 0));
+  return Boolean(STAGES[state?.stageId]?.castle && enemies.some((enemy) => enemy.bossRole === "castleDragon" && enemy.hp > 0));
 }
 
 function rotateBossCamera(direction) {
