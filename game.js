@@ -443,10 +443,10 @@ const CHARACTER_CODEX = [
     skill: "飛竜召喚: ドラゴンを呼び寄せ、3方向にステージ3大技のドラゴンブレス(各500ダメージ)を浴びせる。",
     upgrades: [
       "竜牙 +1: 一度に放つ竜の牙が増える。",
-      "竜牙速射: 竜の牙の攻撃速度+12%。",
+      "隕炎: 数秒ごとに敵の位置へ火球が降り範囲爆発(オート)。",
       "咆哮: 10秒ごとに全敵を怯ませる(Lvで低下量と時間UP)。",
       "剛竜の鱗: 被ダメージを-12%/Lv軽減。",
-      "業火の牙: 竜の牙・飛竜召喚の威力+20%。"
+      "竜爪連撃: 周囲を竜の爪で自動で薙ぎ払う(近接AOE)。"
     ],
   },
   {
@@ -542,10 +542,10 @@ upgrades.push(
   { name: "ドローン支援", desc: "ファンネルのように周囲を浮遊する小型ドローンが機銃掃射。取得するたびドローン+1、威力と索敵範囲が大きく伸びる。", classes: ["soldier"], apply: (p) => (p.droneSupport += 1) },
   { name: "火炎放射器", desc: "8秒ごとに2秒間、周囲へ高威力の炎を放ち続ける。取得するたび範囲と威力が大きく伸びる。", classes: ["soldier"], apply: (p) => (p.flamethrower += 1) },
   { name: "竜牙 +1", desc: "竜の牙を一度に放つ本数が増える。", classes: ["dragoon"], maxLevel: 3, apply: (p) => (p.dragonFangs += 1) },
-  { name: "竜牙速射", desc: "竜の牙の攻撃速度+12%。", classes: ["dragoon"], maxLevel: 3, apply: (p) => addAttackSpeed(p, 0.12) },
+  { name: "隕炎", desc: "数秒ごとに敵の位置へ火球が降り、着弾で範囲爆発。Lvで頻度・威力・範囲・同時数UP。", classes: ["dragoon"], maxLevel: 3, apply: (p) => (p.meteorLevel += 1) },
   { name: "咆哮", desc: "10秒ごとに咆哮し、フィールド全体の敵を怯ませる(移動・攻撃速度低下)。Lvで低下量と時間UP(Lv1:-20%/2秒, Lv3:-60%/6秒)。", classes: ["dragoon"], maxLevel: 3, apply: (p) => (p.roarLevel += 1) },
   { name: "剛竜の鱗", desc: "被ダメージを-12%/Lv軽減する。", classes: ["dragoon"], maxLevel: 3, apply: (p) => (p.dragonScaleLevel += 1) },
-  { name: "業火の牙", desc: "竜の牙・飛竜召喚の威力+20%。", classes: ["dragoon"], maxLevel: 3, apply: (p) => (p.dragonFangPower += 1) },
+  { name: "竜爪連撃", desc: "自分の周囲を竜の爪で自動で薙ぎ払う。Lvで範囲・威力・頻度UP。囲まれ対策。", classes: ["dragoon"], maxLevel: 3, apply: (p) => (p.clawLevel += 1) },
   { name: "血刃乱舞", desc: "血の刃を一度に放つ本数が増える。", classes: ["ancestor"], maxLevel: 3, apply: (p) => (p.bloodBlades += 1) },
   { name: "吸血昂進", desc: "与えたダメージの吸血量+8%。回復が最大HPを超えるとシールドになる。", classes: ["ancestor"], maxLevel: 3, apply: (p) => (p.lifestealRatio += 0.08) },
   { name: "眷属増殖", desc: "眷属召喚で放つ血のコウモリが増える。", classes: ["ancestor"], maxLevel: 3, apply: (p) => (p.kinLevel += 1) },
@@ -1356,6 +1356,10 @@ function makePlayer(id, name, x, z, local, character = "archer") {
     player.roarLevel = 0;
     player.roarTimer = 0;
     player.dragonScaleLevel = 0;
+    player.meteorLevel = 0;
+    player.meteorTimer = 0;
+    player.clawLevel = 0;
+    player.clawTimer = 0;
   } else if (type === "ancestor") {
     player.maxHp = 110;
     player.hp = 110;
@@ -2282,6 +2286,8 @@ function updatePlayers(dt) {
     updateNinjaShadowCloneJutsu(player, dt);
     updateSoldierSupport(player, dt);
     updateDragoonRoar(player, dt);
+    updateDragoonMeteor(player, dt);
+    updateDragoonClaw(player, dt);
   }
 }
 
@@ -3504,6 +3510,45 @@ function updateDragoonRoar(player, dt) {
   addRing(player.x, player.z, 6.8, 0xff7a1f);
 }
 
+// 専用強化「隕炎」: 数秒ごとに敵の位置へ火球を降らせて範囲爆発(落石システムを流用)。
+function updateDragoonMeteor(player, dt) {
+  if (player.character !== "dragoon" || (player.meteorLevel || 0) <= 0) return;
+  player.meteorTimer = (player.meteorTimer || 0) - dt;
+  if (player.meteorTimer > 0) return;
+  const level = Math.min(3, player.meteorLevel);
+  player.meteorTimer = Math.max(1.2, (4.6 - level * 0.7) * attackIntervalMultiplier(player));
+  const radius = 3.0 + level * 0.7;
+  const dmg = player.damage * (2.4 + level * 0.7);
+  for (let i = 0; i < level; i += 1) {
+    const spot = pickDragoonMeteorSpot(player);
+    spawnRockfallAt(spot.x, spot.z, { radius, damage: 0, enemyDamage: dmg, hurtsEnemies: true, fire: true, life: 1.55, impactAt: 0.7 });
+  }
+}
+
+function pickDragoonMeteorSpot(player) {
+  const enemies = state.enemies.filter((e) => e.hp > 0 && !e.boss);
+  if (!enemies.length) return { x: player.x + (Math.random() - 0.5) * 12, z: player.z + (Math.random() - 0.5) * 12 };
+  const target = enemies[Math.floor(Math.random() * enemies.length)];
+  return { x: target.x, z: target.z };
+}
+
+// 専用強化「竜爪連撃」: 自分の周囲を竜の爪で自動で薙ぎ払う(近接AOE)。
+function updateDragoonClaw(player, dt) {
+  if (player.character !== "dragoon" || (player.clawLevel || 0) <= 0) return;
+  player.clawTimer = (player.clawTimer || 0) - dt;
+  if (player.clawTimer > 0) return;
+  const level = Math.min(3, player.clawLevel);
+  player.clawTimer = Math.max(0.5, (1.6 - level * 0.18) * attackIntervalMultiplier(player));
+  const radius = 3.3 + level * 0.7;
+  const dmg = player.damage * (0.9 + level * 0.3);
+  for (const enemy of state.enemies) {
+    if (enemy.hp <= 0) continue;
+    if (distance(player, enemy) <= radius + enemyHitRadius(enemy)) damageEnemy(enemy, dmg, player.id, "dragoonClaw");
+  }
+  const angle = Math.atan2((player.input?.aimX ?? player.x) - player.x, (player.input?.aimZ ?? player.z) - player.z);
+  addSlashEffect(player.x, player.z, radius, THREE.MathUtils.degToRad(300), angle, 0xff8a1f, player.id);
+}
+
 function shootDragonFang(player) {
   const base = Math.atan2(player.input.aimX - player.x, player.input.aimZ - player.z);
   const count = Math.max(1, player.dragonFangs || 1);
@@ -4415,6 +4460,8 @@ function addEnemy(boss, shooter, bomber = false, role = "") {
   const enemyType = castleShield ? "castleShield" : castleGhost ? "castleGhost" : castleMage ? "castleMage" : castleStage && !boss && !bomber && !role ? (shooter ? "castleArbalest" : "castleSoldier") : "";
   const midHpBase = castleStage ? 1600 * (castleGuardTier === 3 ? 1.85 : castleGuardTier === 2 ? 1.38 : 1) : 720;
   const midSpeedBase = castleStage ? (castleGuardTier === 3 ? 3.65 : castleGuardTier === 2 ? 3.22 : 2.75) : 2.65;
+  // 敵速度は6分で初期の1.5倍まで上がり、以降据え置き(上限)
+  const speedTimeMult = 1 + 0.5 * Math.min(1, state.elapsed / 360);
   const enemy = {
     id: crypto.randomUUID(),
     x: pos.x,
@@ -4422,7 +4469,7 @@ function addEnemy(boss, shooter, bomber = false, role = "") {
     radius: boss ? 2.2 : isMidRole ? 1.75 : castleShield ? 1.12 : castleGhost ? 0.98 : castleMage ? 1.0 : shooter ? 1.05 : bomber ? 0.82 : 0.72 + Math.random() * 0.28,
     hp: boss ? (castleStage ? 23200 : state.stageId === "stage2" ? 2900 : 1960) : isMidRole ? midHpBase * scale : castleShield ? 112 * scale : castleGhost ? 58 * scale : castleMage ? 76 * scale : shooter ? 46 * scale : bomber ? 34 * scale : 28 * scale,
     maxHp: boss ? (castleStage ? 23200 : state.stageId === "stage2" ? 2900 : 1960) : isMidRole ? midHpBase * scale : castleShield ? 112 * scale : castleGhost ? 58 * scale : castleMage ? 76 * scale : shooter ? 46 * scale : bomber ? 34 * scale : 28 * scale,
-    speed: boss ? 2.15 : isMidRole ? midSpeedBase : castleShield ? 2.35 + state.elapsed * 0.004 : castleGhost ? 3.15 + state.elapsed * 0.004 : castleMage ? 2.25 + state.elapsed * 0.004 : shooter ? 2.1 + state.elapsed * 0.006 : bomber ? 4.5 + state.elapsed * 0.008 : 2.8 + Math.random() * 1.7 + state.elapsed * 0.005,
+    speed: boss ? 2.15 : isMidRole ? midSpeedBase : (castleShield ? 2.35 : castleGhost ? 3.15 : castleMage ? 2.25 : shooter ? 2.1 : bomber ? 4.5 : 2.8 + Math.random() * 1.7) * speedTimeMult,
     damage: boss ? 24 : isMidRole ? 30 + castleGuardTier * 6 : castleShield ? 12 : castleGhost ? 14 : castleMage ? 13 : shooter ? 12 : bomber ? 40 : 9,
     touchTimer: 0,
     shotTimer: shooter ? (1.2 + Math.random() * 1.4) * 1.5 : 0,
@@ -4505,7 +4552,8 @@ function updateEnemies(dt) {
     if (enemy.shooter) {
       enemy.shotTimer -= dt * slow * attackSlow;
       if (enemy.shotTimer <= 0) {
-        shootEnemyBullet(enemy, target);
+        // 逃走中(プレイヤーに背を向けている間)は撃たない。ただし紫の魔法兵(castleMage)は例外。
+        if (!keepDistance || enemy.enemyType === "castleMage") shootEnemyBullet(enemy, target);
         enemy.shotTimer = enemy.enemyType === "castleMage" ? 2.2 + Math.random() * 0.85 : (1.65 + Math.random() * 0.7) * 1.5;
       }
     }
