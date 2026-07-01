@@ -308,6 +308,8 @@ const SHOP_ITEMS = [
   { id: "saber", type: "character", name: "セイバー購入", desc: "近距離を薙ぎ払うセイバーを使用可能にする。", cost: 1500 },
   { id: "ninja", type: "character", name: "忍者購入", desc: "刀と手裏剣を使い分ける隠密アタッカーを使用可能にする。", cost: 5000, requiresClear: "stage2" },
   { id: "soldier", type: "character", name: "ソルジャー購入", desc: "アサルトライフルと兵器支援で戦う女傭兵を使用可能にする。", cost: 10000, requiresClear: "stage3" },
+  { id: "dragoon", type: "character", name: "滅竜者購入", desc: "竜を従えし討竜の英雄。竜の牙と飛竜召喚で戦う。", cost: 10000, requiresScore: 5000 },
+  { id: "ancestor", type: "character", name: "真祖購入", desc: "吸血で蘇り続ける不死の王。血の刃と眷属召喚で戦う。", cost: 20000, requiresScore: 10000 },
 ];
 
 progress = loadProgress();
@@ -318,6 +320,8 @@ const CHARACTER_TYPES = {
   saber: { label: "セイバー", color: 0xd9dfe8, remoteColor: 0x91c7ff },
   ninja: { label: "忍者", color: 0x2dd4bf, remoteColor: 0x67e8f9 },
   soldier: { label: "ソルジャー", color: 0x9ca3af, remoteColor: 0x93c5fd },
+  dragoon: { label: "滅竜者", color: 0xd9772b, remoteColor: 0xf6ad55 },
+  ancestor: { label: "真祖", color: 0x8b1a1a, remoteColor: 0xdc2626 },
 };
 
 const STAGES = {
@@ -338,6 +342,8 @@ const CHARACTER_MODELS = {
   saber: { path: "./model_glTF/Knight_Male.gltf", scale: 0.78, keepProps: true },
   ninja: { path: "./model_glTF/Ninja_Male.gltf", scale: 0.78, keepProps: true },
   soldier: { path: "./model_glTF/Soldier_Female.gltf", scale: 0.78, keepProps: true },
+  dragoon: { path: "./model_glTF/Knight_Golden_Male.gltf", scale: 0.8, keepProps: true },
+  ancestor: { path: "./model_glTF/Suit_Male.gltf", scale: 0.78, keepProps: true },
 };
 
 const gltfLoader = new GLTFLoader();
@@ -429,6 +435,34 @@ const CHARACTER_CODEX = [
       "火炎放射器: 8秒ごとに2秒間、周囲へ高威力の炎を放ち続ける。Lvごとに範囲と威力が大きく伸び、攻撃速度強化でクールタイムも短縮。"
     ],
   },
+  {
+    id: "dragoon",
+    role: "竜を従えし討竜の英雄(隠しキャラ)",
+    weapon: "竜の牙: 貫通する高威力の遠距離攻撃を放つ。",
+    passive: "ペネトレイター・ロード: 無限の貫通力。竜の牙が敵を何体でも貫く。",
+    skill: "飛竜召喚: ドラゴンを呼び寄せ、3方向にステージ3大技のドラゴンブレス(各500ダメージ)を浴びせる。",
+    upgrades: [
+      "竜牙 +1: 一度に放つ竜の牙が増える。",
+      "竜牙速射: 竜の牙の攻撃速度+12%。",
+      "咆哮: 10秒ごとに全敵を怯ませる(Lvで低下量と時間UP)。",
+      "剛竜の鱗: 被ダメージを-12%/Lv軽減。",
+      "業火の牙: 竜の牙・飛竜召喚の威力+20%。"
+    ],
+  },
+  {
+    id: "ancestor",
+    role: "吸血で蘇り続ける不死の王(隠しキャラ)",
+    weapon: "血の刃: 貫通する血の刃を放つ。与えたダメージの一部でHP回復。",
+    passive: "不死の渇き: 与ダメージの一部を吸血。最大HPを超えた回復はシールドになる。",
+    skill: "眷属召喚: 全方位へ血のコウモリを放ち、貫通しながら敵を喰らい大量回復する。",
+    upgrades: [
+      "血刃乱舞: 血の刃の本数が増える。",
+      "吸血昂進: 吸血量+8%。",
+      "眷属増殖: 眷属召喚のコウモリが増える。",
+      "真祖の覚醒: HP満タン時に威力+25%＆貫通+1。",
+      "不死回帰: 致死ダメージを無効化して復活(CDあり)。"
+    ],
+  },
 ];
 
 const materials = {
@@ -506,7 +540,17 @@ upgrades.push(
   { name: "口寄せの術", desc: "敵が集まっている場所へ蝦蟇、鷹、狼を順番に呼び出し、瞬間的な範囲攻撃を行う。取得するたび範囲と威力が伸びる。", classes: ["ninja"], apply: (p) => (p.summonJutsu += 1) },
   { name: "グレネード", desc: "3秒ごとに近くの敵へ分散して投げる。Lv3で2個、Lv5で3個。取得するたび威力と爆発範囲が少し伸びる。", classes: ["soldier"], apply: (p) => (p.grenade += 1) },
   { name: "ドローン支援", desc: "ファンネルのように周囲を浮遊する小型ドローンが機銃掃射。取得するたびドローン+1、威力と索敵範囲が大きく伸びる。", classes: ["soldier"], apply: (p) => (p.droneSupport += 1) },
-  { name: "火炎放射器", desc: "8秒ごとに2秒間、周囲へ高威力の炎を放ち続ける。取得するたび範囲と威力が大きく伸びる。", classes: ["soldier"], apply: (p) => (p.flamethrower += 1) }
+  { name: "火炎放射器", desc: "8秒ごとに2秒間、周囲へ高威力の炎を放ち続ける。取得するたび範囲と威力が大きく伸びる。", classes: ["soldier"], apply: (p) => (p.flamethrower += 1) },
+  { name: "竜牙 +1", desc: "竜の牙を一度に放つ本数が増える。", classes: ["dragoon"], maxLevel: 3, apply: (p) => (p.dragonFangs += 1) },
+  { name: "竜牙速射", desc: "竜の牙の攻撃速度+12%。", classes: ["dragoon"], maxLevel: 3, apply: (p) => addAttackSpeed(p, 0.12) },
+  { name: "咆哮", desc: "10秒ごとに咆哮し、フィールド全体の敵を怯ませる(移動・攻撃速度低下)。Lvで低下量と時間UP(Lv1:-20%/2秒, Lv3:-60%/6秒)。", classes: ["dragoon"], maxLevel: 3, apply: (p) => (p.roarLevel += 1) },
+  { name: "剛竜の鱗", desc: "被ダメージを-12%/Lv軽減する。", classes: ["dragoon"], maxLevel: 3, apply: (p) => (p.dragonScaleLevel += 1) },
+  { name: "業火の牙", desc: "竜の牙・飛竜召喚の威力+20%。", classes: ["dragoon"], maxLevel: 3, apply: (p) => (p.dragonFangPower += 1) },
+  { name: "血刃乱舞", desc: "血の刃を一度に放つ本数が増える。", classes: ["ancestor"], maxLevel: 3, apply: (p) => (p.bloodBlades += 1) },
+  { name: "吸血昂進", desc: "与えたダメージの吸血量+8%。回復が最大HPを超えるとシールドになる。", classes: ["ancestor"], maxLevel: 3, apply: (p) => (p.lifestealRatio += 0.08) },
+  { name: "眷属増殖", desc: "眷属召喚で放つ血のコウモリが増える。", classes: ["ancestor"], maxLevel: 3, apply: (p) => (p.kinLevel += 1) },
+  { name: "真祖の覚醒", desc: "HPが満タンの時、血の刃の威力+25%＆貫通+1。", classes: ["ancestor"], maxLevel: 3, apply: (p) => (p.covenantLevel += 1) },
+  { name: "不死回帰", desc: "致死ダメージを無効化して復活(クールタイムあり)。Lvでシールド上限も上がる。", classes: ["ancestor"], maxLevel: 3, apply: (p) => (p.undyingLevel += 1) }
 );
 
 initThree();
@@ -826,10 +870,13 @@ function addMineCart(x, z, rotation) {
 }
 
 function addCastleDecor() {
-  const castleLight = new THREE.HemisphereLight(0xf6f1e8, 0x59606b, 0.85);
-  const farFill = new THREE.DirectionalLight(0xfff2d5, 1.15);
+  const castleLight = new THREE.HemisphereLight(0xf6f1e8, 0x6b7280, 1.35);
+  const farFill = new THREE.DirectionalLight(0xfff2d5, 1.55);
   farFill.position.set(16, 34, -28);
-  stageDecor.add(castleLight, farFill);
+  // ドラゴン戦でカメラが引いた時に暗くならないよう、上方からの補助光を追加
+  const dragonFill = new THREE.DirectionalLight(0xffe9c7, 0.9);
+  dragonFill.position.set(-12, 40, 18);
+  stageDecor.add(castleLight, farFill, dragonFill);
   addCastleFloorDetail();
   addCastleCarpet();
   addCastleWalls();
@@ -1293,6 +1340,38 @@ function makePlayer(id, name, x, z, local, character = "archer") {
     player.skillCooldown = 60;
     player.arrows = 0;
     player.pierce = 0;
+  } else if (type === "dragoon") {
+    player.maxHp = 135;
+    player.hp = 135;
+    player.damage = 27;
+    player.baseFireRate = 0.82;
+    player.speed = 9.0;
+    player.skillCooldown = 35;
+    player.arrows = 0;
+    player.pierce = 2;
+    player.dragonFangs = 2;
+    player.dragonAllies = 1;
+    player.dragonBloodLevel = 0;
+    player.dragonFangPower = 0;
+    player.roarLevel = 0;
+    player.roarTimer = 0;
+    player.dragonScaleLevel = 0;
+  } else if (type === "ancestor") {
+    player.maxHp = 110;
+    player.hp = 110;
+    player.damage = 18;
+    player.baseFireRate = 0.5;
+    player.speed = 9.2;
+    player.skillCooldown = 30;
+    player.arrows = 0;
+    player.pierce = 1;
+    player.lifestealRatio = 0.25;
+    player.bloodBlades = 1;
+    player.kinLevel = 0;
+    player.covenantLevel = 0;
+    player.undyingLevel = 0;
+    player.shield = 0;
+    player.undyingReadyAt = 0;
   }
   applyPermanentBonuses(player);
   updateFireRate(player);
@@ -2202,6 +2281,7 @@ function updatePlayers(dt) {
     updateNinjaSummonJutsu(player, dt);
     updateNinjaShadowCloneJutsu(player, dt);
     updateSoldierSupport(player, dt);
+    updateDragoonRoar(player, dt);
   }
 }
 
@@ -3372,6 +3452,16 @@ function shoot(player) {
     shootSoldierRifle(player);
     return;
   }
+  if (player.character === "dragoon") {
+    playPlayerSound(player, attackSoundKey(player.character));
+    shootDragonFang(player);
+    return;
+  }
+  if (player.character === "ancestor") {
+    playPlayerSound(player, attackSoundKey(player.character));
+    shootBloodBlade(player);
+    return;
+  }
   if (player.character === "witch") {
     playPlayerSound(player, attackSoundKey(player.character));
     shootMagic(player);
@@ -3388,6 +3478,117 @@ function shoot(player) {
   }
   playPlayerSound(player, attackSoundKey(player.character));
   shootArrows(player);
+}
+
+// 滅竜者パッシブ「ペネトレイター・ロード」: 無限貫通(竜の牙は何体でも貫く)。火力は業火の牙で上昇。
+function dragoonAttackDamage(player) {
+  return player.damage * (1 + (player.dragonFangPower || 0) * 0.2);
+}
+
+// 専用強化「咆哮」: 10秒ごと(攻撃速度で短縮)に全敵を怯ませる。Lvで低下量/時間UP。
+function updateDragoonRoar(player, dt) {
+  if (player.character !== "dragoon" || (player.roarLevel || 0) <= 0) return;
+  player.roarTimer = (player.roarTimer || 0) - dt;
+  if (player.roarTimer > 0) return;
+  player.roarTimer = Math.max(2, 10 * attackIntervalMultiplier(player));
+  const level = Math.min(3, player.roarLevel);
+  const factor = 0.2 * level;
+  const duration = 2 * level;
+  for (const enemy of state.enemies) {
+    enemy.roarSlowUntil = state.elapsed + duration;
+    enemy.roarSlowFactor = Math.max(enemy.roarSlowFactor || 0, factor);
+    enemy.attackSlowUntil = Math.max(enemy.attackSlowUntil || 0, state.elapsed + duration);
+    enemy.attackSlowFactor = Math.max(enemy.attackSlowFactor || 0, factor);
+  }
+  playPlayerSound(player, "dragonRoar");
+  addRing(player.x, player.z, 6.8, 0xff7a1f);
+}
+
+function shootDragonFang(player) {
+  const base = Math.atan2(player.input.aimX - player.x, player.input.aimZ - player.z);
+  const count = Math.max(1, player.dragonFangs || 1);
+  const spread = count === 1 ? 0 : Math.min(0.5, 0.12 * (count - 1));
+  const damage = dragoonAttackDamage(player);
+  for (let i = 0; i < count; i += 1) {
+    const offset = count === 1 ? 0 : -spread / 2 + (spread * i) / (count - 1);
+    fireDragonFang(player, base + offset, damage);
+  }
+}
+
+function fireDragonFang(player, angle, damage) {
+  const fang = {
+    id: crypto.randomUUID(),
+    x: player.x + Math.sin(angle) * 1.2,
+    z: player.z + Math.cos(angle) * 1.2,
+    startX: player.x,
+    startZ: player.z,
+    vx: Math.sin(angle) * 26,
+    vz: Math.cos(angle) * 26,
+    radius: 0.42,
+    life: 1.5,
+    damage,
+    pierce: 999,
+    owner: player.id,
+    kind: "dragonFang",
+    angle,
+    baseAngle: angle,
+    hit: new Set(),
+    mesh: makeProjectileMesh({ kind: "dragonFang" }),
+  };
+  fang.mesh.rotation.y = angle;
+  fang.mesh.position.set(fang.x, 1.1, fang.z);
+  scene.add(fang.mesh);
+  state.arrows.push(fang);
+}
+
+// 真祖: 覚醒(HP満タン時に火力UP＋貫通)を反映した攻撃力
+function ancestorAttackDamage(player) {
+  const full = player.hp >= player.maxHp - 0.5;
+  const awaken = player.covenantLevel || 0;
+  return full && awaken > 0 ? player.damage * (1 + 0.25 * awaken) : player.damage;
+}
+
+function ancestorPierce(player) {
+  const full = player.hp >= player.maxHp - 0.5;
+  return (player.pierce || 0) + (full ? (player.covenantLevel || 0) : 0);
+}
+
+function shootBloodBlade(player) {
+  const base = Math.atan2(player.input.aimX - player.x, player.input.aimZ - player.z);
+  const count = Math.max(1, player.bloodBlades || 1);
+  const spread = count === 1 ? 0 : Math.min(0.6, 0.16 * (count - 1));
+  const damage = ancestorAttackDamage(player);
+  const pierce = ancestorPierce(player);
+  for (let i = 0; i < count; i += 1) {
+    const offset = count === 1 ? 0 : -spread / 2 + (spread * i) / (count - 1);
+    fireBloodBlade(player, base + offset, damage, pierce);
+  }
+}
+
+function fireBloodBlade(player, angle, damage, pierce) {
+  const blade = {
+    id: crypto.randomUUID(),
+    x: player.x + Math.sin(angle) * 1.15,
+    z: player.z + Math.cos(angle) * 1.15,
+    startX: player.x,
+    startZ: player.z,
+    vx: Math.sin(angle) * 25,
+    vz: Math.cos(angle) * 25,
+    radius: 0.4,
+    life: 1.5,
+    damage,
+    pierce: pierce || 0,
+    owner: player.id,
+    kind: "bloodBlade",
+    angle,
+    baseAngle: angle,
+    hit: new Set(),
+    mesh: makeProjectileMesh({ kind: "bloodBlade" }),
+  };
+  blade.mesh.rotation.y = angle;
+  blade.mesh.position.set(blade.x, 1.1, blade.z);
+  scene.add(blade.mesh);
+  state.arrows.push(blade);
 }
 
 function soldierReloadDuration(player) {
@@ -3801,6 +4002,7 @@ function attackSoundKey(character) {
   if (character === "witch") return "witchAttack";
   if (character === "saber") return "saberAttack";
   if (character === "soldier") return "archerAttack";
+  if (character === "ancestor") return "witchAttack";
   return "archerAttack";
 }
 
@@ -3809,6 +4011,8 @@ function skillSoundKey(character) {
   if (character === "saber") return "saberSkill";
   if (character === "ninja") return "ninjaSkill";
   if (character === "soldier") return "";
+  if (character === "dragoon") return "dragonRoar";
+  if (character === "ancestor") return "witchSkill";
   return "archerSkill";
 }
 
@@ -3834,6 +4038,8 @@ function activateSkill(player) {
   else if (player.character === "saber") castSaberSkill(player, angle);
   else if (player.character === "ninja") castNinjaSkill(player, angle);
   else if (player.character === "soldier") castSoldierSkill(player, angle);
+  else if (player.character === "dragoon") castDragoonSkill(player, angle);
+  else if (player.character === "ancestor") castAncestorSkill(player, angle);
   else castArcherSkill(player, angle);
   showSkillBanner(player.name, skillName(player.character));
   if (net.mode === "host") broadcast({ type: "skillBanner", playerName: player.name, skill: skillName(player.character) });
@@ -3845,6 +4051,8 @@ function skillName(character) {
   if (character === "saber") return "回転突進斬り";
   if (character === "ninja") return "飛影八閃";
   if (character === "soldier") return "戦車降下";
+  if (character === "dragoon") return "飛竜召喚";
+  if (character === "ancestor") return "眷属召喚";
   return "アローレイン";
 }
 
@@ -3939,6 +4147,112 @@ function castSoldierSkill(player, baseAngle) {
   addScreenFlash(0x312e81, 0.18, 0.42);
 }
 
+function castDragoonSkill(player, baseAngle) {
+  // 飛竜召喚: ドラゴンを呼び寄せ、3方向にステージ3大技のドラゴンブレス(各500ダメージ)を浴びせる。
+  sfx("dragonBreathA", { broadcast: net.mode === "host" });
+  sfx("dragonBreathB", { broadcast: net.mode === "host" });
+  for (const offset of [-0.34, 0, 0.34]) {
+    addDragoonBreath(player, baseAngle + offset);
+  }
+  addRing(player.x, player.z, 5.2, 0xff7a1f);
+  addScreenFlash(0x7a2e0a, 0.2, 0.5);
+}
+
+function addDragoonBreath(player, angle) {
+  const length = 70;
+  const width = 13;
+  const endX = clamp(player.x + Math.sin(angle) * length, -WORLD.half + 2, WORLD.half - 2);
+  const endZ = clamp(player.z + Math.cos(angle) * length, -WORLD.half + 2, WORLD.half - 2);
+  const zoneLength = Math.hypot(endX - player.x, endZ - player.z);
+  const zone = {
+    id: crypto.randomUUID(),
+    kind: "breath",
+    playerBreath: true,
+    x: player.x,
+    z: player.z,
+    endX,
+    endZ,
+    angle,
+    baseAngle: angle,
+    width,
+    length: zoneLength,
+    damage: 500,
+    owner: player.id,
+    role: "castleDragon",
+    life: 1.7,
+    start: 1.7,
+    impactAt: 0.5,
+    chargeDuration: 0.5,
+    impacted: false,
+    mesh: makeBossZoneMesh({ kind: "breath", width, length: zoneLength, role: "castleDragon" }),
+  };
+  scene.add(zone.mesh);
+  state.bossZones.push(zone);
+}
+
+function fireDragonBreath(player, angle, damage) {
+  const breath = {
+    id: crypto.randomUUID(),
+    x: player.x + Math.sin(angle) * 1.6,
+    z: player.z + Math.cos(angle) * 1.6,
+    startX: player.x,
+    startZ: player.z,
+    vx: Math.sin(angle) * 22,
+    vz: Math.cos(angle) * 22,
+    radius: 1.7,
+    life: 3.4,
+    damage,
+    pierce: 999,
+    owner: player.id,
+    kind: "dragonFang",
+    skill: true,
+    angle,
+    baseAngle: angle,
+    hit: new Set(),
+    mesh: makeDragonFangMesh(),
+  };
+  breath.mesh.scale.setScalar(2.6);
+  breath.mesh.rotation.y = angle;
+  breath.mesh.position.set(breath.x, 1.2, breath.z);
+  scene.add(breath.mesh);
+  state.arrows.push(breath);
+}
+
+function castAncestorSkill(player, baseAngle) {
+  // 眷属召喚: 全方位へ血のコウモリを放つ。貫通＋吸血(damageEnemy経由で自動回復)。
+  const count = 14 + (player.kinLevel || 0) * 4;
+  const damage = ancestorAttackDamage(player) * 1.4;
+  for (let i = 0; i < count; i += 1) {
+    const angle = baseAngle + (Math.PI * 2 * i) / count;
+    const bat = {
+      id: crypto.randomUUID(),
+      x: player.x + Math.sin(angle) * 1.1,
+      z: player.z + Math.cos(angle) * 1.1,
+      startX: player.x,
+      startZ: player.z,
+      vx: Math.sin(angle) * 20,
+      vz: Math.cos(angle) * 20,
+      radius: 0.5,
+      life: 2.6,
+      damage,
+      pierce: 999,
+      owner: player.id,
+      kind: "bloodBlade",
+      skill: true,
+      angle,
+      hit: new Set(),
+      mesh: makeBloodBladeMesh(),
+    };
+    bat.mesh.scale.setScalar(1.4);
+    bat.mesh.rotation.y = angle;
+    bat.mesh.position.set(bat.x, 1.1, bat.z);
+    scene.add(bat.mesh);
+    state.arrows.push(bat);
+  }
+  addRing(player.x, player.z, 4.4, 0xb91c1c);
+  addScreenFlash(0x3b0a0a, 0.16, 0.4);
+}
+
 function spawnEnemies(dt) {
   state.spawnTimer -= dt;
   if (state.spawnTimer > 0) return;
@@ -3953,7 +4267,11 @@ function spawnEnemies(dt) {
     const shooter = allowShooters && state.elapsed > 18 && Math.random() < Math.min(0.12, 0.03 + state.elapsed / 960);
     const bomber = !shooter && allowBombers && state.elapsed >= 180 && Math.random() < Math.min(0.106, 0.026 + state.elapsed / 1800);
     const castleRole = stage3SpawnRole(shooter, bomber);
-    if (!shooter && Math.random() > 0.75) continue;
+    if (!shooter) {
+      // 赤い雑魚(見た目違いの城兵含む)は出現を約2/3に削減。自爆敵(bomber)は従来どおり。
+      const skipChance = bomber ? 0.25 : 0.5;
+      if (Math.random() < skipChance) continue;
+    }
     addEnemy(false, shooter, bomber, castleRole);
   }
   spawnStageMidBosses();
@@ -4156,7 +4474,8 @@ function updateEnemies(dt) {
     const angle = Math.atan2(target.x - enemy.x, target.z - enemy.z);
     const keepDistance = enemy.shooter && distance(enemy, target) < (enemy.enemyType === "castleMage" ? 13 : 10);
     const dir = keepDistance ? -1 : 1;
-    const slow = state.elapsed < (enemy.slowUntil || 0) ? 0.48 : 1;
+    let slow = state.elapsed < (enemy.slowUntil || 0) ? 0.48 : 1;
+    if (state.elapsed < (enemy.roarSlowUntil || 0)) slow = Math.min(slow, 1 - (enemy.roarSlowFactor || 0));
     const attackSlow = state.elapsed < (enemy.attackSlowUntil || 0) ? Math.max(0.2, 1 - (enemy.attackSlowFactor || 0.2)) : 1;
     const canMove = !enemy.castleGuardCastingUntil || state.elapsed >= enemy.castleGuardCastingUntil;
     if (enemy.bossRole !== "castleDragon" && canMove) {
@@ -5066,14 +5385,50 @@ function updateEnemyBullets(dt) {
   removeDead(state.enemyBullets, (b) => b.life <= 0 || Math.abs(b.x) > WORLD.half + 4 || Math.abs(b.z) > WORLD.half + 4);
 }
 
+// 真祖の吸血: 与えたダメージの一部を回復。最大HP超過分はシールド化(上限あり)。
+function applyLifesteal(ownerId, dealt) {
+  const player = state.players.find((p) => p.id === ownerId);
+  if (!player || player.dead || !(player.lifestealRatio > 0)) return;
+  player.hp += dealt * player.lifestealRatio;
+  if (player.hp > player.maxHp) {
+    const overheal = player.hp - player.maxHp;
+    player.hp = player.maxHp;
+    const shieldCap = player.maxHp * (0.6 + (player.undyingLevel || 0) * 0.2);
+    player.shield = Math.min(shieldCap, (player.shield || 0) + overheal);
+  }
+}
+
 function damagePlayer(player, damage) {
   if ((debugModeEnabled && debugInvincible && player.local) || player.debugInvincible) return;
   if (player.dead || state.elapsed < (player.invincibleUntil || 0)) return;
-  const finalDamage = isSoldierInTank(player) ? 1 : damage;
+  let finalDamage = isSoldierInTank(player) ? 1 : damage;
+  // 滅竜者「剛竜の鱗」: 被ダメージ軽減
+  if ((player.dragonScaleLevel || 0) > 0) finalDamage *= 1 - Math.min(0.6, player.dragonScaleLevel * 0.12);
+  // 真祖のシールドで吸収
+  if (player.shield > 0) {
+    const absorbed = Math.min(player.shield, finalDamage);
+    player.shield -= absorbed;
+    finalDamage -= absorbed;
+  }
+  if (finalDamage <= 0) {
+    player.hitFlash = 0.3;
+    return;
+  }
   player.hp -= finalDamage;
   player.hitFlash = 0.45;
   if (player.local) sfx("hit");
   if (player.hp > 0) return;
+  // 真祖「不死回帰」: 致死ダメージを無効化して復活(クールダウンあり)
+  if ((player.undyingLevel || 0) > 0 && state.elapsed >= (player.undyingReadyAt || 0)) {
+    player.undyingReadyAt = state.elapsed + Math.max(14, 40 - (player.undyingLevel || 0) * 6);
+    player.hp = Math.ceil(player.maxHp * 0.5);
+    player.shield = player.maxHp * 0.5;
+    player.invincibleUntil = state.elapsed + 1.5;
+    player.hitFlash = 0;
+    addRing(player.x, player.z, 3.4, 0x8b0000);
+    addScreenFlash(0x3b0a0a, 0.3, 0.6);
+    return;
+  }
   player.hp = 0;
   player.dead = true;
   player.reviveAt = state.elapsed + 20;
@@ -5602,6 +5957,16 @@ function resolveBossChargeDamage(zone) {
 
 function resolveDragonBreathDamage(zone) {
   addRing(zone.endX, zone.endZ, 3.2, zone.kind === "lightningBreath" ? 0x9fe8ff : zone.kind === "dragonFissure" ? 0xffb020 : 0xff6b2c);
+  // 滅竜者の召喚ドラゴンのブレスは敵にダメージ
+  if (zone.playerBreath) {
+    for (const enemy of state.enemies) {
+      if (enemy.hp <= 0) continue;
+      if (distancePointToSegment(enemy.x, enemy.z, zone.x, zone.z, zone.endX, zone.endZ) <= zone.width * 0.5 + enemyHitRadius(enemy)) {
+        damageEnemy(enemy, zone.damage, zone.owner, "dragoonBreath");
+      }
+    }
+    return;
+  }
   for (const player of state.players) {
     if (player.dead || player.hp <= 0) continue;
     if (distancePointToSegment(player.x, player.z, zone.x, zone.z, zone.endX, zone.endZ) <= zone.width * 0.5 + player.radius) {
@@ -6674,6 +7039,7 @@ function damageEnemy(enemy, amount, owner = "", source = "") {
   if (owner) {
     enemy.lastHitBy = owner;
     enemy.lastHitSource = source;
+    applyLifesteal(owner, finalAmount);
   }
   if (enemy.bossRole === "castleDragon") {
     enemy.hitboxFlash = 0.28;
@@ -6979,7 +7345,39 @@ function makeMagicMesh() {
   return group;
 }
 
+function makeDragonFangMesh() {
+  const group = new THREE.Group();
+  const fang = new THREE.Mesh(
+    new THREE.ConeGeometry(0.22, 0.95, 10),
+    new THREE.MeshBasicMaterial({ color: 0xff7a1f, transparent: true, opacity: 0.95, depthWrite: false, blending: THREE.AdditiveBlending })
+  );
+  fang.rotation.x = -Math.PI / 2;
+  const glow = new THREE.Mesh(
+    new THREE.SphereGeometry(0.34, 12, 8),
+    new THREE.MeshBasicMaterial({ color: 0xffd166, transparent: true, opacity: 0.5, depthWrite: false, blending: THREE.AdditiveBlending })
+  );
+  group.add(fang, glow);
+  return group;
+}
+
+function makeBloodBladeMesh() {
+  const group = new THREE.Group();
+  const blade = new THREE.Mesh(
+    new THREE.TorusGeometry(0.34, 0.1, 8, 16, Math.PI * 1.2),
+    new THREE.MeshBasicMaterial({ color: 0xb91c1c, transparent: true, opacity: 0.95, depthWrite: false, blending: THREE.AdditiveBlending })
+  );
+  blade.rotation.x = Math.PI / 2;
+  const glow = new THREE.Mesh(
+    new THREE.SphereGeometry(0.26, 12, 8),
+    new THREE.MeshBasicMaterial({ color: 0xff4d6d, transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending })
+  );
+  group.add(blade, glow);
+  return group;
+}
+
 function makeProjectileMesh(item = {}) {
+  if (item.kind === "bloodBlade") return makeBloodBladeMesh();
+  if (item.kind === "dragonFang") return makeDragonFangMesh();
   if (item.kind === "magic") return makeMagicMesh();
   if (item.kind === "flyingSlash") return makeFlyingSlashMesh(item);
   if (item.kind === "shuriken") return makeShurikenProjectileMesh(item);
@@ -8177,7 +8575,11 @@ function updateUi() {
         ? `刀 / 手裏剣${ninjaShurikenCount(player)}個 / 貫通${ninjaShurikenPierce(player)}`
         : player.character === "soldier"
           ? `ライフル ${Math.max(0, player.rifleAmmo ?? 30)}/30 / 撃破強化+${((player.rifleKillBonus || 0) * 100).toFixed(1)}%`
-          : `${player.arrows}本 / 後方${player.backShots || 0}本 / 貫通${player.pierce}`;
+          : player.character === "dragoon"
+            ? `竜の牙${player.dragonFangs || 1}本 / 貫通∞ / 咆哮Lv${player.roarLevel || 0}`
+            : player.character === "ancestor"
+              ? `血の刃${player.bloodBlades || 1}本 / 吸血${Math.round((player.lifestealRatio || 0) * 100)}% / シールド${Math.round(player.shield || 0)}`
+              : `${player.arrows}本 / 後方${player.backShots || 0}本 / 貫通${player.pierce}`;
   const score = STAGES[state.stageId]?.scoreAttack ? ` / SCORE ${Math.floor(state.score || 0)}` : "";
   ui.build.textContent = `${characterName} / ${weapon} / 威力${Math.round(player.damage)} / ${buildSummary}${room}${revive}${score}`;
   syncMobileControlsVisibility();
@@ -9714,6 +10116,8 @@ function canShowShopItem(item) {
   if (debugModeEnabled) return true;
   if (item.requiresStage && !progress.stages?.[item.requiresStage] && !ownsShopItem(item)) return false;
   if (item.requiresClear && !progress.cleared?.[item.requiresClear] && !ownsShopItem(item)) return false;
+  // 隠しキャラ: エクストラ無限試練のハイスコアが閾値に達するまで完全非表示
+  if (item.requiresScore && (progress.highScores?.extra || 0) < item.requiresScore && !ownsShopItem(item)) return false;
   return true;
 }
 
@@ -9731,6 +10135,8 @@ function updateCharacterLocks() {
   if (!ui.characterSelect) return;
   ensureNinjaCharacterButton();
   ensureSoldierCharacterButton();
+  ensureDragoonCharacterButton();
+  ensureAncestorCharacterButton();
   for (const button of ui.characterSelect.querySelectorAll("[data-character]")) {
     const character = button.dataset.character || "archer";
     const locked = !isCharacterUnlocked(character);
@@ -9759,6 +10165,37 @@ function ensureSoldierCharacterButton() {
   button.type = "button";
   button.dataset.character = "soldier";
   button.innerHTML = "<strong>ソルジャー</strong><span>銃火器と兵器支援で戦う</span>";
+  ui.characterSelect.appendChild(button);
+}
+
+// 隠しキャラ: 解放(購入)するまでボタン自体を生成しない=完全に存在を隠す
+function ensureDragoonCharacterButton() {
+  if (!ui.characterSelect) return;
+  const existing = ui.characterSelect.querySelector('[data-character="dragoon"]');
+  if (!isCharacterUnlocked("dragoon")) {
+    if (existing) existing.remove();
+    return;
+  }
+  if (existing) return;
+  const button = document.createElement("button");
+  button.type = "button";
+  button.dataset.character = "dragoon";
+  button.innerHTML = "<strong>滅竜者</strong><span>竜の牙と飛竜召喚で戦う</span>";
+  ui.characterSelect.appendChild(button);
+}
+
+function ensureAncestorCharacterButton() {
+  if (!ui.characterSelect) return;
+  const existing = ui.characterSelect.querySelector('[data-character="ancestor"]');
+  if (!isCharacterUnlocked("ancestor")) {
+    if (existing) existing.remove();
+    return;
+  }
+  if (existing) return;
+  const button = document.createElement("button");
+  button.type = "button";
+  button.dataset.character = "ancestor";
+  button.innerHTML = "<strong>真祖</strong><span>血の刃と眷属召喚で戦う</span>";
   ui.characterSelect.appendChild(button);
 }
 
@@ -9969,8 +10406,13 @@ function updateStageDifficultyButtons() {
       button.title = progressLocked ? "前のステージをクリアすると解放されます" : "";
     }
   }
+  // エクストラ(無限試練)はランキングのためイージー禁止→ノーマル固定
+  if (selectedStageId === "extra" && selectedDifficultyId === "easy") selectedDifficultyId = "normal";
   for (const root of [ui.difficultySelect, ui.roomDifficultySelect]) {
     for (const button of root?.querySelectorAll("[data-difficulty]") || []) {
+      const hideEasy = button.dataset.difficulty === "easy" && selectedStageId === "extra";
+      button.hidden = hideEasy;
+      button.classList.toggle("hidden", hideEasy);
       button.classList.toggle("selected", button.dataset.difficulty === selectedDifficultyId);
     }
   }
