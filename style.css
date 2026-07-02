@@ -168,6 +168,29 @@ input[type="checkbox"] {
   box-shadow: 0 0 24px rgba(96, 165, 250, 0.28);
 }
 
+.game-wrap > .undying-hud {
+  position: absolute;
+  left: 12px;
+  top: 232px;
+  z-index: 5;
+  width: 210px;
+  min-height: 58px;
+  padding: 9px 12px;
+  border: 1px solid rgba(220, 38, 38, 0.3);
+  border-radius: 8px;
+  background: rgba(24, 12, 14, 0.78);
+  backdrop-filter: blur(10px);
+}
+
+.undying-hud.ready {
+  border-color: rgba(220, 38, 38, 0.9);
+  box-shadow: 0 0 24px rgba(220, 38, 38, 0.35);
+}
+
+.undying-hud #undyingFill {
+  background: linear-gradient(90deg, #7f1d1d, #ef4444);
+}
+
 .skill-meter {
   height: 7px;
   margin-top: 6px;

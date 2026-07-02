@@ -11,6 +11,10 @@ const ui = {
   skillText: document.getElementById("skillText"),
   skillFill: document.getElementById("skillFill"),
   skillReadyHint: document.getElementById("skillReadyHint"),
+  undyingHud: document.getElementById("undyingHud"),
+  undyingText: document.getElementById("undyingText"),
+  undyingFill: document.getElementById("undyingFill"),
+  undyingReadyHint: document.getElementById("undyingReadyHint"),
   linkText: document.getElementById("linkText"),
   linkFill: document.getElementById("linkFill"),
   linkReadyHint: document.getElementById("linkReadyHint"),
@@ -308,7 +312,7 @@ const SHOP_ITEMS = [
   { id: "saber", type: "character", name: "セイバー購入", desc: "近距離を薙ぎ払うセイバーを使用可能にする。", cost: 1500 },
   { id: "ninja", type: "character", name: "忍者購入", desc: "刀と手裏剣を使い分ける隠密アタッカーを使用可能にする。", cost: 5000, requiresClear: "stage2" },
   { id: "soldier", type: "character", name: "ソルジャー購入", desc: "アサルトライフルと兵器支援で戦う女傭兵を使用可能にする。", cost: 10000, requiresClear: "stage3" },
-  { id: "dragoon", type: "character", name: "滅竜者購入", desc: "竜を従えし討竜の英雄。竜の牙と飛竜召喚で戦う。", cost: 10000, requiresScore: 5000 },
+  { id: "dragoon", type: "character", name: "竜騎士購入", desc: "竜を従えし竜の騎士。槍と飛竜召喚で戦う。", cost: 10000, requiresScore: 5000 },
   { id: "ancestor", type: "character", name: "真祖購入", desc: "吸血で蘇り続ける不死の王。血の刃と眷属召喚で戦う。", cost: 20000, requiresScore: 10000 },
 ];
 
@@ -320,7 +324,7 @@ const CHARACTER_TYPES = {
   saber: { label: "セイバー", color: 0xd9dfe8, remoteColor: 0x91c7ff },
   ninja: { label: "忍者", color: 0x2dd4bf, remoteColor: 0x67e8f9 },
   soldier: { label: "ソルジャー", color: 0x9ca3af, remoteColor: 0x93c5fd },
-  dragoon: { label: "滅竜者", color: 0xd9772b, remoteColor: 0xf6ad55 },
+  dragoon: { label: "竜騎士", color: 0xd9772b, remoteColor: 0xf6ad55 },
   ancestor: { label: "真祖", color: 0x8b1a1a, remoteColor: 0xdc2626 },
 };
 
@@ -446,20 +450,20 @@ const CHARACTER_CODEX = [
       "隕炎: 数秒ごとに敵の位置へ火球が降り範囲爆発(オート)。",
       "咆哮: 10秒ごとに全敵を怯ませる(Lvで低下量と時間UP)。",
       "剛竜の鱗: 被ダメージを-12%/Lv軽減。",
-      "竜爪連撃: 周囲を竜の爪で自動で薙ぎ払う(近接AOE)。"
+      "スパイラルブロウ: 通常攻撃と同時に槍で周囲360度を薙ぐ(範囲狭め・Lvで拡大)。"
     ],
   },
   {
     id: "ancestor",
     role: "吸血で蘇り続ける不死の王(隠しキャラ)",
     weapon: "血の刃: 貫通する血の刃を放つ。与えたダメージの一部でHP回復。",
-    passive: "不死の渇き: 与ダメージの一部を吸血。最大HPを超えた回復はシールドになる。",
+    passive: "不死の渇き: 与ダメージの一部を吸血(超過分はシールド化)。ただし血の刃を放つたびに本数分HPを消費する。",
     skill: "眷属召喚: 全方位へ血のコウモリを放ち、貫通しながら敵を喰らい大量回復する。",
     upgrades: [
       "血刃乱舞: 血の刃の本数が増える。",
-      "吸血昂進: 吸血量+8%。",
-      "眷属増殖: 眷属召喚のコウモリが増える。",
-      "真祖の覚醒: HP満タン時に威力+25%＆貫通+1。",
+      "吸血昂進: 吸血量+2%(1Lvごと)。",
+      "眷属召喚: 吸血コウモリを定期召喚し近くの敵へ特攻(Lv1:3/Lv2:6/Lv3:10匹、1匹HP1回復)。",
+      "真祖の覚醒: HPが高いほど威力・貫通が上がる(80%以上/50%以上で段階UP)。",
       "不死回帰: 致死ダメージを無効化して復活(CDあり)。"
     ],
   },
@@ -520,7 +524,7 @@ const upgrades = [
   { name: "貫通 +1", desc: "矢が追加で敵を貫く。群れに強い。", apply: (p) => (p.pierce += 1) },
   { name: "移動速度 +10%", desc: "囲まれにくくなり、経験値回収もしやすくなる。", apply: (p) => (p.speed *= 1.1) },
   { name: "最大HP +20", desc: "最大HPが増え、少し回復する。", apply: (p) => { p.maxHp += 20; p.hp = Math.min(p.maxHp, p.hp + 20); } },
-  { name: "吸血", desc: "敵を倒すたびにHPを少し回復する。", maxLevel: 3, apply: (p) => (p.lifeSteal += 1.2) },
+  { name: "吸血", desc: "敵を倒すたびにHPを少し回復する。", maxLevel: 2, apply: (p) => (p.lifeSteal += 1.2) },
   { name: "バックショット", desc: "通常攻撃と同時にマウス方向の逆へ矢を撃つ。複数取ると後方矢が増える。", apply: (p) => (p.backShots += 1) },
   { name: "磁力 +40%", desc: "経験値を吸い寄せる範囲が広がる。", apply: (p) => (p.magnet *= 1.4) },
 ];
@@ -545,10 +549,10 @@ upgrades.push(
   { name: "隕炎", desc: "数秒ごとに敵の位置へ火球が降り、着弾で範囲爆発。Lvで頻度・威力・範囲・同時数UP。", classes: ["dragoon"], maxLevel: 3, apply: (p) => (p.meteorLevel += 1) },
   { name: "咆哮", desc: "10秒ごとに咆哮し、フィールド全体の敵を怯ませる(移動・攻撃速度低下)。Lvで低下量と時間UP(Lv1:-20%/2秒, Lv3:-60%/6秒)。", classes: ["dragoon"], maxLevel: 3, apply: (p) => (p.roarLevel += 1) },
   { name: "剛竜の鱗", desc: "被ダメージを-12%/Lv軽減する。", classes: ["dragoon"], maxLevel: 3, apply: (p) => (p.dragonScaleLevel += 1) },
-  { name: "竜爪連撃", desc: "自分の周囲を竜の爪で自動で薙ぎ払う。Lvで範囲・威力・頻度UP。囲まれ対策。", classes: ["dragoon"], maxLevel: 3, apply: (p) => (p.clawLevel += 1) },
+  { name: "スパイラルブロウ", desc: "通常攻撃と同時に、槍で周囲360度を薙ぐ(範囲は狭め)。取るたびに範囲・威力UP。囲まれ対策。", classes: ["dragoon"], maxLevel: 3, apply: (p) => (p.clawLevel += 1) },
   { name: "血刃乱舞", desc: "血の刃を一度に放つ本数が増える。", classes: ["ancestor"], maxLevel: 3, apply: (p) => (p.bloodBlades += 1) },
-  { name: "吸血昂進", desc: "与えたダメージの吸血量+8%。回復が最大HPを超えるとシールドになる。", classes: ["ancestor"], maxLevel: 3, apply: (p) => (p.lifestealRatio += 0.08) },
-  { name: "眷属増殖", desc: "眷属召喚で放つ血のコウモリが増える。", classes: ["ancestor"], maxLevel: 3, apply: (p) => (p.kinLevel += 1) },
+  { name: "吸血昂進", desc: "与えたダメージの吸血量+2%(1Lvごと)。回復が最大HPを超えるとシールドになる。", classes: ["ancestor"], maxLevel: 3, apply: (p) => (p.lifestealRatio += 0.02) },
+  { name: "眷属召喚", desc: "吸血コウモリを定期的に召喚。近くの敵へ特攻して吸血する(1匹HP1回復)。Lv1:3匹 / Lv2:6匹 / Lv3:10匹。", classes: ["ancestor"], maxLevel: 3, apply: (p) => (p.kinLevel += 1) },
   { name: "真祖の覚醒", desc: "HPが満タンの時、血の刃の威力+25%＆貫通+1。", classes: ["ancestor"], maxLevel: 3, apply: (p) => (p.covenantLevel += 1) },
   { name: "不死回帰", desc: "致死ダメージを無効化して復活(クールタイムあり)。Lvでシールド上限も上がる。", classes: ["ancestor"], maxLevel: 3, apply: (p) => (p.undyingLevel += 1) }
 );
@@ -1372,6 +1376,7 @@ function makePlayer(id, name, x, z, local, character = "archer") {
     player.lifestealRatio = 0.25;
     player.bloodBlades = 1;
     player.kinLevel = 0;
+    player.kinTimer = 0;
     player.covenantLevel = 0;
     player.undyingLevel = 0;
     player.shield = 0;
@@ -1539,9 +1544,29 @@ function addCharacterProps(group, character, bodyMat, useLegacyModel = false) {
     group.add(rifle);
     return [rifle];
   }
+  if (character === "dragoon") {
+    const spear = makeSpearMesh();
+    group.add(spear);
+    return [spear];
+  }
+  if (character === "ancestor") return []; // 真祖は素手(血の刃を手から放つ)
   const bow = useLegacyModel ? makeOldBowMesh() : makeFbxMesh("bow", makeOldBowMesh);
   group.add(bow);
   return [bow];
+}
+
+function makeSpearMesh() {
+  const group = new THREE.Group();
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 2.0, 8), new THREE.MeshStandardMaterial({ color: 0x6b4a2b, roughness: 0.7 }));
+  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.42, 8), new THREE.MeshStandardMaterial({ color: 0xe4e6ec, roughness: 0.3, metalness: 0.6 }));
+  tip.position.y = 1.2;
+  const collar = new THREE.Mesh(new THREE.TorusGeometry(0.07, 0.02, 6, 12), new THREE.MeshStandardMaterial({ color: 0xd4a017, roughness: 0.4, metalness: 0.6 }));
+  collar.rotation.x = Math.PI / 2;
+  collar.position.y = 0.98;
+  group.add(shaft, tip, collar);
+  group.position.set(0.5, 1.05, 0.12);
+  group.rotation.set(0.18, 0, -0.16);
+  return group;
 }
 
 function makeOldBowMesh() {
@@ -2287,7 +2312,7 @@ function updatePlayers(dt) {
     updateSoldierSupport(player, dt);
     updateDragoonRoar(player, dt);
     updateDragoonMeteor(player, dt);
-    updateDragoonClaw(player, dt);
+    updateAncestorKin(player, dt);
   }
 }
 
@@ -3532,21 +3557,17 @@ function pickDragoonMeteorSpot(player) {
   return { x: target.x, z: target.z };
 }
 
-// 専用強化「竜爪連撃」: 自分の周囲を竜の爪で自動で薙ぎ払う(近接AOE)。
-function updateDragoonClaw(player, dt) {
-  if (player.character !== "dragoon" || (player.clawLevel || 0) <= 0) return;
-  player.clawTimer = (player.clawTimer || 0) - dt;
-  if (player.clawTimer > 0) return;
+// 専用強化「スパイラルブロウ」: 通常攻撃と同時に周囲360度を槍で薙ぐ(範囲は狭め)。Lvで範囲・威力UP。
+function dragoonSpiralBlow(player) {
+  if ((player.clawLevel || 0) <= 0) return;
   const level = Math.min(3, player.clawLevel);
-  player.clawTimer = Math.max(0.5, (1.6 - level * 0.18) * attackIntervalMultiplier(player));
-  const radius = 3.3 + level * 0.7;
-  const dmg = player.damage * (0.9 + level * 0.3);
+  const radius = 2.3 + level * 0.5;
+  const dmg = player.damage * (0.5 + level * 0.25);
   for (const enemy of state.enemies) {
     if (enemy.hp <= 0) continue;
-    if (distance(player, enemy) <= radius + enemyHitRadius(enemy)) damageEnemy(enemy, dmg, player.id, "dragoonClaw");
+    if (distance(player, enemy) <= radius + enemyHitRadius(enemy)) damageEnemy(enemy, dmg, player.id, "spiralBlow");
   }
-  const angle = Math.atan2((player.input?.aimX ?? player.x) - player.x, (player.input?.aimZ ?? player.z) - player.z);
-  addSlashEffect(player.x, player.z, radius, THREE.MathUtils.degToRad(300), angle, 0xff8a1f, player.id);
+  addSlashEffect(player.x, player.z, radius, THREE.MathUtils.degToRad(360), 0, 0xffcf5a, player.id);
 }
 
 function shootDragonFang(player) {
@@ -3558,6 +3579,7 @@ function shootDragonFang(player) {
     const offset = count === 1 ? 0 : -spread / 2 + (spread * i) / (count - 1);
     fireDragonFang(player, base + offset, damage);
   }
+  dragoonSpiralBlow(player);
 }
 
 function fireDragonFang(player, angle, damage) {
@@ -3586,16 +3608,27 @@ function fireDragonFang(player, angle, damage) {
   state.arrows.push(fang);
 }
 
-// 真祖: 覚醒(HP満タン時に火力UP＋貫通)を反映した攻撃力
+// 真祖「覚醒」: HPが高いほど威力・貫通が上がる。Lvと HP割合(80%以上/50%以上)で変化。
+function ancestorCovenantBonus(player) {
+  const level = Math.min(3, player.covenantLevel || 0);
+  if (level <= 0) return { dmg: 0, pierce: 0 };
+  const ratio = player.maxHp ? player.hp / player.maxHp : 1;
+  const table = {
+    1: { high: { dmg: 0.10, pierce: 2 }, mid: { dmg: 0.05, pierce: 1 } },
+    2: { high: { dmg: 0.15, pierce: 3 }, mid: { dmg: 0.10, pierce: 2 } },
+    3: { high: { dmg: 0.25, pierce: 4 }, mid: { dmg: 0.15, pierce: 2 } },
+  }[level];
+  if (ratio >= 0.8) return table.high;
+  if (ratio >= 0.5) return table.mid;
+  return { dmg: 0, pierce: 0 };
+}
+
 function ancestorAttackDamage(player) {
-  const full = player.hp >= player.maxHp - 0.5;
-  const awaken = player.covenantLevel || 0;
-  return full && awaken > 0 ? player.damage * (1 + 0.25 * awaken) : player.damage;
+  return player.damage * (1 + ancestorCovenantBonus(player).dmg);
 }
 
 function ancestorPierce(player) {
-  const full = player.hp >= player.maxHp - 0.5;
-  return (player.pierce || 0) + (full ? (player.covenantLevel || 0) : 0);
+  return (player.pierce || 0) + ancestorCovenantBonus(player).pierce;
 }
 
 function shootBloodBlade(player) {
@@ -3608,6 +3641,8 @@ function shootBloodBlade(player) {
     const offset = count === 1 ? 0 : -spread / 2 + (spread * i) / (count - 1);
     fireBloodBlade(player, base + offset, damage, pierce);
   }
+  // パッシブ「不死の渇き」: 血の刃を放つたびに本数分のHPを消費する(自滅はしない、最低1)。
+  player.hp = Math.max(1, player.hp - count);
 }
 
 function fireBloodBlade(player, angle, damage, pierce) {
@@ -4263,39 +4298,69 @@ function fireDragonBreath(player, angle, damage) {
   state.arrows.push(breath);
 }
 
-function castAncestorSkill(player, baseAngle) {
-  // 眷属召喚: 全方位へ血のコウモリを放つ。貫通＋吸血(damageEnemy経由で自動回復)。
-  const count = 14 + (player.kinLevel || 0) * 4;
-  const damage = ancestorAttackDamage(player) * 1.4;
-  for (let i = 0; i < count; i += 1) {
-    const angle = baseAngle + (Math.PI * 2 * i) / count;
-    const bat = {
-      id: crypto.randomUUID(),
-      x: player.x + Math.sin(angle) * 1.1,
-      z: player.z + Math.cos(angle) * 1.1,
-      startX: player.x,
-      startZ: player.z,
-      vx: Math.sin(angle) * 20,
-      vz: Math.cos(angle) * 20,
-      radius: 0.5,
-      life: 2.6,
-      damage,
-      pierce: 999,
-      owner: player.id,
-      kind: "bloodBlade",
-      skill: true,
-      angle,
-      hit: new Set(),
-      mesh: makeBloodBladeMesh(),
-    };
-    bat.mesh.scale.setScalar(1.4);
-    bat.mesh.rotation.y = angle;
-    bat.mesh.position.set(bat.x, 1.1, bat.z);
-    scene.add(bat.mesh);
-    state.arrows.push(bat);
+function castAncestorSkill(player) {
+  // ブラッドムーン: 世界が真紅に染まり、全ての敵が出血(継続大ダメージ)。血を吸い上げて全回復＋数秒無敵。
+  const duration = 5;
+  const bleedDamage = player.damage * 1.5;
+  for (const enemy of state.enemies) {
+    if (enemy.hp <= 0) continue;
+    enemy.dotEffects = enemy.dotEffects || [];
+    enemy.dotEffects.push({ life: duration, tick: 0.3, interval: 0.3, damage: bleedDamage, owner: player.id, bleed: true });
+    addRing(enemy.x, enemy.z, enemyHitRadius(enemy) + 0.3, 0xb91c1c);
   }
-  addRing(player.x, player.z, 4.4, 0xb91c1c);
-  addScreenFlash(0x3b0a0a, 0.16, 0.4);
+  player.hp = player.maxHp;
+  player.shield = Math.max(player.shield || 0, player.maxHp * 0.6);
+  player.invincibleUntil = Math.max(player.invincibleUntil || 0, state.elapsed + duration);
+  player.bloodMoonUntil = state.elapsed + duration;
+  addRing(player.x, player.z, 8, 0x8b0000);
+  addScreenFlash(0x8b0000, 0.4, duration);
+}
+
+// 専用強化「眷属召喚」: 定期的に吸血コウモリを召喚し、近くの敵へ特攻させる(1匹HP1回復)。
+function updateAncestorKin(player, dt) {
+  if (player.character !== "ancestor" || (player.kinLevel || 0) <= 0) return;
+  player.kinTimer = (player.kinTimer || 0) - dt;
+  if (player.kinTimer > 0) return;
+  player.kinTimer = Math.max(1.5, 4.5 * attackIntervalMultiplier(player));
+  const count = [0, 3, 6, 10][Math.min(3, player.kinLevel)];
+  if (!state.enemies.some((e) => e.hp > 0)) return;
+  const damage = ancestorAttackDamage(player) * 0.8;
+  for (let i = 0; i < count; i += 1) spawnKinBat(player, damage, i, count);
+}
+
+function spawnKinBat(player, damage, i, count) {
+  const target = nearestEnemyToPoint(player.x, player.z);
+  const a = (Math.PI * 2 * i) / Math.max(1, count) + Math.random() * 0.5;
+  const bat = {
+    id: crypto.randomUUID(),
+    x: player.x + Math.sin(a) * 1.0,
+    z: player.z + Math.cos(a) * 1.0,
+    vx: Math.sin(a) * 14,
+    vz: Math.cos(a) * 14,
+    radius: 0.5,
+    life: 3.2,
+    damage,
+    pierce: 0,
+    owner: player.id,
+    kind: "kinBat",
+    targetId: target?.id || "",
+    hit: new Set(),
+    mesh: makeProjectileMesh({ kind: "kinBat" }),
+  };
+  bat.mesh.position.set(bat.x, 1.2, bat.z);
+  scene.add(bat.mesh);
+  state.arrows.push(bat);
+}
+
+function nearestEnemyToPoint(x, z) {
+  let best = null;
+  let bestD = Infinity;
+  for (const e of state.enemies) {
+    if (e.hp <= 0) continue;
+    const d = (e.x - x) ** 2 + (e.z - z) ** 2;
+    if (d < bestD) { bestD = d; best = e; }
+  }
+  return best;
 }
 
 function spawnEnemies(dt) {
@@ -5433,6 +5498,11 @@ function updateEnemyBullets(dt) {
   removeDead(state.enemyBullets, (b) => b.life <= 0 || Math.abs(b.x) > WORLD.half + 4 || Math.abs(b.z) > WORLD.half + 4);
 }
 
+// 真祖「不死回帰」の復活クールダウン(秒)。Lv1:3分 / Lv2:2分半 / Lv3:2分。
+function undyingCooldown(level) {
+  return { 1: 180, 2: 150, 3: 120 }[Math.min(3, level || 0)] || 0;
+}
+
 // 真祖の吸血: 与えたダメージの一部を回復。最大HP超過分はシールド化(上限あり)。
 function applyLifesteal(ownerId, dealt) {
   const player = state.players.find((p) => p.id === ownerId);
@@ -5468,7 +5538,7 @@ function damagePlayer(player, damage) {
   if (player.hp > 0) return;
   // 真祖「不死回帰」: 致死ダメージを無効化して復活(クールダウンあり)
   if ((player.undyingLevel || 0) > 0 && state.elapsed >= (player.undyingReadyAt || 0)) {
-    player.undyingReadyAt = state.elapsed + Math.max(14, 40 - (player.undyingLevel || 0) * 6);
+    player.undyingReadyAt = state.elapsed + (undyingCooldown(player.undyingLevel) || 180);
     player.hp = Math.ceil(player.maxHp * 0.5);
     player.shield = player.maxHp * 0.5;
     player.invincibleUntil = state.elapsed + 1.5;
@@ -5511,6 +5581,15 @@ function updateArrows(dt) {
       updateGrenadeProjectile(arrow, dt);
       continue;
     }
+    if (arrow.kind === "kinBat") {
+      let t = state.enemies.find((e) => e.id === arrow.targetId && e.hp > 0);
+      if (!t) { t = nearestEnemyToPoint(arrow.x, arrow.z); arrow.targetId = t?.id || ""; }
+      if (t) {
+        const a = Math.atan2(t.x - arrow.x, t.z - arrow.z);
+        arrow.vx = Math.sin(a) * 15;
+        arrow.vz = Math.cos(a) * 15;
+      }
+    }
     const prevX = arrow.x;
     const prevZ = arrow.z;
     arrow.x += arrow.vx * dt;
@@ -5526,6 +5605,10 @@ function updateArrows(dt) {
         const finalDamage = arrow.damage * projectileDamageMultiplier(arrow, enemy);
         damageEnemy(enemy, finalDamage, arrow.owner, arrow.kind);
         arrow.hit.add(enemy);
+        if (arrow.kind === "kinBat") {
+          const owner = state.players.find((p) => p.id === arrow.owner);
+          if (owner && !owner.dead) owner.hp = Math.min(owner.maxHp, owner.hp + 1);
+        }
         if (arrow.kind === "magic") playPlayerSound(state.players.find((player) => player.id === arrow.owner), "fire");
         const hitColor = arrow.kind === "magic" ? 0xff6b2c : arrow.kind === "flyingSlash" ? 0x91c7ff : arrow.kind === "shuriken" ? 0x2dd4bf : 0xf2c14e;
         addRing(enemy.x, enemy.z, arrow.kind === "magic" ? 1.0 : arrow.kind === "flyingSlash" ? 1.15 : arrow.kind === "shuriken" ? 0.95 : 0.8, hitColor);
@@ -7424,6 +7507,7 @@ function makeBloodBladeMesh() {
 }
 
 function makeProjectileMesh(item = {}) {
+  if (item.kind === "kinBat") { const m = makeBloodBladeMesh(); m.scale.setScalar(0.8); return m; }
   if (item.kind === "bloodBlade") return makeBloodBladeMesh();
   if (item.kind === "dragonFang") return makeDragonFangMesh();
   if (item.kind === "magic") return makeMagicMesh();
@@ -8609,6 +8693,7 @@ function updateUi() {
   ui.skillReadyHint?.classList.toggle("hidden", skillPct < 1 || net.phase !== "playing" || !state.running);
   ui.mobileSkillButton?.classList.toggle("ready", skillPct >= 1);
   updateLinkHud(player);
+  updateUndyingHud(player);
   ui.bossCameraHint?.classList.toggle("hidden", !(net.phase === "playing" && state.running && isStage3DragonBossActive()));
   ui.mobileCameraButtons?.classList.toggle("hidden", !isStage3DragonBossActive());
   const buildSummary = formatBuildSummary(player);
@@ -8645,6 +8730,22 @@ function updateLinkHud(player) {
   ui.linkText.textContent = state.linkReady ? "READY" : `${Math.ceil(LINK_SKILL_CHARGE_SECONDS - (state.linkCharge || 0))}s`;
   hud.classList.toggle("ready", Boolean(state.linkReady));
   ui.linkReadyHint?.classList.toggle("hidden", !state.linkReady);
+}
+
+// 真祖「不死回帰」の復活可能ゲージ
+function updateUndyingHud(player) {
+  if (!ui.undyingHud) return;
+  const active = player && player.character === "ancestor" && (player.undyingLevel || 0) > 0 && net.phase === "playing" && state.running && !player.dead;
+  ui.undyingHud.classList.toggle("hidden", !active);
+  if (!active) return;
+  const cd = undyingCooldown(player.undyingLevel) || 180;
+  const remain = Math.max(0, (player.undyingReadyAt || 0) - state.elapsed);
+  const ready = remain <= 0;
+  const pct = ready ? 1 : clamp(1 - remain / cd, 0, 1);
+  if (ui.undyingFill) ui.undyingFill.style.width = `${Math.round(pct * 100)}%`;
+  ui.undyingText.textContent = ready ? "回帰可能" : `${Math.ceil(remain)}s`;
+  ui.undyingHud.classList.toggle("ready", ready);
+  ui.undyingReadyHint?.classList.toggle("hidden", !ready);
 }
 
 function formatBuildSummary(player) {
@@ -9033,6 +9134,7 @@ function showLobby(message) {
   if (state) state.running = false;
   stopBgm();
   ui.skillText.closest(".skill-hud")?.classList.add("hidden");
+  ui.undyingHud?.classList.add("hidden");
   ui.linkText?.closest(".link-hud")?.classList.add("hidden");
   ui.bossCameraHint?.classList.add("hidden");
   ui.start.classList.add("hidden");
@@ -9200,6 +9302,7 @@ function handleHostData(data) {
     stopBgm();
     playEndSound(Boolean(data.won));
     ui.skillText.closest(".skill-hud")?.classList.add("hidden");
+  ui.undyingHud?.classList.add("hidden");
     ui.linkText?.closest(".link-hud")?.classList.add("hidden");
     ui.bossCameraHint?.classList.add("hidden");
     const earnedMoney = awardMoney(data.won, { elapsed: data.elapsed, kills: data.kills, stageId: data.stageId });
@@ -10228,7 +10331,7 @@ function ensureDragoonCharacterButton() {
   const button = document.createElement("button");
   button.type = "button";
   button.dataset.character = "dragoon";
-  button.innerHTML = "<strong>滅竜者</strong><span>竜の牙と飛竜召喚で戦う</span>";
+  button.innerHTML = "<strong>竜騎士</strong><span>槍と飛竜召喚で戦う</span>";
   ui.characterSelect.appendChild(button);
 }
 
@@ -10535,6 +10638,7 @@ function endGame(won) {
   stopBgm();
   playEndSound(won);
   ui.skillText.closest(".skill-hud")?.classList.add("hidden");
+  ui.undyingHud?.classList.add("hidden");
   ui.linkText?.closest(".link-hud")?.classList.add("hidden");
   ui.bossCameraHint?.classList.add("hidden");
   net.restartVotes = new Set();
@@ -10885,6 +10989,7 @@ function showTitle() {
   stopBgm();
   setMenuBackdrop(true);
   ui.skillText.closest(".skill-hud")?.classList.add("hidden");
+  ui.undyingHud?.classList.add("hidden");
   ui.bossCameraHint?.classList.add("hidden");
   ui.start.classList.remove("hidden");
   ui.stageSelectPanel.classList.add("hidden");
